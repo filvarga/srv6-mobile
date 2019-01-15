@@ -40,10 +40,8 @@ typedef enum {
 } quota_exceed_event_t;
 
 typedef struct {
-  /** NAT plugin IPFIX logging enabled */
-  u8 enabled;
 
-  /** ipfix buffers under construction */
+  /** pfix buffers under construction */
   vlib_buffer_t *nat44_session_buffer;
   vlib_buffer_t *addr_exhausted_buffer;
   vlib_buffer_t *max_entries_per_user_buffer;
@@ -76,11 +74,21 @@ typedef struct {
   u32 nat64_bib_next_record_offset;
   u32 nat64_ses_next_record_offset;
 
-  /** Time reference pair */
+} snat_ipfix_per_thread_data_t;
+
+typedef struct {
+  /** NAT plugin IPFIX logging enabled, ATOMICS */
+  u8 enabled;
+
+  /** Time reference pair, RO */
   u64 milisecond_time_0;
   f64 vlib_time_0;
 
-  /** template IDs */
+  /* Per thread data */
+  snat_ipfix_per_thread_data_t *per_thread_data;
+
+  // INFO: set by main thread in header rewrite call (snat_template_rewrite)
+  /** template IDs, ATOMICS */
   u16 nat44_session_template_id;
   u16 addr_exhausted_template_id;
   u16 max_entries_per_user_template_id;
@@ -91,7 +99,9 @@ typedef struct {
   u16 nat64_bib_template_id;
   u16 nat64_ses_template_id;
 
-  /** stream index */
+  // INFO: used for creating header, set by rewrite call (snat_template_rewrite)
+  // snat_ipfix_header_create - called only in the start of packet building process
+  /** stream index, ATOMICS */
   u32 stream_index;
 } snat_ipfix_logging_main_t;
 
