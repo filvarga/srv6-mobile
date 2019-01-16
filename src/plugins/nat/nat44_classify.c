@@ -217,7 +217,7 @@ nat44_classify_node_fn_inline (vlib_main_t * vm,
 		      !(reass0->flags & NAT_REASS_FLAG_CLASSIFY_ED_CONTINUE))
 		    {
 		      /* first fragment still hasn't arrived, cache this fragment */
-		      if (nat_ip4_reass_add_fragment (reass0, bi0,
+		      if (nat_ip4_reass_add_fragment (thread_index, reass0, bi0,
 						      &fragments_to_drop))
 			{
 			  b0->error =
@@ -328,7 +328,7 @@ nat44_classify_node_fn_inline (vlib_main_t * vm,
 		  if (reass0->classify_next == NAT_REASS_IP4_CLASSIFY_NONE)
 		    /* first fragment still hasn't arrived */
 		    {
-		      if (nat_ip4_reass_add_fragment (reass0, bi0,
+		      if (nat_ip4_reass_add_fragment (thread_index, reass0, bi0,
 						      &fragments_to_drop))
 			{
 			  b0->error =

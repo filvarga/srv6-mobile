@@ -109,28 +109,35 @@ extern snat_ipfix_logging_main_t snat_ipfix_logging_main;
 
 void snat_ipfix_logging_init (vlib_main_t * vm);
 int snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port);
-void snat_ipfix_logging_nat44_ses_create (u32 src_ip, u32 nat_src_ip,
+void snat_ipfix_logging_nat44_ses_create (u32 thread_index, u32 src_ip,
+                                          u32 nat_src_ip,
                                           snat_protocol_t snat_proto,
                                           u16 src_port, u16 nat_src_port,
                                           u32 vrf_id);
-void snat_ipfix_logging_nat44_ses_delete (u32 src_ip, u32 nat_src_ip,
+void snat_ipfix_logging_nat44_ses_delete (u32 thread_index, u32 src_ip,
+                                          u32 nat_src_ip,
                                           snat_protocol_t snat_proto,
                                           u16 src_port, u16 nat_src_port,
                                           u32 vrf_id);
-void snat_ipfix_logging_addresses_exhausted(u32 pool_id);
-void snat_ipfix_logging_max_entries_per_user(u32 limit, u32 src_ip);
-void nat_ipfix_logging_max_sessions(u32 limit);
-void nat_ipfix_logging_max_bibs(u32 limit);
-void nat_ipfix_logging_max_fragments_ip4(u32 limit, ip4_address_t * src);
-void nat_ipfix_logging_max_fragments_ip6(u32 limit, ip6_address_t * src);
-void nat_ipfix_logging_nat64_session(ip6_address_t * src_ip,
+void snat_ipfix_logging_addresses_exhausted(u32 thread_index, u32 pool_id);
+void snat_ipfix_logging_max_entries_per_user(u32 thread_index,
+                                             u32 limit, u32 src_ip);
+void nat_ipfix_logging_max_sessions(u32 thread_index, u32 limit);
+void nat_ipfix_logging_max_bibs(u32 thread_index, u32 limit);
+void nat_ipfix_logging_max_fragments_ip4(u32 thread_index,
+                                         u32 limit, ip4_address_t * src);
+void nat_ipfix_logging_max_fragments_ip6(u32 thread_index,
+                                         u32 limit, ip6_address_t * src);
+void nat_ipfix_logging_nat64_session(u32 thread_index,
+                                     ip6_address_t * src_ip,
                                      ip4_address_t * nat_src_ip, u8 proto,
                                      u16 src_port, u16 nat_src_port,
                                      ip6_address_t * dst_ip,
                                      ip4_address_t * nat_dst_ip,
                                      u16 dst_port, u16 nat_dst_port,
                                      u32 vrf_id, u8 is_create);
-void nat_ipfix_logging_nat64_bib(ip6_address_t * src_ip,
+void nat_ipfix_logging_nat64_bib(u32 thread_index,
+                                 ip6_address_t * src_ip,
                                  ip4_address_t * nat_src_ip, u8 proto,
                                  u16 src_port, u16 nat_src_port,
                                  u32 vrf_id, u8 is_create);
