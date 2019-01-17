@@ -116,7 +116,7 @@ typedef struct
 #define skip_if_disabled()                                        \
 do {                                                              \
   snat_ipfix_logging_main_t *silm = &snat_ipfix_logging_main;     \
-  if (PREDICT_TRUE (!clib_atomic_fetch_or(&(silm->enabled), 0)))  \
+  if (PREDICT_TRUE (!clib_atomic_fetch_or(&silm->enabled, 0)))  \
     return;                                                       \
 } while (0)
 
@@ -158,8 +158,8 @@ snat_template_rewrite (flow_report_main_t * frm,
   stream = &frm->streams[fr->stream_index];
 
   // we know that or does not do a thing so we first fetch the value
-  stream_index = clib_atomic_fetch_or(&(silm->stream_index), 0);
-  clib_atomic_cmp_and_swap (&(silm->stream_index),
+  stream_index = clib_atomic_fetch_or(&silm->stream_index, 0);
+  clib_atomic_cmp_and_swap (&silm->stream_index,
                             stream_index, fr->stream_index);
 
   silm->stream_index = fr->stream_index;
@@ -572,7 +572,7 @@ snat_ipfix_header_create (flow_report_main_t * frm,
 					  (vlib_time_now (frm->vlib_main) -
 					   frm->vlib_time_0)));
 
-  sequence_number = clib_atomic_fetch_add (&(stream->sequence_number), 1);
+  sequence_number = clib_atomic_fetch_add (&stream->sequence_number, 1);
   h->sequence_number = clib_host_to_net_u32 (sequence_number);
   h->domain_id = clib_host_to_net_u32 (stream->domain_id);
 
@@ -638,7 +638,7 @@ snat_ipfix_logging_nat44_ses (u32 thread_index, u8 nat_event, u32 src_ip,
   u8 proto = ~0;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   proto = snat_proto_to_ip_proto (snat_proto);
@@ -720,7 +720,7 @@ snat_ipfix_logging_nat44_ses (u32 thread_index, u8 nat_event, u32 src_ip,
       (do_flush || (offset + NAT44_SESSION_CREATE_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->nat44_session_template_id),
+        &silm->nat44_session_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->nat44_session_frame = 0;
@@ -746,7 +746,7 @@ snat_ipfix_logging_addr_exhausted (u32 thread_index, u32 pool_id, int do_flush)
   u8 nat_event = NAT_ADDRESSES_EXHAUTED;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -811,7 +811,7 @@ snat_ipfix_logging_addr_exhausted (u32 thread_index, u32 pool_id, int do_flush)
       (do_flush || (offset + NAT_ADDRESSES_EXHAUTED_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-          &(silm->addr_exhausted_template_id),
+          &silm->addr_exhausted_template_id,
           0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->addr_exhausted_frame = 0;
@@ -839,7 +839,7 @@ snat_ipfix_logging_max_entries_per_usr (u32 thread_index,
   u32 quota_event = MAX_ENTRIES_PER_USER;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -910,7 +910,7 @@ snat_ipfix_logging_max_entries_per_usr (u32 thread_index,
       (do_flush || (offset + MAX_ENTRIES_PER_USER_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-          &(silm->max_entries_per_user_template_id),
+          &silm->max_entries_per_user_template_id,
           0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->max_entries_per_user_frame = 0;
@@ -937,7 +937,7 @@ nat_ipfix_logging_max_ses (u32 thread_index, u32 limit, int do_flush)
   u32 quota_event = MAX_SESSION_ENTRIES;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1005,7 +1005,7 @@ nat_ipfix_logging_max_ses (u32 thread_index, u32 limit, int do_flush)
       (do_flush || (offset + MAX_SESSIONS_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->max_sessions_template_id),
+        &silm->max_sessions_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->max_sessions_frame = 0;
@@ -1032,7 +1032,7 @@ nat_ipfix_logging_max_bib (u32 thread_index, u32 limit, int do_flush)
   u32 quota_event = MAX_BIB_ENTRIES;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1100,7 +1100,7 @@ nat_ipfix_logging_max_bib (u32 thread_index, u32 limit, int do_flush)
       (do_flush || (offset + MAX_BIBS_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->max_bibs_template_id),
+        &silm->max_bibs_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->max_bibs_frame = 0;
@@ -1128,7 +1128,7 @@ nat_ipfix_logging_max_frag_ip4 (u32 thread_index,
   u32 quota_event = MAX_FRAGMENTS_PENDING_REASSEMBLY;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled), 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1199,7 +1199,7 @@ nat_ipfix_logging_max_frag_ip4 (u32 thread_index,
       (do_flush || (offset + MAX_BIBS_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->max_frags_ip4_template_id),
+        &silm->max_frags_ip4_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->max_frags_ip4_frame = 0;
@@ -1227,7 +1227,7 @@ nat_ipfix_logging_max_frag_ip6 (u32 thread_index,
   u32 quota_event = MAX_FRAGMENTS_PENDING_REASSEMBLY;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1298,7 +1298,7 @@ nat_ipfix_logging_max_frag_ip6 (u32 thread_index,
       (do_flush || (offset + MAX_BIBS_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->max_frags_ip6_template_id),
+        &silm->max_frags_ip6_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->max_frags_ip6_frame = 0;
@@ -1326,7 +1326,7 @@ nat_ipfix_logging_nat64_bibe (u32 thread_index, u8 nat_event,
   vlib_buffer_free_list_t *fl;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1406,7 +1406,7 @@ nat_ipfix_logging_nat64_bibe (u32 thread_index, u8 nat_event,
       (do_flush || (offset + NAT64_BIB_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->nat64_bib_template_id),
+        &silm->nat64_bib_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->nat64_bib_frame = 0;
@@ -1436,7 +1436,7 @@ nat_ipfix_logging_nat64_ses (u32 thread_index, u8 nat_event,
   vlib_buffer_free_list_t *fl;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&(silm->enabled), 0))
+  if (!clib_atomic_fetch_or (&silm->enabled, 0))
     return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
@@ -1528,7 +1528,7 @@ nat_ipfix_logging_nat64_ses (u32 thread_index, u8 nat_event,
       (do_flush || (offset + NAT64_SES_LEN) > frm->path_mtu))
     {
       template_id = clib_atomic_fetch_or (
-        &(silm->nat64_ses_template_id),
+        &silm->nat64_ses_template_id,
         0);
       snat_ipfix_send (frm, f, b0, template_id);
       sitd->nat64_ses_frame = 0;
@@ -1864,7 +1864,7 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
   u8 e = enable ? 1 : 0;
 
   // swap if old value is opposite of desired state
-  if (clib_atomic_cmp_and_swap (&(silm->enabled), e ^ 1, e) == e)
+  if (clib_atomic_cmp_and_swap (&silm->enabled, e ^ 1, e) == e)
     return 0;
 
   clib_memset (&a, 0, sizeof (a));
@@ -2011,17 +2011,20 @@ static uword
 ipfix_timer_process (vlib_main_t *vm,
                vlib_node_runtime_t *rt, vlib_frame_t *f)
 {
+  snat_ipfix_logging_main_t *silm = &snat_ipfix_logging_main;
   vlib_main_t **worker_vms = 0, *worker_vm;
-  uword *event_data = 0;
-  f64 sleep_duration;
+
+  //uword *event_data = 0;
+  f64 sleep_duration = 5;
   int i;
 
+  // TODO: probably enabling ipfix loggin on NAT should fire an event
   /* Wait for Godot... */
-  vlib_process_wait_for_event_or_clock (vm, 1e9);
+  /*vlib_process_wait_for_event_or_clock (vm, 1e9);
   uword event_type = vlib_process_get_events (vm, &event_data);
   if (event_type != 1)
     clib_warning ("bogus kickoff event received, %d", event_type);
-  vec_reset_length (event_data);
+  vec_reset_length (event_data);*/
 
   if (vec_len (vlib_mains) == 0)
     vec_add1 (worker_vms, vm);
@@ -2035,10 +2038,14 @@ ipfix_timer_process (vlib_main_t *vm,
 	}
     }
 
-  while (1)
+  do
     {
+      vlib_process_suspend (vm, sleep_duration);
+
+      if (PREDICT_FALSE (clib_atomic_fetch_or(&silm->enabled, 0)))
+        continue;
+
       /* Send an interrupt to each timer input node */
-      sleep_duration = 5;
       for (i = 0; i < vec_len (worker_vms); i++)
 	{
 	  worker_vm = worker_vms[i];
@@ -2048,8 +2055,8 @@ ipfix_timer_process (vlib_main_t *vm,
 					       snat_ipfix_flush_node.index);
 	    }
 	}
-      vlib_process_suspend (vm, sleep_duration);
     }
+  while (1);
 
   return 0;
 }
