@@ -2324,9 +2324,8 @@ static void
 
   for (i = 0; i < count; i++)
     {
-      // TODO: review if other way to obtain thread_index
       if ((rv = nat64_add_del_pool_addr (vlib_get_thread_index (),
-                                         &this_addr, vrf_id, mp->is_add)))
+					 &this_addr, vrf_id, mp->is_add)))
 	goto send_reply;
 
       increment_v4_address (&this_addr);

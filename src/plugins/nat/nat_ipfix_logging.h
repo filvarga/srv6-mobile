@@ -77,18 +77,17 @@ typedef struct {
 } snat_ipfix_per_thread_data_t;
 
 typedef struct {
-  /** NAT plugin IPFIX logging enabled, ATOMICS */
+  /** NAT plugin IPFIX logging enabled */
   u8 enabled;
 
-  /** Time reference pair, RO */
+  /** Time reference pair */
   u64 milisecond_time_0;
   f64 vlib_time_0;
 
   /* Per thread data */
   snat_ipfix_per_thread_data_t *per_thread_data;
 
-  // INFO: set by main thread in header rewrite call (snat_template_rewrite)
-  /** template IDs, ATOMICS */
+  /** template IDs */
   u16 nat44_session_template_id;
   u16 addr_exhausted_template_id;
   u16 max_entries_per_user_template_id;
@@ -99,10 +98,12 @@ typedef struct {
   u16 nat64_bib_template_id;
   u16 nat64_ses_template_id;
 
-  // INFO: used for creating header, set by rewrite call (snat_template_rewrite)
-  // snat_ipfix_header_create - called only in the start of packet building process
-  /** stream index, ATOMICS */
+  /** stream index */
   u32 stream_index;
+
+  /** vector of worker vlib mains */
+  vlib_main_t **worker_vms;
+
 } snat_ipfix_logging_main_t;
 
 extern snat_ipfix_logging_main_t snat_ipfix_logging_main;

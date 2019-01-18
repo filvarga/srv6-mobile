@@ -157,12 +157,9 @@ snat_template_rewrite (flow_report_main_t * frm,
 
   stream = &frm->streams[fr->stream_index];
 
-  // we know that or does not do a thing so we first fetch the value
   stream_index = clib_atomic_fetch_or(&silm->stream_index, 0);
   clib_atomic_cmp_and_swap (&silm->stream_index,
                             stream_index, fr->stream_index);
-
-  silm->stream_index = fr->stream_index;
 
   if (event == NAT_ADDRESSES_EXHAUTED)
     {
@@ -540,10 +537,12 @@ snat_ipfix_header_create (flow_report_main_t * frm,
   ipfix_message_header_t *h = 0;
   ipfix_set_header_t *s = 0;
   u32 sequence_number;
+  u32 stream_index;
   ip4_header_t *ip;
   udp_header_t *udp;
-
-  stream = &frm->streams[silm->stream_index];
+  
+  stream_index = clib_atomic_fetch_or(&silm->stream_index, 0);
+  stream = &frm->streams[stream_index];
 
   b0->current_data = 0;
   b0->current_length = sizeof (*ip) + sizeof (*udp) + sizeof (*h) +
@@ -637,9 +636,6 @@ snat_ipfix_logging_nat44_ses (u32 thread_index, u8 nat_event, u32 src_ip,
   vlib_buffer_free_list_t *fl;
   u8 proto = ~0;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
 
   proto = snat_proto_to_ip_proto (snat_proto);
 
@@ -746,9 +742,6 @@ snat_ipfix_logging_addr_exhausted (u32 thread_index, u32 pool_id, int do_flush)
   u8 nat_event = NAT_ADDRESSES_EXHAUTED;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
-
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
 
@@ -838,9 +831,6 @@ snat_ipfix_logging_max_entries_per_usr (u32 thread_index,
   u8 nat_event = QUOTA_EXCEEDED;
   u32 quota_event = MAX_ENTRIES_PER_USER;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
@@ -937,9 +927,6 @@ nat_ipfix_logging_max_ses (u32 thread_index, u32 limit, int do_flush)
   u32 quota_event = MAX_SESSION_ENTRIES;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
-
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
 
@@ -1031,9 +1018,6 @@ nat_ipfix_logging_max_bib (u32 thread_index, u32 limit, int do_flush)
   u8 nat_event = QUOTA_EXCEEDED;
   u32 quota_event = MAX_BIB_ENTRIES;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
@@ -1127,9 +1111,6 @@ nat_ipfix_logging_max_frag_ip4 (u32 thread_index,
   u8 nat_event = QUOTA_EXCEEDED;
   u32 quota_event = MAX_FRAGMENTS_PENDING_REASSEMBLY;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled), 0))
-    return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
@@ -1227,9 +1208,6 @@ nat_ipfix_logging_max_frag_ip6 (u32 thread_index,
   u32 quota_event = MAX_FRAGMENTS_PENDING_REASSEMBLY;
   u16 template_id;
 
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
-
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
 
@@ -1325,9 +1303,6 @@ nat_ipfix_logging_nat64_bibe (u32 thread_index, u8 nat_event,
   u64 now;
   vlib_buffer_free_list_t *fl;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
@@ -1435,9 +1410,6 @@ nat_ipfix_logging_nat64_ses (u32 thread_index, u8 nat_event,
   u64 now;
   vlib_buffer_free_list_t *fl;
   u16 template_id;
-
-  if (!clib_atomic_fetch_or (&silm->enabled, 0))
-    return;
 
   now = (u64) ((vlib_time_now (vm) - silm->vlib_time_0) * 1e3);
   now += silm->milisecond_time_0;
@@ -1557,9 +1529,43 @@ snat_ipfix_flush (u32 thread_index)
                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, do_flush);
 }
 
+void
+snat_ipfix_flush_from_main (void)
+{
+  snat_ipfix_logging_main_t *silm = &snat_ipfix_logging_main;
+  vlib_main_t *worker_vm;
+  int i;
+
+  if (PREDICT_TRUE (!clib_atomic_fetch_or(&silm->enabled, 0)))
+    return;
+
+  if (PREDICT_FALSE (!silm->worker_vms))
+    {
+      for (i = 1; i < vec_len (vlib_mains); i++)
+        {
+          worker_vm = vlib_mains[i];
+          if (worker_vm)
+            vec_add1 (silm->worker_vms, worker_vm);
+        }
+    }
+
+  /* Trigger flush for each ipfix input node */
+  for (i = 1; i < vec_len (silm->worker_vms); i++)
+    {
+      worker_vm = silm->worker_vms[i];
+      if (worker_vm)
+	vlib_node_set_interrupt_pending (worker_vm,
+					 snat_ipfix_flush_node.index);
+    }
+
+  /* Finally flush main thread */
+  snat_ipfix_flush (0);
+}
+
 /**
  * @brief Generate NAT44 session create event
  *
+ * @param thread_index thread index
  * @param src_ip       source IPv4 address
  * @param nat_src_ip   transaltes source IPv4 address
  * @param snat_proto   NAT transport protocol
@@ -1585,6 +1591,7 @@ snat_ipfix_logging_nat44_ses_create (u32 thread_index,
 /**
  * @brief Generate NAT44 session delete event
  *
+ * @param thread_index thread index
  * @param src_ip       source IPv4 address
  * @param nat_src_ip   transaltes source IPv4 address
  * @param snat_proto   NAT transport protocol
@@ -1613,14 +1620,15 @@ snat_data_callback_nat44_session (flow_report_main_t * frm,
 				  vlib_frame_t * f,
 				  u32 * to_next, u32 node_index)
 {
+  snat_ipfix_flush_from_main();
 
-  snat_ipfix_flush(frm->vlib_main->thread_index);
   return f;
 }
 
 /**
  * @brief Generate NAT addresses exhausted event
  *
+ * @param thread_index thread index
  * @param pool_id NAT pool ID
  */
 void
@@ -1632,18 +1640,10 @@ snat_ipfix_logging_addresses_exhausted (u32 thread_index, u32 pool_id)
   snat_ipfix_logging_addr_exhausted (thread_index, pool_id, 0);
 }
 
-vlib_frame_t *
-snat_data_callback_addr_exhausted (flow_report_main_t * frm,
-				   flow_report_t * fr,
-				   vlib_frame_t * f,
-				   u32 * to_next, u32 node_index)
-{
-  return f;
-}
-
 /**
  * @brief Generate maximum entries per user exceeded event
  *
+ * @param thread_index thread index
  * @param limit maximum NAT entries that can be created per user
  * @param src_ip source IPv4 address
  */
@@ -1657,17 +1657,21 @@ snat_ipfix_logging_max_entries_per_user (u32 thread_index, u32 limit, u32 src_ip
 }
 
 vlib_frame_t *
-snat_data_callback_max_entries_per_usr (flow_report_main_t * frm,
+snat_data_callback_max_entries_per_usr
+(flow_report_main_t * frm,
 					flow_report_t * fr,
 					vlib_frame_t * f,
 					u32 * to_next, u32 node_index)
 {
+  snat_ipfix_flush_from_main();
+
   return f;
 }
 
 /**
  * @brief Generate maximum session entries exceeded event
  *
+ * @param thread_index thread index
  * @param limit configured limit
  */
 void
@@ -1679,18 +1683,10 @@ nat_ipfix_logging_max_sessions (u32 thread_index, u32 limit)
   nat_ipfix_logging_max_ses (thread_index, limit, 0);
 }
 
-vlib_frame_t *
-nat_data_callback_max_sessions (flow_report_main_t * frm,
-				flow_report_t * fr,
-				vlib_frame_t * f,
-				u32 * to_next, u32 node_index)
-{
-  return f;
-}
-
 /**
  * @brief Generate maximum BIB entries exceeded event
  *
+ * @param thread_index thread index
  * @param limit configured limit
  */
 void
@@ -1702,18 +1698,10 @@ nat_ipfix_logging_max_bibs (u32 thread_index, u32 limit)
   nat_ipfix_logging_max_bib (thread_index, limit, 0);
 }
 
-vlib_frame_t *
-nat_data_callback_max_bibs (flow_report_main_t * frm,
-			    flow_report_t * fr,
-			    vlib_frame_t * f,
-			    u32 * to_next, u32 node_index)
-{
-  return f;
-}
-
 /**
  * @brief Generate maximum IPv4 fragments pending reassembly exceeded event
  *
+ * @param thread_index thread index
  * @param limit configured limit
  * @param src source IPv4 address
  */
@@ -1724,22 +1712,13 @@ nat_ipfix_logging_max_fragments_ip4 (u32 thread_index,
   //TODO: This event SHOULD be rate limited
   skip_if_disabled ();
 
-  //TODO: NTOH ? has to be tested
   nat_ipfix_logging_max_frag_ip4 (thread_index, limit, src->as_u32, 0);
-}
-
-vlib_frame_t *
-nat_data_callback_max_frags_ip4 (flow_report_main_t * frm,
-			         flow_report_t * fr,
-			         vlib_frame_t * f,
-			         u32 * to_next, u32 node_index)
-{
-  return f;
 }
 
 /**
  * @brief Generate maximum IPv6 fragments pending reassembly exceeded event
  *
+ * @param thread_index thread index
  * @param limit configured limit
  * @param src source IPv6 address
  */
@@ -1753,18 +1732,10 @@ nat_ipfix_logging_max_fragments_ip6 (u32 thread_index,
   nat_ipfix_logging_max_frag_ip6 (thread_index, limit, src, 0);
 }
 
-vlib_frame_t *
-nat_data_callback_max_frags_ip6 (flow_report_main_t * frm,
-			         flow_report_t * fr,
-			         vlib_frame_t * f,
-			         u32 * to_next, u32 node_index)
-{
-  return f;
-}
-
 /**
  * @brief Generate NAT64 BIB create and delete events
  *
+ * @param thread_index thread index
  * @param src_ip       source IPv6 address
  * @param nat_src_ip   transaltes source IPv4 address
  * @param proto        L4 protocol
@@ -1790,18 +1761,10 @@ nat_ipfix_logging_nat64_bib (u32 thread_index, ip6_address_t * src_ip,
                                 nat_src_port, vrf_id, 0);
 }
 
-vlib_frame_t *
-nat_data_callback_nat64_bib (flow_report_main_t * frm,
-			     flow_report_t * fr,
-			     vlib_frame_t * f,
-			     u32 * to_next, u32 node_index)
-{
-  return f;
-}
-
 /**
  * @brief Generate NAT64 session create and delete events
  *
+ * @param thread_index thread index
  * @param src_ip       source IPv6 address
  * @param nat_src_ip   transaltes source IPv4 address
  * @param proto        L4 protocol
@@ -1836,10 +1799,10 @@ nat_ipfix_logging_nat64_session (u32 thread_index,
 }
 
 vlib_frame_t *
-nat_data_callback_nat64_session (flow_report_main_t * frm,
-			         flow_report_t * fr,
-			         vlib_frame_t * f,
-			         u32 * to_next, u32 node_index)
+dummy_data_callback (flow_report_main_t * frm,
+		     flow_report_t * fr,
+		     vlib_frame_t * f,
+		     u32 * to_next, u32 node_index)
 {
   return f;
 }
@@ -1863,7 +1826,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
   int rv;
   u8 e = enable ? 1 : 0;
 
-  // swap if old value is opposite of desired state
   if (clib_atomic_cmp_and_swap (&silm->enabled, e ^ 1, e) == e)
     return 0;
 
@@ -1897,7 +1859,7 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = snat_template_rewrite_addr_exhausted;
-      a.flow_data_callback = snat_data_callback_addr_exhausted;
+      a.flow_data_callback = dummy_data_callback;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1907,7 +1869,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_max_sessions;
-      a.flow_data_callback = nat_data_callback_max_sessions;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1917,7 +1878,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_max_bibs;
-      a.flow_data_callback = nat_data_callback_max_bibs;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1927,7 +1887,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_max_frags_ip4;
-      a.flow_data_callback = nat_data_callback_max_frags_ip4;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1937,7 +1896,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_max_frags_ip6;
-      a.flow_data_callback = nat_data_callback_max_frags_ip6;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1947,7 +1905,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_nat64_bib;
-      a.flow_data_callback = nat_data_callback_nat64_bib;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1957,7 +1914,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
 	}
 
       a.rewrite_callback = nat_template_rewrite_nat64_session;
-      a.flow_data_callback = nat_data_callback_nat64_session;
 
       rv = vnet_flow_report_add_del (frm, &a, NULL);
       if (rv)
@@ -1969,7 +1925,6 @@ snat_ipfix_logging_enable_disable (int enable, u32 domain_id, u16 src_port)
       if (sm->endpoint_dependent)
         {
           a.rewrite_callback = snat_template_rewrite_max_entries_per_usr;
-          a.flow_data_callback = snat_data_callback_max_entries_per_usr;
 
           rv = vnet_flow_report_add_del (frm, &a, NULL);
           if (rv)
@@ -1995,6 +1950,7 @@ snat_ipfix_logging_init (vlib_main_t * vm)
   vlib_thread_main_t *tm = vlib_get_thread_main ();
 
   silm->enabled = 0;
+  silm->worker_vms = 0;
 
   /* Set up time reference pair */
   silm->vlib_time_0 = vlib_time_now (vm);
@@ -2003,79 +1959,16 @@ snat_ipfix_logging_init (vlib_main_t * vm)
   vec_validate (silm->per_thread_data, tm->n_vlib_mains - 1);
 }
 
-/*
- * Sending an interrupt to the per worker input
- * process that flushes buffered ipfix packets.
- */
-static uword
-ipfix_timer_process (vlib_main_t *vm,
-               vlib_node_runtime_t *rt, vlib_frame_t *f)
-{
-  snat_ipfix_logging_main_t *silm = &snat_ipfix_logging_main;
-  vlib_main_t **worker_vms = 0, *worker_vm;
-
-  //uword *event_data = 0;
-  f64 sleep_duration = 5;
-  int i;
-
-  // TODO: probably enabling ipfix loggin on NAT should fire an event
-  /* Wait for Godot... */
-  /*vlib_process_wait_for_event_or_clock (vm, 1e9);
-  uword event_type = vlib_process_get_events (vm, &event_data);
-  if (event_type != 1)
-    clib_warning ("bogus kickoff event received, %d", event_type);
-  vec_reset_length (event_data);*/
-
-  if (vec_len (vlib_mains) == 0)
-    vec_add1 (worker_vms, vm);
-  else
-    {
-      for (i = 0; i < vec_len (vlib_mains); i++)
-	{
-	  worker_vm = vlib_mains[i];
-	  if (worker_vm)
-	    vec_add1 (worker_vms, worker_vm);
-	}
-    }
-
-  do
-    {
-      vlib_process_suspend (vm, sleep_duration);
-
-      if (PREDICT_FALSE (clib_atomic_fetch_or(&silm->enabled, 0)))
-        continue;
-
-      /* Send an interrupt to each timer input node */
-      for (i = 0; i < vec_len (worker_vms); i++)
-	{
-	  worker_vm = worker_vms[i];
-	  if (worker_vm)
-	    {
-	      vlib_node_set_interrupt_pending (worker_vm,
-					       snat_ipfix_flush_node.index);
-	    }
-	}
-    }
-  while (1);
-
-  return 0;
-}
-
 static uword
 ipfix_flush_process (vlib_main_t *vm,
-			  vlib_node_runtime_t *rt,
-                          vlib_frame_t *f)
+		     vlib_node_runtime_t *rt,
+                     vlib_frame_t *f)
 {
   snat_ipfix_flush(vm->thread_index);
   return 0;
 }
 
 /* *INDENT-OFF* */
-VLIB_REGISTER_NODE (snat_ipfix_timer_node,static) = {
-  .function = ipfix_timer_process,
-  .name = "snat-ipfix-timer-process",
-  .type = VLIB_NODE_TYPE_PROCESS,
-};
 VLIB_REGISTER_NODE (snat_ipfix_flush_node) = {
   .function = ipfix_flush_process,
   .name = "snat-ipfix-flush",
