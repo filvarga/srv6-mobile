@@ -27,7 +27,7 @@ from vpp_papi import VppEnum
 from scapy.all import bind_layers, Packet, ByteEnumField, ShortField, \
     IPField, IntField, LongField, XByteField, FlagsField, FieldLenField, \
     PacketListField
-from ipaddress import IPv4Address, IPv6Address
+from ipaddress import IPv4Address, IPv6Address, IPv6Network
 
 
 # NAT HA protocol event data
@@ -2294,7 +2294,7 @@ class TestNAT44(MethodHolder):
                              IPv4Address(self.pg6.remote_ip4n))
             self.assertEqual(session.outside_ip_address,
                              IPv4Address(socket.inet_pton(socket.AF_INET,
-                                 static_nat_ip)))
+                                         static_nat_ip)))
             self.assertTrue(session.inside_port in
                             [self.tcp_port_in, self.udp_port_in,
                              self.icmp_id_in])
@@ -2590,7 +2590,8 @@ class TestNAT44(MethodHolder):
         self.pg7.config_ip4()
         adresses = self.vapi.nat44_address_dump()
         self.assertEqual(1, len(adresses))
-        self.assertEqual(adresses[0].ip_address, IPv4Address(self.pg7.local_ip4n))
+        self.assertEqual(adresses[0].ip_address,
+                         IPv4Address(self.pg7.local_ip4n))
 
         # remove interface address and check NAT address pool
         self.pg7.unconfig_ip4()
@@ -4035,16 +4036,17 @@ class TestNAT44(MethodHolder):
         self.assertEqual(sessions[0][0], 2)
         users = self.vapi.nat44_user_dump()
         self.assertEqual(len(users), 1)
-        self.assertEqual(users[0].ip_address, IPv4Address(self.pg0.remote_ip4n))
+        self.assertEqual(users[0].ip_address,
+                         IPv4Address(self.pg0.remote_ip4n))
         # there should be 2 sessions created by HA
         sessions = self.vapi.nat44_user_session_dump(users[0].ip_address,
                                                      users[0].vrf_id)
         self.assertEqual(len(sessions), 2)
         for session in sessions:
             self.assertEqual(session.inside_ip_address,
-                    IPv4Address(self.pg0.remote_ip4n))
+                             IPv4Address(self.pg0.remote_ip4n))
             self.assertEqual(session.outside_ip_address,
-                    IPv4Address(self.nat_addr_n))
+                             IPv4Address(self.nat_addr_n))
             self.assertIn(session.inside_port,
                           [self.tcp_port_in, self.udp_port_in])
             self.assertIn(session.outside_port,
@@ -4081,7 +4083,8 @@ class TestNAT44(MethodHolder):
             self.assertEqual(hanat.version, 1)
         users = self.vapi.nat44_user_dump()
         self.assertEqual(len(users), 1)
-        self.assertEqual(users[0].ip_address, IPv4Address(self.pg0.remote_ip4n))
+        self.assertEqual(users[0].ip_address,
+                         IPv4Address(self.pg0.remote_ip4n))
         # now we should have only 1 session, 1 deleted by HA
         sessions = self.vapi.nat44_user_session_dump(users[0].ip_address,
                                                      users[0].vrf_id)
@@ -4123,7 +4126,7 @@ class TestNAT44(MethodHolder):
         users = self.vapi.nat44_user_dump()
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0].ip_address,
-                IPv4Address(self.pg0.remote_ip4n))
+                         IPv4Address(self.pg0.remote_ip4n))
         sessions = self.vapi.nat44_user_session_dump(users[0].ip_address,
                                                      users[0].vrf_id)
         self.assertEqual(len(sessions), 1)
@@ -5465,7 +5468,8 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.pg3.config_ip4()
         adresses = self.vapi.nat44_address_dump()
         self.assertEqual(1, len(adresses))
-        self.assertEqual(adresses[0].ip_address, IPv4Address(self.pg3.local_ip4n))
+        self.assertEqual(adresses[0].ip_address,
+                         IPv4Address(self.pg3.local_ip4n))
         self.assertEqual(adresses[0].twice_nat, 1)
 
         # remove interface address and check NAT address pool
@@ -6316,7 +6320,8 @@ class TestNAT44EndpointDependent(MethodHolder):
         nsessions = 0
         users = self.vapi.nat44_user_dump()
         self.assertEqual(len(users), 1)
-        self.assertEqual(users[0].ip_address, IPv4Address(self.pg0.remote_ip4n))
+        self.assertEqual(users[0].ip_address,
+                         IPv4Address(self.pg0.remote_ip4n))
         self.assertEqual(users[0].nsessions, 1)
 
     @unittest.skipUnless(running_extended_tests, "part of extended tests")
@@ -7777,21 +7782,22 @@ class TestNAT64(MethodHolder):
         global_pref64 = "2001:db8::"
         global_pref64_n = socket.inet_pton(socket.AF_INET6, global_pref64)
         global_pref64_len = 32
-        self.vapi.nat64_add_del_prefix(global_pref64_n, global_pref64_len)
+        global_pref64_str = "{}/{}".format(global_pref64, global_pref64_len)
+        self.vapi.nat64_add_del_prefix(global_pref64_str)
 
         prefix = self.vapi.nat64_prefix_dump()
         self.assertEqual(len(prefix), 1)
-        self.assertEqual(prefix[0].prefix, IPv6Address(global_pref64_n))
-        self.assertEqual(prefix[0].prefix_len, global_pref64_len)
+        self.assertEqual(prefix[0].prefix,
+                         IPv6Network(unicode(global_pref64_str)))
         self.assertEqual(prefix[0].vrf_id, 0)
 
         # Add tenant specific prefix
         vrf1_pref64 = "2001:db8:122:300::"
         vrf1_pref64_n = socket.inet_pton(socket.AF_INET6, vrf1_pref64)
         vrf1_pref64_len = 56
-        self.vapi.nat64_add_del_prefix(vrf1_pref64_n,
-                                       vrf1_pref64_len,
-                                       vrf_id=self.vrf1_id)
+        vrf1_pref64_str = "{}/{}".format(vrf1_pref64, vrf1_pref64_len)
+        self.vapi.nat64_add_del_prefix(vrf1_pref64_str, vrf_id=self.vrf1_id)
+
         prefix = self.vapi.nat64_prefix_dump()
         self.assertEqual(len(prefix), 2)
 
@@ -8179,7 +8185,8 @@ class TestNAT64(MethodHolder):
         addresses = self.vapi.nat64_pool_addr_dump()
         self.assertEqual(len(addresses), 1)
 
-        self.assertEqual(addresses[0].address, IPv4Address(self.pg4.local_ip4n))
+        self.assertEqual(addresses[0].address,
+                         IPv4Address(self.pg4.local_ip4n))
 
         # remove interface address and check NAT64 address pool
         self.pg4.unconfig_ip4()
@@ -8488,8 +8495,7 @@ class TestNAT64(MethodHolder):
 
         prefixes = self.vapi.nat64_prefix_dump()
         for prefix in prefixes:
-            self.vapi.nat64_add_del_prefix(prefix.prefix,
-                                           prefix.prefix_len,
+            self.vapi.nat64_add_del_prefix(str(prefix.prefix),
                                            vrf_id=prefix.vrf_id,
                                            is_add=0)
 
