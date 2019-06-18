@@ -75,6 +75,13 @@ typedef enum
   SRV6_END_M_GTP6_E_N_NEXT,
 } srv6_end_m_gtp6_e_next_t;
 
+typedef enum
+{
+  SRV6_END_M_GTP6_D_NEXT_DROP,
+  SRV6_END_M_GTP6_D_NEXT_LOOKUP,
+  SRV6_END_M_GTP6_D_N_NEXT,
+} srv6_end_m_gtp6_d_next_t;
+
 // Function for SRv6 GTP4.E function.
 VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
                                   vlib_node_runtime_t * node,
@@ -241,6 +248,16 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
+// Function for SRv6 GTP6.D function
+VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
+                                  vlib_node_runtime_t * node,
+                                  vlib_frame_t * frame)
+{
+  // XXX
+   
+  return frame->n_vectors;
+}
+
 VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) = {
   .name = "srv6-end-m-gtp6-e",
   .vector_size = sizeof (u32),
@@ -254,6 +271,22 @@ VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) = {
   .next_nodes = {
     [SRV6_END_M_GTP6_E_NEXT_DROP] = "error-drop",
     [SRV6_END_M_GTP6_E_NEXT_LOOKUP] = "ip6-lookup",
+  },
+};
+
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_d) = {
+  .name = "srv6-end-m-gtp6-d",
+  .vector_size = sizeof (u32),
+  .format_trace = format_srv6_end_rewrite_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+
+  .n_errors = ARRAY_LEN (srv6_end_error_strings),
+  .error_strings = srv6_end_error_strings,
+
+  .n_next_nodes = SRV6_END_M_GTP6_D_N_NEXT,
+  .next_nodes = {
+    [SRV6_END_M_GTP6_D_NEXT_DROP] = "error-drop",
+    [SRV6_END_M_GTP6_D_NEXT_LOOKUP] = "ip6-lookup",
   },
 };
 

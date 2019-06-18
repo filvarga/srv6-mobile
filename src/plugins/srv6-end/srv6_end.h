@@ -65,6 +65,19 @@ typedef struct srv6_end_main_v6_s
 extern srv6_end_main_v6_t srv6_end_main_v6;
 extern vlib_node_registration_t srv6_end_m_gtp6_e;
 
+typedef struct srv6_end_main_v6_decap_s
+{
+  vlib_main_t *vlib_main;
+  vnet_main_t *vnet_main;
+
+  u32 end_m_gtp6_d_node_index;
+  u32 error_node_index;
+
+} srv6_end_main_v6_decap_t;
+
+extern srv6_end_main_v6_decap_t srv6_end_main_v6_decap;
+extern vlib_node_registration_t srv6_end_m_gtp6_d;
+
 #endif /* __included_srv6_end_h__ */
 
 /*

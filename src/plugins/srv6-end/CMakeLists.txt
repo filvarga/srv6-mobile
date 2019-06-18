@@ -15,6 +15,7 @@ add_vpp_plugin(srv6end
   SOURCES
   srv6_end_m_gtp4_e.c
   srv6_end_m_gtp6_e.c
+  srv6_end_m_gtp6_d.c
   node.c
 
   INSTALL_HEADERS
