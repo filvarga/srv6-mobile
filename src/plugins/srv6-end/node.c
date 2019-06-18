@@ -68,11 +68,19 @@ typedef enum
   SRV6_END_M_GTP4_E_N_NEXT,
 } srv6_end_m_gtp4_e_next_t;
 
+typedef enum
+{
+  SRV6_END_M_GTP6_E_NEXT_DROP,
+  SRV6_END_M_GTP6_E_NEXT_LOOKUP,
+  SRV6_END_M_GTP6_E_N_NEXT,
+} srv6_end_m_gtp6_e_next_t;
+
+// Function for SRv6 GTP4.E function.
 VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
                                   vlib_node_runtime_t * node,
                                   vlib_frame_t * frame)
 {
-  srv6_end_main_t *sm = &srv6_end_main;
+  srv6_end_main_v4_t *sm = &srv6_end_main_v4;
   ip6_sr_main_t *sm2 = &sr_main;
   u32 n_left_from, next_index, *from, *to_next;
   u32 thread_index = vm->thread_index;
@@ -116,7 +124,6 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	  ls0 =
             pool_elt_at_index (sm2->localsids,
                                vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
-          //
 
           ip6srv0 = vlib_buffer_get_current (b0);
           src0 = ip6srv0->ip.src_address;
@@ -221,6 +228,32 @@ VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) = {
   .next_nodes = {
     [SRV6_END_M_GTP4_E_NEXT_DROP] = "error-drop",
     [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",
+  },
+};
+
+// Function for SRv6 GTP6.E function
+VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
+                                  vlib_node_runtime_t * node,
+                                  vlib_frame_t * frame)
+{
+  // XXX
+   
+  return frame->n_vectors;
+}
+
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) = {
+  .name = "srv6-end-m-gtp6-e",
+  .vector_size = sizeof (u32),
+  .format_trace = format_srv6_end_rewrite_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+
+  .n_errors = ARRAY_LEN (srv6_end_error_strings),
+  .error_strings = srv6_end_error_strings,
+
+  .n_next_nodes = SRV6_END_M_GTP6_E_N_NEXT,
+  .next_nodes = {
+    [SRV6_END_M_GTP6_E_NEXT_DROP] = "error-drop",
+    [SRV6_END_M_GTP6_E_NEXT_LOOKUP] = "ip6-lookup",
   },
 };
 
