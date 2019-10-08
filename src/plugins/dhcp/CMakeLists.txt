@@ -11,32 +11,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_vpp_plugin(mactime
+add_vpp_plugin(dhcp
   SOURCES
-  mactime.c
-  node.c
+  client.c
+  dhcp_api.c
+  dhcp_client_detect.c
+  dhcp_proxy.c
+  dhcp4_proxy_node.c
+  dhcp6_client_common_dp.c
+  dhcp6_ia_na_client_dp.c
+  dhcp6_ia_na_client_cp.c
+  dhcp6_ia_na_client_cp_api.c
+  dhcp6_pd_client_cp.c
+  dhcp6_pd_client_cp_api.c
+  dhcp6_pd_client_dp.c
+  dhcp6_proxy_node.c
+
+  MULTIARCH_SOURCES
+  dhcp_client_detect.c
 
   API_FILES
-  mactime.api
+  dhcp.api
+  dhcp6_pd_client_cp.api
+  dhcp6_ia_na_client_cp.api
+
+  INSTALL_HEADERS
+  client.h
+  dhcp4_packet.h
+  dhcp6_packet.h
+  dhcp_proxy.h
+  dhcp6_proxy_error.def
+  dhcp4_proxy_error.def
+  dhcp6_client_common_dp.h
+  dhcp6_pd_client_dp.h
+  dhcp6_ia_na_client_dp.h
 
   API_TEST_SOURCES
-  mactime_test.c
+  dhcp_test.c
 )
-
-option(VPP_BUILD_MACTIME_TOP "Build mactime plugin 'top' tool" OFF)
-if(VPP_BUILD_MACTIME_TOP)
-  add_vpp_executable(mactime_top ENABLE_EXPORTS
-    SOURCES
-    mactime_top.c
-
-    DEPENDS api_headers
-
-    LINK_LIBRARIES
-    vlibmemoryclient
-    vppapiclient
-    svm
-    vppinfra
-    Threads::Threads
-    rt m dl crypto
-    )
-endif()

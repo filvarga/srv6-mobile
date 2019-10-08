@@ -122,6 +122,7 @@ typedef struct quic_ctx_
   u32 parent_app_wrk_id;
   u32 parent_app_id;
   u8 flags;
+  quicly_context_t *quicly_ctx;
 } quic_ctx_t;
 
 /* Make sure our custom fields don't overlap with the fields we use in
@@ -133,12 +134,6 @@ STATIC_ASSERT (offsetof (quic_ctx_t, _qctx_end_marker) <=
 STATIC_ASSERT (offsetof (quic_ctx_t, _sctx_end_marker) <=
 	       TRANSPORT_CONN_ID_LEN,
 	       "connection data must be less than TRANSPORT_CONN_ID_LEN bytes");
-
-typedef enum quic_crypto_engine_
-{
-  CRYPTO_ENGINE_VPP,
-  CRYPTO_ENGINE_PICOTLS,
-} quic_crypto_engine_t;
 
 /* single-entry session cache */
 typedef struct quic_session_cache_
@@ -162,6 +157,21 @@ typedef struct quic_worker_ctx_
   tw_timer_wheel_1t_3w_1024sl_ov_t timer_wheel;	   /**< worker timer wheel */
   u32 *opening_ctx_pool;
 } quic_worker_ctx_t;
+
+typedef struct quic_rx_packet_ctx_
+{
+  quicly_decoded_packet_t packet;
+  u8 data[QUIC_MAX_PACKET_SIZE];
+  u32 ctx_index;
+  u32 thread_index;
+} quic_rx_packet_ctx_t;
+
+typedef struct quicly_ctx_data_
+{
+  quicly_context_t quicly_ctx;
+  char cid_key[17];
+  ptls_context_t ptls_ctx;
+} quicly_ctx_data_t;
 
 typedef struct quic_main_
 {
