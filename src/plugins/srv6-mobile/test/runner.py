@@ -344,7 +344,7 @@ class Program(object):
 
     @property
     def vpp_path(self):
-        return split(split(self.path)[0])[0]
+        return self.path.rsplit("/", 4)[0]
 
     def get_name(self, name):
         if not self.name_prefix:
@@ -1575,9 +1575,11 @@ class Program(object):
 
     def build_image(self):
         # TODO: optimize build process for speed and image size
+        print("VPP Path (build): {}".format(self.vpp_path))
         self.containers.build(self.path, self.vpp_path)
 
     def release_image(self):
+        print("VPP Path (release): {}".format(self.vpppath))
         instance = self.containers.new("release-build")
 
         system("docker cp release-build:{}/vpp-package.tgz {}/".format(self.vpp_path, self.vpp_path))
