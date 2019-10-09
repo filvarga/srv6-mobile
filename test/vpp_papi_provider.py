@@ -358,7 +358,8 @@ class VppPapiProvider(object):
         :param cli: CLI to execute
         :returns: CLI output
         """
-        return cli + "\n" + str(self.cli(cli))
+        return cli + "\n" + self.cli(cli).encode('ascii',
+                                                 errors='backslashreplace')
 
     def want_ip4_arp_events(self, enable_disable=1, ip="0.0.0.0"):
         return self.api(self.papi.want_ip4_arp_events,
@@ -399,16 +400,6 @@ class VppPapiProvider(object):
                          'max_macs_in_event': max_macs_in_event,
                          'learn_limit': learn_limit,
                          'pid': os.getpid(), })
-
-    def ip6_add_del_address_using_prefix(self, sw_if_index, address,
-                                         prefix_length, prefix_group,
-                                         is_add=1):
-        return self.api(self.papi.ip6_add_del_address_using_prefix,
-                        {'sw_if_index': sw_if_index,
-                         'prefix_group': prefix_group,
-                         'address': address,
-                         'prefix_length': prefix_length,
-                         'is_add': is_add})
 
     def sw_interface_set_mac_address(self, sw_if_index, mac):
         return self.api(self.papi.sw_interface_set_mac_address,
