@@ -167,8 +167,6 @@ typedef enum
 
 typedef enum
 {
-  ICMP_ERROR_FL_TOO_BIG,
-  ICMP_ERROR_FL_NOT_MULT_8,
   REASS_FRAGMENT_CACHE,
   REASS_FINISH,
   REASS_FRAGMENT_FORWARD,
@@ -193,12 +191,6 @@ format_ip6_sv_reass_trace (u8 * s, va_list * args)
   s = format (s, "reass id: %u, op id: %u ", t->reass_id, t->op_id);
   switch (t->action)
     {
-    case ICMP_ERROR_FL_TOO_BIG:
-      s = format (s, "\n%Uicmp-error - frag_len > 65535 %U");
-      break;
-    case ICMP_ERROR_FL_NOT_MULT_8:
-      s = format (s, "\n%Uicmp-error - frag_len mod 8 != 0 %U");
-      break;
     case REASS_FRAGMENT_CACHE:
       s = format (s, "[cached]");
       break;
@@ -597,6 +589,7 @@ ip6_sv_reassembly_inline (vlib_main_t * vm,
 	      next0 = IP6_SV_REASSEMBLY_NEXT_HANDOFF;
 	      vnet_buffer (b0)->ip.reass.owner_thread_index =
 		kv.v.thread_index;
+	      goto packet_enqueue;
 	    }
 
 	  if (!reass)
@@ -986,7 +979,6 @@ ip6_sv_reass_walk_expired (vlib_main_t * vm,
       uword thread_index = 0;
       int index;
       const uword nthreads = vlib_num_workers () + 1;
-      u32 *vec_icmp_bi = NULL;
       for (thread_index = 0; thread_index < nthreads; ++thread_index)
 	{
 	  ip6_sv_reass_per_thread_t *rt = &rm->per_thread_data[thread_index];
@@ -1014,33 +1006,7 @@ ip6_sv_reass_walk_expired (vlib_main_t * vm,
 	  clib_spinlock_unlock (&rt->lock);
 	}
 
-      while (vec_len (vec_icmp_bi) > 0)
-	{
-	  vlib_frame_t *f =
-	    vlib_get_frame_to_node (vm, rm->ip6_icmp_error_idx);
-	  u32 *to_next = vlib_frame_vector_args (f);
-	  u32 n_left_to_next = VLIB_FRAME_SIZE - f->n_vectors;
-	  int trace_frame = 0;
-	  while (vec_len (vec_icmp_bi) > 0 && n_left_to_next > 0)
-	    {
-	      u32 bi = vec_pop (vec_icmp_bi);
-	      vlib_buffer_t *b = vlib_get_buffer (vm, bi);
-	      if (PREDICT_FALSE (b->flags & VLIB_BUFFER_IS_TRACED))
-		{
-		  trace_frame = 1;
-		}
-	      b->error = node->errors[IP6_ERROR_REASS_TIMEOUT];
-	      to_next[0] = bi;
-	      ++f->n_vectors;
-	      to_next += 1;
-	      n_left_to_next -= 1;
-	    }
-	  f->frame_flags |= (trace_frame * VLIB_FRAME_TRACE);
-	  vlib_put_frame_to_node (vm, rm->ip6_icmp_error_idx, f);
-	}
-
       vec_free (pool_indexes_to_free);
-      vec_free (vec_icmp_bi);
       if (event_data)
 	{
 	  _vec_len (event_data) = 0;

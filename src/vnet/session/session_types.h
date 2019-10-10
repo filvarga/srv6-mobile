@@ -44,6 +44,7 @@ typedef struct _session_endpoint_cfg
   u8 original_tp;
   u8 *hostname;
   u64 parent_handle;
+  u32 ckpair_index;
 } session_endpoint_cfg_t;
 
 #define SESSION_IP46_ZERO			\
@@ -83,7 +84,8 @@ typedef struct _session_endpoint_cfg
   .app_wrk_index = ENDPOINT_INVALID_INDEX,	\
   .opaque = ENDPOINT_INVALID_INDEX,		\
   .hostname = 0,				\
-  .parent_handle = SESSION_INVALID_HANDLE	\
+  .parent_handle = SESSION_INVALID_HANDLE,	\
+  .ckpair_index = 0				\
 }
 
 #define session_endpoint_to_transport(_sep) ((transport_endpoint_t *)_sep)
@@ -148,6 +150,7 @@ typedef enum session_flags_
   SESSION_F_RX_EVT = 1,
   SESSION_F_PROXY = (1 << 1),
   SESSION_F_CUSTOM_TX = (1 << 2),
+  SESSION_F_IS_MIGRATING = (1 << 3),
 } session_flags_t;
 
 typedef struct session_
