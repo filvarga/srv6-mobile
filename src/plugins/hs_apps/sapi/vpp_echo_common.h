@@ -39,12 +39,15 @@
 
 #define foreach_echo_fail_code                                          \
   _(ECHO_FAIL_NONE, "ECHO_FAIL_NONE")                                   \
+  _(ECHO_FAIL_USAGE, "ECHO_FAIL_USAGE")                                 \
   _(ECHO_FAIL_SEND_IO_EVT, "ECHO_FAIL_SEND_IO_EVT")                     \
   _(ECHO_FAIL_SOCKET_CONNECT, "ECHO_FAIL_SOCKET_CONNECT")               \
   _(ECHO_FAIL_INIT_SHM_API, "ECHO_FAIL_INIT_SHM_API")                   \
   _(ECHO_FAIL_SHMEM_CONNECT, "ECHO_FAIL_SHMEM_CONNECT")                 \
   _(ECHO_FAIL_TEST_BYTES_ERR, "ECHO_FAIL_TEST_BYTES_ERR")               \
   _(ECHO_FAIL_BIND, "ECHO_FAIL_BIND")                                   \
+  _(ECHO_FAIL_SESSION_ACCEPTED_BAD_LISTENER,                            \
+    "ECHO_FAIL_SESSION_ACCEPTED_BAD_LISTENER")                          \
   _(ECHO_FAIL_ACCEPTED_WAIT_FOR_SEG_ALLOC,                              \
     "ECHO_FAIL_ACCEPTED_WAIT_FOR_SEG_ALLOC")                            \
   _(ECHO_FAIL_SESSION_CONNECT, "ECHO_FAIL_SESSION_CONNECT")             \
@@ -65,6 +68,7 @@
   _(ECHO_FAIL_VL_API_APP_ATTACH, "ECHO_FAIL_VL_API_APP_ATTACH")         \
   _(ECHO_FAIL_VL_API_MISSING_SEGMENT_NAME,                              \
     "ECHO_FAIL_VL_API_MISSING_SEGMENT_NAME")                            \
+  _(ECHO_FAIL_VL_API_NULL_APP_MQ, "ECHO_FAIL_VL_API_NULL_APP_MQ")       \
   _(ECHO_FAIL_VL_API_RECV_FD_MSG, "ECHO_FAIL_VL_API_RECV_FD_MSG")       \
   _(ECHO_FAIL_VL_API_SVM_FIFO_SEG_ATTACH,                               \
     "ECHO_FAIL_VL_API_SVM_FIFO_SEG_ATTACH")                             \
@@ -73,8 +77,8 @@
   _(ECHO_FAIL_VL_API_DETACH_REPLY, "ECHO_FAIL_VL_API_DETACH_REPLY")     \
   _(ECHO_FAIL_VL_API_BIND_URI_REPLY, "ECHO_FAIL_VL_API_BIND_URI_REPLY") \
   _(ECHO_FAIL_VL_API_UNBIND_REPLY, "ECHO_FAIL_VL_API_UNBIND_REPLY")     \
-  _(ECHO_FAIL_VL_API_DISCONNECT_SESSION_REPLY,                          \
-    "ECHO_FAIL_VL_API_DISCONNECT_SESSION_REPLY")                        \
+  _(ECHO_FAIL_SESSION_DISCONNECT, "ECHO_FAIL_SESSION_DISCONNECT")       \
+  _(ECHO_FAIL_SESSION_RESET, "ECHO_FAIL_SESSION_RESET")                 \
   _(ECHO_FAIL_VL_API_TLS_CERT_ADD_REPLY,                                \
     "ECHO_FAIL_VL_API_TLS_CERT_ADD_REPLY")                              \
   _(ECHO_FAIL_VL_API_TLS_KEY_ADD_REPLY,                                 \
@@ -101,15 +105,24 @@ typedef enum
 
 extern char *echo_fail_code_str[];
 
-#define CHECK(fail, expected, result, _fmt, _args...)                   \
-    if (expected != result)                                             \
-      ECHO_FAIL (fail, "expected %d, got %d : " _fmt, expected,         \
-                 result, ##_args);                                      \
+#define CHECK_SAME(fail, expected, result, _fmt, _args...)      \
+do {                                                            \
+  if ((expected) != (result))                                   \
+    ECHO_FAIL ((fail), "expected same (%d, got %d) : "_fmt,     \
+               (expected), (result), ##_args);                  \
+} while (0)
+
+#define CHECK_DIFF(fail, expected, result, _fmt, _args...)      \
+do {                                                            \
+  if ((expected) == (result))                                   \
+    ECHO_FAIL ((fail), "expected different (both %d) : "_fmt,   \
+               (expected), ##_args);                            \
+} while (0)
 
 #define ECHO_FAIL(fail, _fmt, _args...)                                 \
-  {                                                                     \
+do {                                                                    \
     echo_main_t *em = &echo_main;                                       \
-    em->has_failed = fail;                                              \
+    em->has_failed = (fail);                                            \
     if (vec_len(em->fail_descr))                                        \
       em->fail_descr = format(em->fail_descr, " | %s (%d): "_fmt,       \
                               echo_fail_code_str[fail], fail, ##_args); \
@@ -119,7 +132,7 @@ extern char *echo_fail_code_str[];
     em->time_to_stop = 1;                                               \
     if (em->log_lvl > 0)                                                \
       clib_warning ("%v", em->fail_descr);                              \
-  }
+} while (0)
 
 #define ECHO_LOG(lvl, _fmt,_args...)    \
   {                                     \
@@ -189,6 +202,8 @@ enum quic_session_state_t
 typedef enum
 {
   STATE_START,
+  STATE_ATTACHED_NO_CERT,
+  STATE_ATTACHED_ONE_CERT,
   STATE_ATTACHED,
   STATE_LISTEN,
   STATE_READY,
@@ -221,7 +236,7 @@ typedef struct echo_proto_cb_vft_
   void (*bound_uri_cb) (session_bound_msg_t * mp, echo_session_t * session);	/* Session got bound */
   void (*reset_cb) (session_reset_msg_t * mp, echo_session_t * s);	/* Received RESET on session */
   void (*disconnected_cb) (session_disconnected_msg_t * mp, echo_session_t * s);	/* Received DISCONNECT on session */
-  void (*disconnected_reply_cb) (echo_session_t * s);	/* ACK disconnect we sent to vpp */
+  void (*sent_disconnect_cb) (echo_session_t * s);	/* ACK disconnect we sent to vpp */
   void (*cleanup_cb) (echo_session_t * s, u8 parent_died);	/* Session should be cleaned up (parent listener may be dead) */
   /* Add CLI options */
   int (*process_opts_cb) (unformat_input_t * a);
@@ -249,7 +264,8 @@ typedef struct
   u32 my_client_index;		/* API client handle */
   u8 *uri;			/* The URI we're playing with */
   echo_session_t *sessions;	/* Session pool */
-  svm_msg_q_t *our_event_queue;	/* Our event queue */
+  svm_msg_q_t *app_mq;		/* Our receiveing event queue */
+  svm_msg_q_t *ctrl_mq;		/* Our control queue (towards vpp) */
   clib_time_t clib_time;	/* For deadman timers */
   u8 *socket_name;
   int i_am_master;
@@ -267,6 +283,8 @@ typedef struct
   /* State of the connection, shared between msg RX thread and main thread */
   volatile connection_state_t state;
   volatile u8 time_to_stop;	/* Signal variables */
+  u8 rx_results_diff;		/* Rx results will be different than cfg */
+  u8 tx_results_diff;		/* Tx results will be different than cfg */
   u8 has_failed;		/* stores the exit code */
   u8 *fail_descr;		/* vector containing fail description */
 
@@ -289,6 +307,7 @@ typedef struct
   u8 log_lvl;			/* Verbosity of the logging */
   int max_test_msg;		/* Limit the number of incorrect data messages */
   u32 evt_q_size;		/* Size of the vpp MQ (app<->vpp events) */
+  u32 crypto_ctx_engine;	/* crypto engine used */
 
   u8 *appns_id;
   u64 appns_flags;
@@ -355,6 +374,9 @@ u8 *format_ip46_address (u8 * s, va_list * args);
 uword unformat_data (unformat_input_t * input, va_list * args);
 u8 *format_api_error (u8 * s, va_list * args);
 void init_error_string_table ();
+u8 *echo_format_session (u8 * s, va_list * args);
+u8 *echo_format_session_type (u8 * s, va_list * args);
+u8 *echo_format_session_state (u8 * s, va_list * args);
 u8 *echo_format_app_state (u8 * s, va_list * args);
 uword echo_unformat_close (unformat_input_t * input, va_list * args);
 uword echo_unformat_timing_event (unformat_input_t * input, va_list * args);
@@ -373,16 +395,19 @@ int wait_for_state_change (echo_main_t * em, connection_state_t state,
 			   f64 timeout);
 void echo_notify_event (echo_main_t * em, echo_test_evt_t e);
 void echo_session_print_stats (echo_main_t * em, echo_session_t * session);
+u8 *echo_format_crypto_engine (u8 * s, va_list * args);
+uword echo_unformat_crypto_engine (unformat_input_t * input, va_list * args);
 
 /* Binary API */
 
 void echo_send_attach (echo_main_t * em);
 void echo_send_detach (echo_main_t * em);
 void echo_send_listen (echo_main_t * em);
-void echo_send_unbind (echo_main_t * em);
-void echo_send_connect (u8 * uri, u32 opaque);
+void echo_send_unbind (echo_main_t * em, echo_session_t * s);
+void echo_send_connect (u64 vpp_session_handle, u32 opaque);
 void echo_send_disconnect_session (u64 handle, u32 opaque);
 void echo_api_hookup (echo_main_t * em);
+void echo_send_add_crypto_ctx (echo_main_t * em);
 
 #endif /* __included_vpp_echo_common_h__ */
 

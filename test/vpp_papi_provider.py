@@ -46,14 +46,6 @@ defaultmapping = {
                                'nbuckets': 2, 'memory_size': 2097152,
                                'next_table_index': 4294967295,
                                'miss_next_index': 4294967295, },
-    'dhcp6_client_enable_disable': {'enable': 1, },
-    'dhcp6_clients_enable_disable': {'enable': 1, },
-    'dhcp6_pd_client_enable_disable': {'enable': 1, },
-    'dhcp6_send_client_message': {'server_index': 4294967295, 'mrc': 1, },
-    'dhcp6_pd_send_client_message': {'server_index': 0xFFFFFFFF, 'mrc': 1},
-    'dhcp_client_config': {'is_add': 1, 'client': {'set_broadcast_flag': 1}, },
-    'dhcp_proxy_config': {'is_add': 1, },
-    'dhcp_proxy_set_vss': {'vss_type': 255, 'is_add': 1, },
     'gbp_subnet_add_del': {'sw_if_index': 4294967295, 'epg_id': 65535, },
     'geneve_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
                               'decap_next_index': 4294967295, },
@@ -140,16 +132,12 @@ defaultmapping = {
     'vxlan_gpe_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
                                  'protocol': 3, },
     'want_bfd_events': {'enable_disable': 1, },
-    'want_dhcp6_pd_reply_events': {'enable_disable': 1, },
-    'want_dhcp6_reply_events': {'enable_disable': 1, },
     'want_igmp_events': {'enable': 1, },
     'want_interface_events': {'enable_disable': 1, },
     'want_ip4_arp_events': {'enable_disable': 1, 'ip': '0.0.0.0', },
     'want_ip6_nd_events': {'enable_disable': 1, 'ip': '::', },
     'want_ip6_ra_events': {'enable_disable': 1, },
     'want_l2_macs_events': {'enable_disable': 1, },
-    'want_dhcp6_reply_events': {'enable_disable': 1, 'pid': os.getpid(), },
-    'want_dhcp6_pd_reply_events': {'enable_disable': 1, 'pid': os.getpid(), },
 }
 
 
@@ -370,7 +358,8 @@ class VppPapiProvider(object):
         :param cli: CLI to execute
         :returns: CLI output
         """
-        return cli + "\n" + str(self.cli(cli))
+        return cli + "\n" + self.cli(cli).encode('ascii',
+                                                 errors='backslashreplace')
 
     def want_ip4_arp_events(self, enable_disable=1, ip="0.0.0.0"):
         return self.api(self.papi.want_ip4_arp_events,
@@ -411,16 +400,6 @@ class VppPapiProvider(object):
                          'max_macs_in_event': max_macs_in_event,
                          'learn_limit': learn_limit,
                          'pid': os.getpid(), })
-
-    def ip6_add_del_address_using_prefix(self, sw_if_index, address,
-                                         prefix_length, prefix_group,
-                                         is_add=1):
-        return self.api(self.papi.ip6_add_del_address_using_prefix,
-                        {'sw_if_index': sw_if_index,
-                         'prefix_group': prefix_group,
-                         'address': address,
-                         'prefix_length': prefix_length,
-                         'is_add': is_add})
 
     def sw_interface_set_mac_address(self, sw_if_index, mac):
         return self.api(self.papi.sw_interface_set_mac_address,
