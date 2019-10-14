@@ -2137,6 +2137,7 @@ sr_policy_rewrite_encaps_v4 (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  u8 *teidp0 = NULL;
           u8 qfi0 = 0;
 	  u8 *qfip0 = NULL;
+	  u8 type0 = 0;
 	  u32 offset, shift;
 	  u32 index;
 
@@ -2182,6 +2183,8 @@ sr_policy_rewrite_encaps_v4 (vlib_main_t * vm, vlib_node_runtime_t * node,
                       sess0 = (gtpu_pdu_session_t *)(((char *)hdr0) + hdr_len0);
                       qfi0 = sess0->u.val & ~GTPU_PDU_SESSION_P_BIT_MASK;
                       qfip0 = (u8 *)&qfi0;
+
+		      type0 = sess0->type;
 
                       hdr_len0 += sizeof(gtpu_pdu_session_t);
 
@@ -2232,7 +2235,7 @@ sr_policy_rewrite_encaps_v4 (vlib_main_t * vm, vlib_node_runtime_t * node,
                   {
                     qfi0 = ((qfi0 & GTPU_PDU_SESSION_QFI_MASK) << 2) | ((qfi0 & GTPU_PDU_SESSION_R_BIT_MASK) >> 5);
 
-                    if (sess0->type)
+                    if (type0)
                       {
                         qfi0 |= SRV6_PDU_SESSION_U_BIT_MASK;
                       }
@@ -2253,7 +2256,7 @@ sr_policy_rewrite_encaps_v4 (vlib_main_t * vm, vlib_node_runtime_t * node,
                   {
                     qfi0 = ((qfi0 & GTPU_PDU_SESSION_QFI_MASK) << 2) | ((qfi0 & GTPU_PDU_SESSION_R_BIT_MASK) >> 5);
 
-                    if (sess0->type)
+                    if (type0)
                       {
                         qfi0 |= SRV6_PDU_SESSION_U_BIT_MASK;
                       }
