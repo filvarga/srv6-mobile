@@ -239,7 +239,7 @@ class Containers(object):
                 {'vpp_path': vpp_path})
 
         ref, _ = self.client.images.build(path=vpp_path,
-                    tag="ietf106-release-image", rm=True)
+                    tag="srv6m-release-image", rm=True)
         return ref
 
     def new(self, name):
@@ -307,7 +307,7 @@ class Networks(object):
 
 class Program(object):
 
-    image = "ietf106-image"
+    image = "srv6m-image"
 
     name_prefix = "hck"
 
@@ -1783,9 +1783,9 @@ def main(op=None, prefix=None, verbose=None, image=None, index=None, command=Non
         basicConfig(level=verbose_levels[verbose])
 
     if image == 'release':
-        image="ietf106-release-image"
+        image="srv6m-release-image"
     elif image == 'debug':
-        image="ietf106-image"
+        image="srv6m-image"
 
     print("Verified image: {}".format(image))
 
