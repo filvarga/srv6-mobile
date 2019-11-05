@@ -629,9 +629,7 @@ tcp_handle_postponed_dequeues (tcp_worker_ctx_t * wrk)
        * we're in recovery and snd space constrained */
       if (tc->data_segs_out == tc->prev_dsegs_out
 	  || tcp_recovery_no_snd_space (tc))
-	transport_connection_tx_pacer_reset_bucket (&tc->connection,
-						    wrk->vm->clib_time.
-						    last_cpu_time);
+	transport_connection_tx_pacer_reset_bucket (&tc->connection);
       tc->prev_dsegs_out = tc->data_segs_out;
     }
   _vec_len (wrk->pending_deq_acked) = 0;
@@ -2291,6 +2289,7 @@ tcp_lookup_is_valid (tcp_connection_t * tc, tcp_header_t * hdr)
 	      && tmp->rmt_port == hdr->src_port)
 	    {
 	      TCP_DBG ("half-open is valid!");
+	      is_valid = 1;
 	    }
 	}
     }
