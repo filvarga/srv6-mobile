@@ -276,14 +276,12 @@ quic_connection_closed (quic_ctx_t * ctx)
       break;
     case QUIC_CONN_STATE_PASSIVE_CLOSING_APP_CLOSED:
       /* App already confirmed close, we can delete the connection */
-      session_transport_delete_notify (&ctx->connection);
       quic_connection_delete (ctx);
       break;
     case QUIC_CONN_STATE_PASSIVE_CLOSING_QUIC_CLOSED:
       QUIC_DBG (0, "BUG");
       break;
     case QUIC_CONN_STATE_ACTIVE_CLOSING:
-      session_transport_delete_notify (&ctx->connection);
       quic_connection_delete (ctx);
       break;
     default:
@@ -501,13 +499,25 @@ quic_on_receive (quicly_stream_t * stream, size_t off, const void *src,
   QUIC_DBG (3, "Enqueuing %u at off %u in %u space", len, off, max_enq);
   if (off - stream_data->app_rx_data_len + len > max_enq)
     {
-      QUIC_DBG (1, "Error RX fifo is full");
+      QUIC_ERR ("Session [idx %u, app_wrk %u, thread %u, rx-fifo 0x%llx]: "
+		"RX fifo is full (max_enq %u, len %u, "
+		"app_rx_data_len %u, off %u, ToBeNQ %u)",
+		stream_session->session_index,
+		stream_session->app_wrk_index,
+		stream_session->thread_index, f,
+		max_enq, len, stream_data->app_rx_data_len, off,
+		off - stream_data->app_rx_data_len + len);
       return 1;
     }
   if (off == stream_data->app_rx_data_len)
     {
       /* Streams live on the same thread so (f, stream_data) should stay consistent */
       rlen = svm_fifo_enqueue (f, len, (u8 *) src);
+      QUIC_DBG (3, "Session [idx %u, app_wrk %u, ti %u, rx-fifo 0x%llx]: "
+		"Enqueuing %u (rlen %u) at off %u in %u space, ",
+		stream_session->session_index,
+		stream_session->app_wrk_index,
+		stream_session->thread_index, f, len, rlen, off, max_enq);
       stream_data->app_rx_data_len += rlen;
       ASSERT (rlen >= len);
       app_wrk = app_worker_get_if_valid (stream_session->app_wrk_index);
@@ -1872,20 +1882,20 @@ quic_process_one_rx_packet (u64 udp_session_handle, svm_fifo_t * f,
 
   if (cur_deq < SESSION_CONN_HDR_LEN)
     {
-      QUIC_DBG (1, "Not enough data for even a header in RX");
+      QUIC_ERR ("Not enough data for even a header in RX");
       return 1;
     }
   ret = svm_fifo_peek (f, *fifo_offset, SESSION_CONN_HDR_LEN, (u8 *) & ph);
   if (ret != SESSION_CONN_HDR_LEN)
     {
-      QUIC_DBG (1, "Not enough data for header in RX");
+      QUIC_ERR ("Not enough data for header in RX");
       return 1;
     }
   ASSERT (ph.data_offset == 0);
   full_len = ph.data_length + SESSION_CONN_HDR_LEN;
   if (full_len > cur_deq)
     {
-      QUIC_DBG (1, "Not enough data in fifo RX");
+      QUIC_ERR ("Not enough data in fifo RX");
       return 1;
     }
 
@@ -1895,7 +1905,7 @@ quic_process_one_rx_packet (u64 udp_session_handle, svm_fifo_t * f,
 		       ph.data_length, packet_ctx->data);
   if (ret != ph.data_length)
     {
-      QUIC_DBG (1, "Not enough data peeked in RX");
+      QUIC_ERR ("Not enough data peeked in RX");
       return 1;
     }
 
@@ -1920,7 +1930,7 @@ quic_process_one_rx_packet (u64 udp_session_handle, svm_fifo_t * f,
       ctx = quic_ctx_get (packet_ctx->ctx_index, thread_index);
       rv = quicly_receive (ctx->conn, NULL, sa, &packet_ctx->packet);
       if (rv)
-	QUIC_DBG (1, "quicly_receive return error %d", rv);
+	QUIC_ERR ("quicly_receive return error %d", rv);
     }
   else if (packet_ctx->ctx_index != UINT32_MAX)
     {
@@ -1950,6 +1960,7 @@ quic_process_one_rx_packet (u64 udp_session_handle, svm_fifo_t * f,
 	  }
       }));
       /* *INDENT-ON* */
+      QUIC_ERR ("Opening ctx not found!");;
     }
   else
     {
@@ -2205,15 +2216,25 @@ quic_plugin_set_fifo_size_command_fn (vlib_main_t * vm,
 				      unformat_input_t * input,
 				      vlib_cli_command_t * cmd)
 {
+  quic_main_t *qm = &quic_main;
   unformat_input_t _line_input, *line_input = &_line_input;
+  uword tmp;
+
   if (!unformat_user (input, unformat_line_input, line_input))
     return 0;
 
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
     {
-      if (unformat
-	  (line_input, "%U", unformat_data_size, &quic_main.udp_fifo_size))
-	quic_update_fifo_size ();
+      if (unformat (line_input, "%U", unformat_memory_size, &tmp))
+	{
+	  if (tmp >= 0x100000000ULL)
+	    {
+	      return clib_error_return
+		(0, "fifo-size %llu (0x%llx) too large", tmp, tmp);
+	    }
+	  qm->udp_fifo_size = tmp;
+	  quic_update_fifo_size ();
+	}
       else
 	return clib_error_return (0, "unknown input '%U'",
 				  format_unformat_error, line_input);
@@ -2273,7 +2294,7 @@ VLIB_CLI_COMMAND (quic_plugin_crypto_command, static) =
 VLIB_CLI_COMMAND(quic_plugin_set_fifo_size_command, static)=
 {
   .path = "quic set fifo-size",
-  .short_help = "quic set fifo-size N[Kb|Mb|GB] (default 64K)",
+  .short_help = "quic set fifo-size N[K|M|G] (default 64K)",
   .function = quic_plugin_set_fifo_size_command_fn,
 };
 VLIB_CLI_COMMAND(quic_plugin_stats_command, static)=
@@ -2293,15 +2314,22 @@ VLIB_PLUGIN_REGISTER () =
 static clib_error_t *
 quic_config_fn (vlib_main_t * vm, unformat_input_t * input)
 {
-  quic_main.udp_fifo_size = QUIC_DEFAULT_FIFO_SIZE;
-  quic_main.udp_fifo_prealloc = 0;
+  quic_main_t *qm = &quic_main;
+  uword tmp;
 
+  qm->udp_fifo_size = QUIC_DEFAULT_FIFO_SIZE;
+  qm->udp_fifo_prealloc = 0;
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
-      if (unformat
-	  (input, "fifo-size %U", unformat_data_size,
-	   &quic_main.udp_fifo_size))
-	;
+      if (unformat (input, "fifo-size %U", unformat_memory_size, &tmp))
+	{
+	  if (tmp >= 0x100000000ULL)
+	    {
+	      return clib_error_return
+		(0, "fifo-size %llu (0x%llx) too large", tmp, tmp);
+	    }
+	  qm->udp_fifo_size = tmp;
+	}
       else
 	if (unformat
 	    (input, "fifo-prealloc %u", &quic_main.udp_fifo_prealloc))
