@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import unittest
 import socket
@@ -251,6 +251,7 @@ class TestDHCP(VppTestCase):
         self.verify_dhcp_has_option(pkt, "hostname",
                                     hostname.encode('ascii'))
         if client_id:
+            client_id = '\x00' + client_id
             self.verify_dhcp_has_option(pkt, "client_id",
                                         client_id.encode('ascii'))
         bootp = pkt[BOOTP]

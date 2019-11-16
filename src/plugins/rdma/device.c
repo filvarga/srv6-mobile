@@ -632,8 +632,12 @@ rdma_create_if (vlib_main_t * vm, rdma_create_if_args_t * args)
   pool_get_zero (rm->devices, rd);
   rd->dev_instance = rd - rm->devices;
   rd->per_interface_next_index = VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT;
-  rd->name = format (0, "%s", args->name);
   rd->linux_ifname = format (0, "%s", args->ifname);
+
+  if (!args->name || 0 == args->name[0])
+    rd->name = format (0, "%s/%d", args->ifname, rd->dev_instance);
+  else
+    rd->name = format (0, "%s", args->name);
 
   rd->pci = vlib_pci_get_device_info (vm, &pci_addr, &args->error);
   if (!rd->pci)
@@ -749,15 +753,9 @@ rdma_set_interface_next_node (vnet_main_t * vnm, u32 hw_if_index,
   rdma_main_t *rm = &rdma_main;
   vnet_hw_interface_t *hw = vnet_get_hw_interface (vnm, hw_if_index);
   rdma_device_t *rd = pool_elt_at_index (rm->devices, hw->dev_instance);
-
-  /* Shut off redirection */
-  if (node_index == ~0)
-    {
-      rd->per_interface_next_index = node_index;
-      return;
-    }
-
   rd->per_interface_next_index =
+    ~0 ==
+    node_index ? VNET_DEVICE_INPUT_NEXT_ETHERNET_INPUT :
     vlib_node_add_next (vlib_get_main (), rdma_input_node.index, node_index);
 }
 
