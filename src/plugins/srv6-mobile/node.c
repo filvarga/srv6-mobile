@@ -207,7 +207,7 @@ hash_uword_to_u16 (uword *key)
   u16 *val;
   val = (u16 *)key;
 #if uword_bits == 64
-  return val[0] ^ val[1] ^ val[3] ^ val[4];
+  return val[0] ^ val[1] ^ val[2] ^ val[3];
 #else
   return val[0] ^ val[1];
 #endif
