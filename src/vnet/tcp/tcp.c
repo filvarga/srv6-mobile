@@ -360,6 +360,7 @@ tcp_connection_reset (tcp_connection_t * tc)
        * cleanly close the connection */
       tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
       session_transport_reset_notify (&tc->connection);
+      tcp_cong_recovery_off (tc);
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
       session_transport_closed_notify (&tc->connection);
       break;
@@ -370,6 +371,7 @@ tcp_connection_reset (tcp_connection_t * tc)
     case TCP_STATE_LAST_ACK:
       tcp_connection_timers_reset (tc);
       tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
+      tcp_cong_recovery_off (tc);
       /* Make sure we mark the session as closed. In some states we may
        * be still trying to send data */
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
@@ -489,6 +491,7 @@ tcp_session_reset (u32 conn_index, u32 thread_index)
   session_transport_closed_notify (&tc->connection);
   tcp_send_reset (tc);
   tcp_connection_timers_reset (tc);
+  tcp_cong_recovery_off (tc);
   tcp_connection_set_state (tc, TCP_STATE_CLOSED);
   tcp_timer_update (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
 }
@@ -1399,11 +1402,9 @@ void
 tcp_connection_tx_pacer_reset (tcp_connection_t * tc, u32 window,
 			       u32 start_bucket)
 {
-  tcp_worker_ctx_t *wrk = tcp_get_worker (tc->c_thread_index);
   f64 srtt = clib_min ((f64) tc->srtt * TCP_TICK, tc->mrtt_us);
-  u64 last_time = wrk->vm->clib_time.last_cpu_time;
-  transport_connection_tx_pacer_reset (&tc->connection, window / srtt,
-				       start_bucket, last_time);
+  u64 rate = (u64) window / srtt;
+  transport_connection_tx_pacer_reset (&tc->connection, rate, start_bucket);
 }
 
 static void

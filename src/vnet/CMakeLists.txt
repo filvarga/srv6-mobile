@@ -453,6 +453,7 @@ list(APPEND VNET_SOURCES
   ip/ip_init.c
   ip/ip_in_out_acl.c
   ip/ip_punt_drop.c
+  ip/ip_types.c
   ip/lookup.c
   ip/punt_api.c
   ip/punt.c
@@ -495,6 +496,7 @@ list(APPEND VNET_HEADERS
   ip/ip_packet.h
   ip/ip_source_and_port_range_check.h
   ip/ip_neighbor.h
+  ip/ip_types.h
   ip/lookup.h
   ip/ports.def
   ip/protocols.def
@@ -570,8 +572,6 @@ list(APPEND VNET_SOURCES
   ipsec/ipsec_cli.c
   ipsec/ipsec_format.c
   ipsec/ipsec_input.c
-  ipsec/ipsec_if.c
-  ipsec/ipsec_if_in.c
   ipsec/ipsec_punt.c
   ipsec/ipsec_sa.c
   ipsec/ipsec_spd.c
@@ -591,7 +591,6 @@ list(APPEND VNET_MULTIARCH_SOURCES
   ipsec/esp_decrypt.c
   ipsec/ah_decrypt.c
   ipsec/ah_encrypt.c
-  ipsec/ipsec_if_in.c
   ipsec/ipsec_output.c
   ipsec/ipsec_input.c
   ipsec/ipsec_tun_in.c
@@ -608,7 +607,7 @@ list(APPEND VNET_HEADERS
   ipsec/ipsec_spd.h
   ipsec/ipsec_spd_policy.h
   ipsec/ipsec_sa.h
-  ipsec/ipsec_if.h
+  ipsec/ipsec_tun.h
   ipsec/ipsec_punt.h
   ipsec/esp.h
   ipsec/ah.h
@@ -1033,16 +1032,17 @@ list(APPEND VNET_API_FILES pg/pg.api)
 ##############################################################################
 
 list(APPEND VNET_SOURCES
+  devices/virtio/cli.c
   devices/virtio/device.c
+  devices/virtio/format.c
   devices/virtio/node.c
+  devices/virtio/pci.c
   devices/virtio/vhost_user.c
   devices/virtio/vhost_user_input.c
   devices/virtio/vhost_user_output.c
   devices/virtio/vhost_user_api.c
   devices/virtio/virtio.c
   devices/virtio/virtio_api.c
-  devices/virtio/cli.c
-  devices/virtio/pci.c
 )
 
 list(APPEND VNET_HEADERS

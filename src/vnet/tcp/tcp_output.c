@@ -842,8 +842,10 @@ tcp_send_reset_w_pkt (tcp_connection_t * tc, vlib_buffer_t * pkt,
       int bogus = ~0;
       ASSERT ((pkt_ih6->ip_version_traffic_class_and_flow_label & 0xF0) ==
 	      0x60);
-      ih6 = vlib_buffer_push_ip6 (vm, b, &pkt_ih6->dst_address,
-				  &pkt_ih6->src_address, IP_PROTOCOL_TCP);
+      ih6 = vlib_buffer_push_ip6_custom (vm, b, &pkt_ih6->dst_address,
+					 &pkt_ih6->src_address,
+					 IP_PROTOCOL_TCP,
+					 tc->ipv6_flow_label);
       th->checksum = ip6_tcp_udp_icmp_compute_checksum (vm, b, ih6, &bogus);
       ASSERT (!bogus);
     }
@@ -909,8 +911,9 @@ tcp_push_ip_hdr (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
       ip6_header_t *ih;
       int bogus = ~0;
 
-      ih = vlib_buffer_push_ip6 (vm, b, &tc->c_lcl_ip6,
-				 &tc->c_rmt_ip6, IP_PROTOCOL_TCP);
+      ih = vlib_buffer_push_ip6_custom (vm, b, &tc->c_lcl_ip6,
+					&tc->c_rmt_ip6, IP_PROTOCOL_TCP,
+					tc->ipv6_flow_label);
       th->checksum = ip6_tcp_udp_icmp_compute_checksum (vm, b, ih, &bogus);
       ASSERT (!bogus);
     }
@@ -1847,6 +1850,9 @@ tcp_retransmit_should_retry_head (tcp_connection_t * tc,
   u32 tx_adv_sack = sb->high_sacked - tc->snd_congestion;
   f64 rr = (f64) tc->ssthresh / tc->prev_cwnd;
 
+  if (tcp_fastrecovery_first (tc))
+    return 1;
+
   return (tx_adv_sack > (tc->snd_una - tc->prr_start) * rr);
 }
 
@@ -1876,13 +1882,10 @@ tcp_retransmit_sack (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
   vlib_buffer_t *b = 0;
   sack_scoreboard_t *sb;
   int snd_space;
-  u64 time_now;
 
   ASSERT (tcp_in_cong_recovery (tc));
 
-  time_now = wrk->vm->clib_time.last_cpu_time;
-  burst_bytes = transport_connection_tx_pacer_burst (&tc->connection,
-						     time_now);
+  burst_bytes = transport_connection_tx_pacer_burst (&tc->connection);
   burst_size = clib_min (burst_size, burst_bytes / tc->snd_mss);
   if (!burst_size)
     {
@@ -1911,8 +1914,8 @@ tcp_retransmit_sack (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
       && tc->rxt_head != tc->snd_una
       && tcp_retransmit_should_retry_head (tc, sb))
     {
-      n_written = tcp_prepare_retransmit_segment (wrk, tc, 0, tc->snd_mss,
-						  &b);
+      max_bytes = clib_min (tc->snd_mss, tc->snd_congestion - tc->snd_una);
+      n_written = tcp_prepare_retransmit_segment (wrk, tc, 0, max_bytes, &b);
       if (!n_written)
 	{
 	  tcp_program_retransmit (tc);
@@ -1927,6 +1930,8 @@ tcp_retransmit_sack (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
       tc->prr_delivered += n_written;
       ASSERT (tc->rxt_delivered <= tc->snd_rxt_bytes);
     }
+
+  tcp_fastrecovery_first_off (tc);
 
   TCP_EVT (TCP_EVT_CC_EVT, tc, 0);
   hole = scoreboard_get_hole (sb, sb->cur_rxt_hole);
@@ -2017,9 +2022,7 @@ done:
 
   if (reset_pacer)
     {
-      transport_connection_tx_pacer_reset_bucket (&tc->connection,
-						  vm->clib_time.
-						  last_cpu_time);
+      transport_connection_tx_pacer_reset_bucket (&tc->connection);
     }
   else
     {
@@ -2038,20 +2041,17 @@ static int
 tcp_retransmit_no_sack (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
 			u32 burst_size)
 {
-  u32 n_written = 0, offset = 0, bi, max_deq, n_segs_now;
+  u32 n_written = 0, offset = 0, bi, max_deq, n_segs_now, max_bytes;
   u32 burst_bytes, sent_bytes;
   vlib_main_t *vm = wrk->vm;
   int snd_space, n_segs = 0;
   u8 cc_limited = 0;
   vlib_buffer_t *b;
-  u64 time_now;
 
-  ASSERT (tcp_in_fastrecovery (tc));
+  ASSERT (tcp_in_cong_recovery (tc));
   TCP_EVT (TCP_EVT_CC_EVT, tc, 0);
 
-  time_now = wrk->vm->clib_time.last_cpu_time;
-  burst_bytes = transport_connection_tx_pacer_burst (&tc->connection,
-						     time_now);
+  burst_bytes = transport_connection_tx_pacer_burst (&tc->connection);
   burst_size = clib_min (burst_size, burst_bytes / tc->snd_mss);
   if (!burst_size)
     {
@@ -2069,8 +2069,12 @@ tcp_retransmit_no_sack (tcp_worker_ctx_t * wrk, tcp_connection_t * tc,
    * segment. */
   while (snd_space > 0 && n_segs < burst_size)
     {
-      n_written = tcp_prepare_retransmit_segment (wrk, tc, offset,
-						  tc->snd_mss, &b);
+      max_bytes = clib_min (tc->snd_mss,
+			    tc->snd_congestion - tc->snd_una - offset);
+      if (!max_bytes)
+	break;
+      n_written = tcp_prepare_retransmit_segment (wrk, tc, offset, max_bytes,
+						  &b);
 
       /* Nothing left to retransmit */
       if (n_written == 0)
@@ -2099,7 +2103,7 @@ send_unsent:
       snd_space = clib_min (max_deq, snd_space);
       burst_size = clib_min (burst_size - n_segs, snd_space / tc->snd_mss);
       n_segs_now = tcp_transmit_unsent (wrk, tc, burst_size);
-      if (max_deq > n_segs_now * tc->snd_mss)
+      if (n_segs_now && max_deq > n_segs_now * tc->snd_mss)
 	tcp_program_retransmit (tc);
       n_segs += n_segs_now;
     }
@@ -2173,6 +2177,9 @@ tcp_do_retransmit (tcp_connection_t * tc, u32 max_burst_size)
 {
   tcp_worker_ctx_t *wrk;
   u32 n_segs;
+
+  if (PREDICT_FALSE (tc->state == TCP_STATE_CLOSED))
+    return 0;
 
   wrk = tcp_get_worker (tc->c_thread_index);
 
@@ -2286,8 +2293,9 @@ tcp_output_push_ip (vlib_main_t * vm, vlib_buffer_t * b0,
     ih0 = vlib_buffer_push_ip4 (vm, b0, &tc0->c_lcl_ip4, &tc0->c_rmt_ip4,
 				IP_PROTOCOL_TCP, tcp_csum_offload (tc0));
   else
-    ih0 = vlib_buffer_push_ip6 (vm, b0, &tc0->c_lcl_ip6, &tc0->c_rmt_ip6,
-				IP_PROTOCOL_TCP);
+    ih0 =
+      vlib_buffer_push_ip6_custom (vm, b0, &tc0->c_lcl_ip6, &tc0->c_rmt_ip6,
+				   IP_PROTOCOL_TCP, tc0->ipv6_flow_label);
 
 }
 

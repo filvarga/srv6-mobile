@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import abc
 import six
@@ -187,6 +187,26 @@ class TestLisp(VppTestCase):
         ]
         self.test_driver = SimpleDriver(self, test_cases)
         self.test_driver.run(self.deid_ip4)
+
+
+class TestLispUT(VppTestCase):
+    """ Lisp UT """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestLispUT, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestLispUT, cls).tearDownClass()
+
+    def test_fib(self):
+        """ LISP Unit Tests """
+        error = self.vapi.cli("test lisp cp")
+
+        if error:
+            self.logger.critical(error)
+        self.assertNotIn("Failed", error)
 
 
 if __name__ == '__main__':

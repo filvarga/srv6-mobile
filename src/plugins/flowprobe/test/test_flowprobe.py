@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import print_function
 import binascii
 import random
@@ -417,7 +417,7 @@ class Flowprobe(MethodHolder):
                             src=self.pg7.remote_mac) /
                       IP(src=self.pg7.remote_ip4, dst="9.0.0.100") /
                       TCP(sport=1234, dport=4321, flags=80) /
-                      Raw('\xa5' * 100))]
+                      Raw(b'\xa5' * 100))]
 
         nowUTC = int(time.time())
         nowUNIX = nowUTC+2208988800
