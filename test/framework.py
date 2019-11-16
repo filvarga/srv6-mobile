@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from __future__ import print_function
 import gc
@@ -503,8 +503,9 @@ class VppTestCase(unittest.TestCase):
         """
         super(VppTestCase, cls).setUpClass()
         gc.collect()  # run garbage collection first
-        random.seed()
         cls.logger = get_logger(cls.__name__)
+        seed = os.environ["RND_SEED"]
+        random.seed(seed)
         if hasattr(cls, 'parallel_handler'):
             cls.logger.addHandler(cls.parallel_handler)
             cls.logger.propagate = False
@@ -525,6 +526,7 @@ class VppTestCase(unittest.TestCase):
         os.chdir(cls.tempdir)
         cls.logger.info("Temporary dir is %s, shm prefix is %s",
                         cls.tempdir, cls.shm_prefix)
+        cls.logger.debug("Random seed is %s" % seed)
         cls.setUpConstants()
         cls.reset_packet_infos()
         cls._captures = []
@@ -1577,12 +1579,12 @@ class Worker(Thread):
         self.logger.info("Executable `{app}' wrote to stdout:"
                          .format(app=self.app_name))
         self.logger.info(single_line_delim)
-        self.logger.info(out)
+        self.logger.info(out.decode('utf-8'))
         self.logger.info(single_line_delim)
         self.logger.info("Executable `{app}' wrote to stderr:"
                          .format(app=self.app_name))
         self.logger.info(single_line_delim)
-        self.logger.info(err)
+        self.logger.info(err.decode('utf-8'))
         self.logger.info(single_line_delim)
         self.result = self.process.returncode
 

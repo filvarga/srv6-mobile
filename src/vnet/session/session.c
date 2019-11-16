@@ -864,7 +864,8 @@ session_transport_delete_notify (transport_connection_t * tc)
       /* Session was created but accept notification was not yet sent to the
        * app. Cleanup everything. */
       session_lookup_del_session (s);
-      session_free_w_fifos (s);
+      segment_manager_dealloc_fifos (s->rx_fifo, s->tx_fifo);
+      session_free (s);
       break;
     case SESSION_STATE_ACCEPTING:
     case SESSION_STATE_TRANSPORT_CLOSING:
@@ -1493,6 +1494,7 @@ session_manager_main_enable (vlib_main_t * vm)
       wrk->old_head = clib_llist_make_head (wrk->event_elts, evt_list);
       wrk->vm = vlib_mains[i];
       wrk->last_vlib_time = vlib_time_now (vlib_mains[i]);
+      wrk->last_vlib_us_time = wrk->last_vlib_time * CLIB_US_TIME_FREQ;
 
       if (num_threads > 1)
 	clib_rwlock_init (&smm->wrk[i].peekers_rw_locks);
@@ -1536,7 +1538,6 @@ session_manager_main_enable (vlib_main_t * vm)
 
   /* Enable transports */
   transport_enable_disable (vm, 1);
-  transport_init_tx_pacers_period ();
   return 0;
 }
 
@@ -1608,10 +1609,25 @@ session_manager_main_init (vlib_main_t * vm)
   smm->evt_qs_segment_size = 1 << 20;
 #endif
   smm->is_enabled = 0;
+  smm->session_enable_asap = 0;
+  return 0;
+}
+
+static clib_error_t *
+session_main_init (vlib_main_t * vm)
+{
+  session_main_t *smm = &session_main;
+  if (smm->session_enable_asap)
+    {
+      vlib_worker_thread_barrier_sync (vm);
+      vnet_session_enable_disable (vm, 1 /* is_en */ );
+      vlib_worker_thread_barrier_release (vm);
+    }
   return 0;
 }
 
 VLIB_INIT_FUNCTION (session_manager_main_init);
+VLIB_MAIN_LOOP_ENTER_FUNCTION (session_main_init);
 
 static clib_error_t *
 session_config_fn (vlib_main_t * vm, unformat_input_t * input)
@@ -1693,7 +1709,7 @@ session_config_fn (vlib_main_t * vm, unformat_input_t * input)
 			 &smm->evt_qs_segment_size))
 	;
       else if (unformat (input, "enable"))
-	vnet_session_enable_disable (vm, 1 /* is_en */ );
+	smm->session_enable_asap = 1;
       else
 	return clib_error_return (0, "unknown input `%U'",
 				  format_unformat_error, input);

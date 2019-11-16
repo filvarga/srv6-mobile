@@ -154,9 +154,9 @@ print_global_json_stats (echo_main_t * em)
   fformat (stdout, "  \"closing\": {\n");
   fformat (stdout, "    \"reset\": { \"q\": %d, \"s\": %d },\n",
 	   em->stats.reset_count.q, em->stats.reset_count.s);
-  fformat (stdout, "    \"close\": { \"q\": %d, \"s\": %d },\n",
+  fformat (stdout, "    \"recv evt\": { \"q\": %d, \"s\": %d },\n",
 	   em->stats.close_count.q, em->stats.close_count.s);
-  fformat (stdout, "    \"active\": { \"q\": %d, \"s\": %d },\n",
+  fformat (stdout, "    \"send evt\": { \"q\": %d, \"s\": %d },\n",
 	   em->stats.active_count.q, em->stats.active_count.s);
   fformat (stdout, "    \"clean\": { \"q\": %d, \"s\": %d }\n",
 	   em->stats.clean_count.q, em->stats.clean_count.s);
@@ -844,17 +844,17 @@ print_usage_and_exit (void)
 	   "  socket-name PATH    Specify the binary socket path to connect to VPP\n"
 	   "  use-svm-api         Use SVM API to connect to VPP\n"
 	   "  test-bytes[:assert] Check data correctness when receiving (assert fails on first error)\n"
-	   "  fifo-size N         Use N Kb fifos\n"
+	   "  fifo-size N[K|M|G]  Use N[K|M|G] fifos\n"
 	   "  mq-size N           Use N event slots for vpp_echo <-> vpp events\n"
-	   "  rx-buf N[Kb|Mb|GB]  Use N[Kb|Mb|GB] RX buffer\n"
-	   "  tx-buf N[Kb|Mb|GB]  Use N[Kb|Mb|GB] TX test buffer\n"
+	   "  rx-buf N[K|M|G]     Use N[Kb|Mb|GB] RX buffer\n"
+	   "  tx-buf N[K|M|G]     Use N[Kb|Mb|GB] TX test buffer\n"
 	   "  appns NAMESPACE     Use the namespace NAMESPACE\n"
 	   "  all-scope           all-scope option\n"
 	   "  local-scope         local-scope option\n"
 	   "  global-scope        global-scope option\n"
 	   "  secret SECRET       set namespace secret\n"
 	   "  chroot prefix PATH  Use PATH as memory root path\n"
-	   "  sclose=[Y|N|W]      When a stream is done,    pass[N] send[Y] or wait[W] for close\n"
+	   "  sclose=[Y|N|W]      When stream is done, send[Y]|nop[N]|wait[W] for close\n"
 	   "\n"
 	   "  time START:END      Time between evts START & END, events being :\n"
 	   "                       start - Start of the app\n"
@@ -868,11 +868,12 @@ print_usage_and_exit (void)
 	   "  tx-results-diff     Tx results different to pass test\n"
 	   "  json                Output global stats in json\n"
 	   "  log=N               Set the log level to [0: no output, 1:errors, 2:log]\n"
+	   "  crypto [engine]     Set the crypto engine [openssl, vpp, picotls, mbedtls]\n"
 	   "\n"
 	   "  nclients N          Open N clients sending data\n"
 	   "  nthreads N          Use N busy loop threads for data [in addition to main & msg queue]\n"
-	   "  TX=1337[Kb|Mb|GB]   Send 1337 [K|M|G]bytes, use TX=RX to reflect the data\n"
-	   "  RX=1337[Kb|Mb|GB]   Expect 1337 [K|M|G]bytes\n" "\n");
+	   "  TX=1337[K|M|G]|RX   Send 1337 [K|M|G]bytes, use TX=RX to reflect the data\n"
+	   "  RX=1337[K|M|G]      Expect 1337 [K|M|G]bytes\n" "\n");
   for (i = 0; i < TRANSPORT_N_PROTO; i++)
     {
       echo_proto_cb_vft_t *vft = em->available_proto_cb_vft[i];
@@ -880,8 +881,8 @@ print_usage_and_exit (void)
 	vft->print_usage_cb ();
     }
   fprintf (stderr, "\nDefault configuration is :\n"
-	   " server nclients 1/1 RX=64Kb TX=RX\n"
-	   " client nclients 1/1 RX=64Kb TX=64Kb\n");
+	   " server nclients 1 [quic-streams 1] RX=64Kb TX=RX\n"
+	   " client nclients 1 [quic-streams 1] RX=64Kb TX=64Kb\n");
   exit (ECHO_FAIL_USAGE);
 }
 
@@ -917,10 +918,10 @@ echo_process_opts (int argc, char **argv)
 {
   echo_main_t *em = &echo_main;
   unformat_input_t _argv, *a = &_argv;
-  u32 tmp;
   u8 *chroot_prefix;
   u8 *uri = 0;
   u8 default_f_active;
+  uword tmp;
 
   unformat_init_command_line (a, argv);
   while (unformat_check_input (a) != UNFORMAT_END_OF_INPUT)
@@ -943,8 +944,16 @@ echo_process_opts (int argc, char **argv)
 	;
       else if (unformat (a, "use-svm-api"))
 	em->use_sock_api = 0;
-      else if (unformat (a, "fifo-size %d", &tmp))
-	em->fifo_size = tmp << 10;
+      else if (unformat (a, "fifo-size %U", unformat_memory_size, &tmp))
+	{
+	  if (tmp >= 0x100000000ULL)
+	    {
+	      fprintf (stderr,
+		       "ERROR: fifo-size %ld (0x%lx) too large\n", tmp, tmp);
+	      print_usage_and_exit ();
+	    }
+	  em->fifo_size = tmp;
+	}
       else if (unformat (a, "prealloc-fifos %u", &em->prealloc_fifo_pairs))
 	;
       else
@@ -962,11 +971,8 @@ echo_process_opts (int argc, char **argv)
 	}
       else if (unformat (a, "nthreads %d", &em->n_rx_threads))
 	;
-      else
-	if (unformat
-	    (a, "crypto %U", echo_unformat_crypto_engine,
-	     &em->crypto_ctx_engine))
-	;
+      else if (unformat (a, "crypto %U", echo_unformat_crypto_engine, &tmp))
+	em->crypto_engine = tmp;
       else if (unformat (a, "appns %_%v%_", &em->appns_id))
 	;
       else if (unformat (a, "all-scope"))
@@ -1112,7 +1118,7 @@ main (int argc, char **argv)
   em->tx_buf_size = 1 << 20;
   em->data_source = ECHO_INVALID_DATA_SOURCE;
   em->uri = format (0, "%s%c", "tcp://0.0.0.0/1234", 0);
-  em->crypto_ctx_engine = CRYPTO_ENGINE_NONE;
+  em->crypto_engine = CRYPTO_ENGINE_NONE;
   echo_set_each_proto_defaults_before_opts (em);
   echo_process_opts (argc, argv);
   echo_process_uri (em);
@@ -1176,14 +1182,14 @@ main (int argc, char **argv)
       goto exit_on_error;
     }
 
-  if (em->crypto_ctx_engine == CRYPTO_ENGINE_NONE)
-    /* when no crypto engine specified, dont expect crypto ctx */
+  if (em->uri_elts.transport_proto != TRANSPORT_PROTO_QUIC
+      && em->uri_elts.transport_proto != TRANSPORT_PROTO_TLS)
     em->state = STATE_ATTACHED;
   else
     {
       ECHO_LOG (1, "Adding crypto context %U", echo_format_crypto_engine,
-		em->crypto_ctx_engine);
-      echo_send_add_crypto_ctx (em);
+		em->crypto_engine);
+      echo_send_add_cert_key (em);
       if (wait_for_state_change (em, STATE_ATTACHED, TIMEOUT))
 	{
 	  ECHO_FAIL (ECHO_FAIL_APP_ATTACH,
@@ -1213,6 +1219,13 @@ main (int argc, char **argv)
     clients_run (em);
   echo_notify_event (em, ECHO_EVT_EXIT);
   echo_free_sessions (em);
+  echo_send_del_cert_key (em);
+  if (wait_for_state_change (em, STATE_CLEANED_CERT_KEY, TIMEOUT))
+    {
+      ECHO_FAIL (ECHO_FAIL_DEL_CERT_KEY, "Couldn't cleanup cert and key");
+      goto exit_on_error;
+    }
+
   echo_send_detach (em);
   if (wait_for_state_change (em, STATE_DETACHED, TIMEOUT))
     {

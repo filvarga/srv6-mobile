@@ -94,6 +94,7 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
   struct vhost_memory *vhost_mem = 0;
   virtio_if_t *vif = 0;
   clib_error_t *err = 0;
+  unsigned int tap_features;
   int fd = -1;
   char *host_if_name = 0;
 
@@ -173,6 +174,14 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
       goto error;
     }
 
+  _IOCTL (vif->tap_fd, TUNGETFEATURES, &tap_features);
+  if ((tap_features & IFF_VNET_HDR) == 0)
+    {
+      args->rv = VNET_API_ERROR_SYSCALL_ERROR_2;
+      args->error = clib_error_return (0, "vhost-net backend not available");
+      goto error;
+    }
+
   ifr.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_ONE_QUEUE | IFF_VNET_HDR;
   _IOCTL (vif->tap_fd, TUNSETIFF, (void *) &ifr);
   vif->ifindex = if_nametoindex (ifr.ifr_ifrn.ifrn_name);
@@ -198,7 +207,7 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
   _IOCTL (vif->tap_fd, TUNSETVNETHDRSZ, &hdrsz);
   _IOCTL (vif->fd, VHOST_SET_OWNER, 0);
 
-  /* if namespace is specified, all further netlink messages should be excuted
+  /* if namespace is specified, all further netlink messages should be executed
      after we change our net namespace */
   if (args->host_namespace)
     {

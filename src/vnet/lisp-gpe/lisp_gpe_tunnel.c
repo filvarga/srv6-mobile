@@ -52,7 +52,7 @@ lisp_gpe_tunnel_build_rewrite (const lisp_gpe_tunnel_t * lgt,
   int len;
   gpe_encap_mode_t encap_mode = vnet_gpe_get_encap_mode ();
 
-  if (IP4 == ip_addr_version (&lgt->key->lcl))
+  if (AF_IP4 == ip_addr_version (&lgt->key->lcl))
     {
       ip4_udp_lisp_gpe_header_t *h0;
       ip4_header_t *ip0;
@@ -181,7 +181,7 @@ lisp_gpe_tunnel_find_or_create_and_lock (const locator_pair_t * pair,
 							  FIB_SOURCE_RR,
 							  FIB_ENTRY_FLAG_NONE);
 
-      hash_set_mem (lisp_gpe_tunnel_db, &lgt->key,
+      hash_set_mem (lisp_gpe_tunnel_db, lgt->key,
 		    (lgt - lisp_gpe_tunnel_pool));
     }
 
@@ -200,7 +200,7 @@ lisp_gpe_tunnel_unlock (index_t lgti)
 
   if (0 == lgt->locks)
     {
-      hash_unset_mem (lisp_gpe_tunnel_db, &lgt->key);
+      hash_unset_mem (lisp_gpe_tunnel_db, lgt->key);
       clib_mem_free (lgt->key);
       pool_put (lisp_gpe_tunnel_pool, lgt);
     }
