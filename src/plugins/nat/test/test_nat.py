@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import socket
 import unittest
@@ -27,7 +27,6 @@ from io import BytesIO
 from vpp_papi import VppEnum
 from vpp_ip_route import VppIpRoute, VppRoutePath, FibPathType
 from vpp_neighbor import VppNeighbor
-from vpp_ip import VppIpAddress, VppIpPrefix
 from scapy.all import bind_layers, Packet, ByteEnumField, ShortField, \
     IPField, IntField, LongField, XByteField, FlagsField, FieldLenField, \
     PacketListField
@@ -244,7 +243,7 @@ class MethodHolder(VppTestCase):
         p = (Ether(dst=in_if.local_mac, src=in_if.remote_mac) /
              IP(src=in_if.remote_ip4, dst=dst_ip, ttl=ttl) /
              TCP(sport=self.tcp_port_in, dport=20))
-        pkts.append(p)
+        pkts.extend([p, p])
 
         # UDP
         p = (Ether(dst=in_if.local_mac, src=in_if.remote_mac) /
@@ -408,7 +407,7 @@ class MethodHolder(VppTestCase):
         p = (Ether(dst=out_if.local_mac, src=out_if.remote_mac) /
              IP(src=out_if.remote_ip4, dst=dst_ip, ttl=ttl) /
              TCP(dport=tcp_port, sport=20))
-        pkts.append(p)
+        pkts.extend([p, p])
 
         # UDP
         p = (Ether(dst=out_if.local_mac, src=out_if.remote_mac) /
@@ -1505,16 +1504,13 @@ class TestNAT44(MethodHolder):
             cls.vapi.ip_table_add_del(is_add=1, table_id=10)
             cls.vapi.ip_table_add_del(is_add=1, table_id=20)
 
-            cls.pg4._local_ip4 = VppIpPrefix("172.16.255.1",
-                                             cls.pg4.local_ip4_prefix.len)
+            cls.pg4._local_ip4 = "172.16.255.1"
             cls.pg4._remote_hosts[0]._ip4 = "172.16.255.2"
             cls.pg4.set_table_ip4(10)
-            cls.pg5._local_ip4 = VppIpPrefix("172.17.255.3",
-                                             cls.pg5.local_ip4_prefix.len)
+            cls.pg5._local_ip4 = "172.17.255.3"
             cls.pg5._remote_hosts[0]._ip4 = "172.17.255.4"
             cls.pg5.set_table_ip4(10)
-            cls.pg6._local_ip4 = VppIpPrefix("172.16.255.1",
-                                             cls.pg6.local_ip4_prefix.len)
+            cls.pg6._local_ip4 = "172.16.255.1"
             cls.pg6._remote_hosts[0]._ip4 = "172.16.255.2"
             cls.pg6.set_table_ip4(20)
             for i in cls.overlapping_interfaces:
@@ -1529,7 +1525,7 @@ class TestNAT44(MethodHolder):
             cls.pg9.config_ip4()
             cls.vapi.sw_interface_add_del_address(
                 sw_if_index=cls.pg9.sw_if_index,
-                prefix=VppIpPrefix("10.0.0.1", 24).encode())
+                prefix="10.0.0.1/24")
 
             cls.pg9.admin_up()
             cls.pg9.resolve_arp()
@@ -1575,7 +1571,7 @@ class TestNAT44(MethodHolder):
 
         err = self.statistics.get_err_counter(
             '/err/nat44-in2out-slowpath/TCP packets')
-        self.assertEqual(err - tcpn, 1)
+        self.assertEqual(err - tcpn, 2)
         err = self.statistics.get_err_counter(
             '/err/nat44-in2out-slowpath/UDP packets')
         self.assertEqual(err - udpn, 1)
@@ -1584,7 +1580,7 @@ class TestNAT44(MethodHolder):
         self.assertEqual(err - icmpn, 1)
         err = self.statistics.get_err_counter(
             '/err/nat44-in2out-slowpath/good in2out packets processed')
-        self.assertEqual(err - totaln, 3)
+        self.assertEqual(err - totaln, 4)
 
         # out2in
         tcpn = self.statistics.get_err_counter('/err/nat44-out2in/TCP packets')
@@ -1602,14 +1598,14 @@ class TestNAT44(MethodHolder):
         self.verify_capture_in(capture, self.pg0)
 
         err = self.statistics.get_err_counter('/err/nat44-out2in/TCP packets')
-        self.assertEqual(err - tcpn, 1)
+        self.assertEqual(err - tcpn, 2)
         err = self.statistics.get_err_counter('/err/nat44-out2in/UDP packets')
         self.assertEqual(err - udpn, 1)
         err = self.statistics.get_err_counter('/err/nat44-out2in/ICMP packets')
         self.assertEqual(err - icmpn, 1)
         err = self.statistics.get_err_counter(
             '/err/nat44-out2in/good out2in packets processed')
-        self.assertEqual(err - totaln, 3)
+        self.assertEqual(err - totaln, 4)
 
         users = self.statistics.get_counter('/nat44/total-users')
         self.assertEqual(users[0][0], 1)
@@ -4431,7 +4427,7 @@ class TestNAT44EndpointDependent(MethodHolder):
             cls.pg4.config_ip4()
             cls.vapi.sw_interface_add_del_address(
                 sw_if_index=cls.pg4.sw_if_index,
-                prefix=VppIpPrefix("10.0.0.1", 24).encode())
+                prefix="10.0.0.1/24")
 
             cls.pg4.admin_up()
             cls.pg4.resolve_arp()
@@ -4441,8 +4437,7 @@ class TestNAT44EndpointDependent(MethodHolder):
             zero_ip4 = socket.inet_pton(socket.AF_INET, "0.0.0.0")
             cls.vapi.ip_table_add_del(is_add=1, table_id=1)
 
-            cls.pg5._local_ip4 = VppIpPrefix("10.1.1.1",
-                                             cls.pg5.local_ip4_prefix.len)
+            cls.pg5._local_ip4 = "10.1.1.1"
             cls.pg5._remote_hosts[0]._ip4 = "10.1.1.2"
             cls.pg5.set_table_ip4(1)
             cls.pg5.config_ip4()
@@ -4454,8 +4449,7 @@ class TestNAT44EndpointDependent(MethodHolder):
                             register=False)
             r1.add_vpp_config()
 
-            cls.pg6._local_ip4 = VppIpPrefix("10.1.2.1",
-                                             cls.pg6.local_ip4_prefix.len)
+            cls.pg6._local_ip4 = "10.1.2.1"
             cls.pg6._remote_hosts[0]._ip4 = "10.1.2.2"
             cls.pg6.set_table_ip4(1)
             cls.pg6.config_ip4()
@@ -4727,7 +4721,7 @@ class TestNAT44EndpointDependent(MethodHolder):
 
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-in2out-slowpath/TCP packets')
-        self.assertEqual(err - tcpn, 1)
+        self.assertEqual(err - tcpn, 2)
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-in2out-slowpath/UDP packets')
         self.assertEqual(err - udpn, 1)
@@ -4736,7 +4730,7 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.assertEqual(err - icmpn, 1)
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-in2out-slowpath/good in2out packets processed')
-        self.assertEqual(err - totaln, 3)
+        self.assertEqual(err - totaln, 4)
 
         # out2in
         tcpn = self.statistics.get_err_counter(
@@ -4757,7 +4751,7 @@ class TestNAT44EndpointDependent(MethodHolder):
 
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-out2in/TCP packets')
-        self.assertEqual(err - tcpn, 1)
+        self.assertEqual(err - tcpn, 2)
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-out2in/UDP packets')
         self.assertEqual(err - udpn, 1)
@@ -4766,7 +4760,7 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.assertEqual(err - icmpn, 1)
         err = self.statistics.get_err_counter(
             '/err/nat44-ed-out2in/good out2in packets processed')
-        self.assertEqual(err - totaln, 2)
+        self.assertEqual(err - totaln, 3)
 
         users = self.statistics.get_counter('/nat44/total-users')
         self.assertEqual(users[0][0], 1)
@@ -4823,7 +4817,7 @@ class TestNAT44EndpointDependent(MethodHolder):
 
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-in2out-slowpath/TCP packets')
-            self.assertEqual(err - tcpn, 1)
+            self.assertEqual(err - tcpn, 2)
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-in2out-slowpath/UDP packets')
             self.assertEqual(err - udpn, 1)
@@ -4832,7 +4826,7 @@ class TestNAT44EndpointDependent(MethodHolder):
             self.assertEqual(err - icmpn, 1)
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-in2out-slowpath/good in2out packets processed')
-            self.assertEqual(err - totaln, 3)
+            self.assertEqual(err - totaln, 4)
 
             # out2in
             tcpn = self.statistics.get_err_counter(
@@ -4853,7 +4847,7 @@ class TestNAT44EndpointDependent(MethodHolder):
 
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-out2in/TCP packets')
-            self.assertEqual(err - tcpn, 1)
+            self.assertEqual(err - tcpn, 2)
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-out2in/UDP packets')
             self.assertEqual(err - udpn, 1)
@@ -4862,7 +4856,7 @@ class TestNAT44EndpointDependent(MethodHolder):
             self.assertEqual(err - icmpn, 1)
             err = self.statistics.get_err_counter(
                 '/err/nat44-ed-out2in/good out2in packets processed')
-            self.assertEqual(err - totaln, 2)
+            self.assertEqual(err - totaln, 3)
 
             users = self.statistics.get_counter('/nat44/total-users')
             self.assertEqual(users[0][0], 1)
@@ -8034,14 +8028,14 @@ class TestNAT64(MethodHolder):
         self.verify_capture_in_ip6(capture, ip[IPv6].src, self.pg0.remote_ip6)
 
         err = self.statistics.get_err_counter('/err/nat64-out2in/TCP packets')
-        self.assertEqual(err - tcpn, 1)
+        self.assertEqual(err - tcpn, 2)
         err = self.statistics.get_err_counter('/err/nat64-out2in/UDP packets')
         self.assertEqual(err - udpn, 1)
         err = self.statistics.get_err_counter('/err/nat64-out2in/ICMP packets')
         self.assertEqual(err - icmpn, 1)
         err = self.statistics.get_err_counter(
             '/err/nat64-out2in/good out2in packets processed')
-        self.assertEqual(err - totaln, 3)
+        self.assertEqual(err - totaln, 4)
 
         bibs = self.statistics.get_counter('/nat64/total-bibs')
         self.assertEqual(bibs[0][0], 3)

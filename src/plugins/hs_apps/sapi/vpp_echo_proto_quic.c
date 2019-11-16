@@ -461,8 +461,6 @@ quic_echo_set_defaults_after_opts_cb ()
   echo_main_t *em = &echo_main;
   u8 default_f_active;
 
-  if (em->crypto_ctx_engine == CRYPTO_ENGINE_NONE)
-    em->crypto_ctx_engine = CRYPTO_ENGINE_PICOTLS;
   em->n_connects = em->n_clients;
   em->n_sessions =
     clib_max (1, eqm->n_stream_clients) * em->n_clients + em->n_clients + 1;
@@ -487,9 +485,9 @@ quic_echo_print_usage_cb ()
 	   "                       On each one server opens M streams\n"
 	   "                      OPT=default : Client open N connections.\n"
 	   "                       On each one client opens M streams\n"
-	   "  qclose=[Y|N|W]      When a connection is done pass[N] send[Y] or wait[W] for close\n"
+	   "  qclose=[Y|N|W]      When connection is done send[Y]|nop[N]|wait[W] for close\n"
 	   "\n"
-	   "  nclients N[/M]      Open N QUIC connections, each one with M streams (M defaults to 1)\n");
+	   "  quic-streams N      Open N QUIC streams (defaults to 1)\n");
 }
 
 echo_proto_cb_vft_t quic_echo_proto_cb_vft = {

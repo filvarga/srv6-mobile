@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 /*
- * ip/ip_lookup.c: ip4/6 adjacency and lookup table managment
+ * ip/ip_lookup.c: ip4/6 adjacency and lookup table management
  *
  * Copyright (c) 2008 Eliot Dresselhaus
  *
@@ -55,7 +55,7 @@
 
 /**
  * @file
- * @brief IPv4 and IPv6 adjacency and lookup table managment.
+ * @brief IPv4 and IPv6 adjacency and lookup table management.
  *
  */
 
@@ -258,27 +258,10 @@ format_ip_flow_hash_config (u8 * s, va_list * args)
 u8 *
 format_ip_adjacency_packet_data (u8 * s, va_list * args)
 {
-  u32 adj_index = va_arg (*args, u32);
   u8 *packet_data = va_arg (*args, u8 *);
   u32 n_packet_data_bytes = va_arg (*args, u32);
-  ip_adjacency_t *adj;
 
-  if (!adj_is_valid (adj_index))
-    return format (s, "<invalid adjacency>");
-
-  adj = adj_get (adj_index);
-
-  switch (adj->lookup_next_index)
-    {
-    case IP_LOOKUP_NEXT_REWRITE:
-    case IP_LOOKUP_NEXT_MCAST:
-      s =
-	format (s, "%U", format_hex_bytes, packet_data, n_packet_data_bytes);
-      break;
-
-    default:
-      break;
-    }
+  s = format (s, "%U", format_hex_bytes, packet_data, n_packet_data_bytes);
 
   return s;
 }
@@ -1016,7 +999,7 @@ done:
 }
 
 /*?
- * This command is used to add or delete IPv4 or IPv6  multicastroutes. All
+ * This command is used to add or delete IPv4 or IPv6  multicast routes. All
  * IP Addresses ('<em><dst-ip-addr>/<width></em>',
  * '<em><next-hop-ip-addr></em>' and '<em><adj-hop-ip-addr></em>')
  * can be IPv4 or IPv6, but all must be of the same form in a single

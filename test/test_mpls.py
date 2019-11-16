@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import unittest
 import socket
@@ -14,12 +14,18 @@ from vpp_mpls_tunnel_interface import VppMPLSTunnelInterface
 
 import scapy.compat
 from scapy.packet import Raw
-from scapy.layers.l2 import Ether
+from scapy.layers.l2 import Ether, ARP
 from scapy.layers.inet import IP, UDP, ICMP
 from scapy.layers.inet6 import IPv6, ICMPv6TimeExceeded
 from scapy.contrib.mpls import MPLS
 
 NUM_PKTS = 67
+
+# scapy removed these attributes.
+# we asked that they be restored: https://github.com/secdev/scapy/pull/1878
+# semantic names have more meaning than numbers. so here they are.
+ARP.who_has = 1
+ARP.is_at = 2
 
 
 def verify_filter(capture, sent):
@@ -154,7 +160,8 @@ class TestMPLS(VppTestCase):
             pkts.append(p)
         return pkts
 
-    def create_stream_ip4(self, src_if, dst_ip, ip_ttl=64, ip_dscp=0):
+    def create_stream_ip4(self, src_if, dst_ip, ip_ttl=64,
+                          ip_dscp=0, payload_size=None):
         self.reset_packet_infos()
         pkts = []
         for i in range(0, 257):
@@ -166,6 +173,8 @@ class TestMPLS(VppTestCase):
                  UDP(sport=1234, dport=1234) /
                  Raw(payload))
             info.data = p.copy()
+            if payload_size:
+                self.extend_packet(p, payload_size)
             pkts.append(p)
         return pkts
 
@@ -911,7 +920,7 @@ class TestMPLS(VppTestCase):
         """ MPLS Tunnel Tests - Pipe """
 
         #
-        # Create a tunnel with a single out label
+        # Create a tunnel with two out labels
         #
         mpls_tun = VppMPLSTunnelInterface(
             self,
@@ -960,6 +969,38 @@ class TestMPLS(VppTestCase):
 
         rx = self.pg0.get_capture()
         self.verify_capture_tunneled_ip4(self.pg0, rx, tx,
+                                         [VppMplsLabel(44),
+                                          VppMplsLabel(46),
+                                          VppMplsLabel(33, ttl=255)])
+
+        #
+        # change tunnel's MTU to a low value
+        #
+        mpls_tun.set_l3_mtu(1200)
+
+        # send IP into the tunnel to be fragmented
+        tx = self.create_stream_ip4(self.pg0, "10.0.0.3",
+                                    payload_size=1500)
+        rx = self.send_and_expect(self.pg0, tx, self.pg0, len(tx)*2)
+
+        fake_tx = []
+        for p in tx:
+            fake_tx.append(p)
+            fake_tx.append(p)
+        self.verify_capture_tunneled_ip4(self.pg0, rx, fake_tx,
+                                         [VppMplsLabel(44),
+                                          VppMplsLabel(46)])
+
+        # send MPLS into the tunnel to be fragmented
+        tx = self.create_stream_ip4(self.pg0, "10.0.0.4",
+                                    payload_size=1500)
+        rx = self.send_and_expect(self.pg0, tx, self.pg0, len(tx)*2)
+
+        fake_tx = []
+        for p in tx:
+            fake_tx.append(p)
+            fake_tx.append(p)
+        self.verify_capture_tunneled_ip4(self.pg0, rx, fake_tx,
                                          [VppMplsLabel(44),
                                           VppMplsLabel(46),
                                           VppMplsLabel(33, ttl=255)])
@@ -1547,7 +1588,7 @@ class TestMPLSDisabled(VppTestCase):
               MPLS(label=32, ttl=64) /
               IPv6(src="2001::1", dst=self.pg0.remote_ip6) /
               UDP(sport=1234, dport=1234) /
-              Raw('\xa5' * 100))
+              Raw(b'\xa5' * 100))
 
         #
         # A simple MPLS xconnect - eos label in label out
@@ -1703,7 +1744,7 @@ class TestMPLSPIC(VppTestCase):
                               src=self.pg2.remote_mac) /
                         IP(src=self.pg2.remote_ip4, dst=dst) /
                         UDP(sport=1234, dport=1234) /
-                        Raw('\xa5' * 100))
+                        Raw(b'\xa5' * 100))
 
         #
         # Send the packet stream (one pkt to each VPN route)
@@ -1825,7 +1866,7 @@ class TestMPLSPIC(VppTestCase):
                         MPLS(label=local_label, ttl=64) /
                         IP(src=self.pg0.remote_ip4, dst=dst) /
                         UDP(sport=1234, dport=1234) /
-                        Raw('\xa5' * 100))
+                        Raw(b'\xa5' * 100))
 
         #
         # Send the packet stream (one pkt to each VPN route)
@@ -1947,7 +1988,7 @@ class TestMPLSPIC(VppTestCase):
                         MPLS(label=local_label, ttl=64) /
                         IPv6(src=self.pg0.remote_ip6, dst=dst) /
                         UDP(sport=1234, dport=1234) /
-                        Raw('\xa5' * 100))
+                        Raw(b'\xa5' * 100))
             self.logger.info(self.vapi.cli("sh ip6 fib %s" % dst))
 
         self.pg0.add_stream(pkts)
@@ -2044,10 +2085,9 @@ class TestMPLSL2(VppTestCase):
         tbl.add_vpp_config()
         self.tables.append(tbl)
 
-        # use pg0 as the core facing interface
+        # use pg0 as the core facing interface, don't resolve ARP
         self.pg0.admin_up()
         self.pg0.config_ip4()
-        self.pg0.resolve_arp()
         self.pg0.enable_mpls()
 
         # use the other 2 for customer facing L2 links
@@ -2080,6 +2120,22 @@ class TestMPLSL2(VppTestCase):
 
             self.assertEqual(rx_eth.src, tx_eth.src)
             self.assertEqual(rx_eth.dst, tx_eth.dst)
+
+    def verify_arp_req(self, rx, smac, sip, dip):
+        ether = rx[Ether]
+        self.assertEqual(ether.dst, "ff:ff:ff:ff:ff:ff")
+        self.assertEqual(ether.src, smac)
+
+        arp = rx[ARP]
+        self.assertEqual(arp.hwtype, 1)
+        self.assertEqual(arp.ptype, 0x800)
+        self.assertEqual(arp.hwlen, 6)
+        self.assertEqual(arp.plen, 4)
+        self.assertEqual(arp.op, ARP.who_has)
+        self.assertEqual(arp.hwsrc, smac)
+        self.assertEqual(arp.hwdst, "00:00:00:00:00:00")
+        self.assertEqual(arp.psrc, sip)
+        self.assertEqual(arp.pdst, dip)
 
     def test_vpws(self):
         """ Virtual Private Wire Service """
@@ -2130,7 +2186,7 @@ class TestMPLSL2(VppTestCase):
                        src="00:00:de:ad:be:ef") /
                  IP(src="10.10.10.10", dst="11.11.11.11") /
                  UDP(sport=1234, dport=1234) /
-                 Raw('\xa5' * 100))
+                 Raw(b'\xa5' * 100))
 
         tx0 = pcore * NUM_PKTS
         rx0 = self.send_and_expect(self.pg0, tx0, self.pg1)
@@ -2141,7 +2197,21 @@ class TestMPLSL2(VppTestCase):
 
         #
         # Inject a packet from the customer/L2 side
+        # there's no resolved ARP entry so the first packet we see should be
+        # an ARP request
         #
+        tx1 = pcore[MPLS].payload
+        rx1 = self.send_and_expect(self.pg1, [tx1], self.pg0)
+
+        self.verify_arp_req(rx1[0],
+                            self.pg0.local_mac,
+                            self.pg0.local_ip4,
+                            self.pg0.remote_ip4)
+
+        #
+        # resolve the ARP entries and send again
+        #
+        self.pg0.resolve_arp()
         tx1 = pcore[MPLS].payload * NUM_PKTS
         rx1 = self.send_and_expect(self.pg1, tx1, self.pg0)
 
@@ -2149,6 +2219,10 @@ class TestMPLSL2(VppTestCase):
 
     def test_vpls(self):
         """ Virtual Private LAN Service """
+
+        # we skipped this in the setup
+        self.pg0.resolve_arp()
+
         #
         # Create a L2 MPLS tunnels
         #
@@ -2215,12 +2289,12 @@ class TestMPLSL2(VppTestCase):
                          src="00:00:de:ad:be:ef") /
                    IP(src="10.10.10.10", dst="11.11.11.11") /
                    UDP(sport=1234, dport=1234) /
-                   Raw('\xa5' * 100))
+                   Raw(b'\xa5' * 100))
         p_cust2 = (Ether(dst="00:00:de:ad:ba:b2",
                          src="00:00:de:ad:be:ef") /
                    IP(src="10.10.10.10", dst="11.11.11.12") /
                    UDP(sport=1234, dport=1234) /
-                   Raw('\xa5' * 100))
+                   Raw(b'\xa5' * 100))
         p_core1 = (Ether(dst=self.pg0.local_mac,
                          src=self.pg0.remote_mac) /
                    MPLS(label=55, ttl=64) /
@@ -2228,16 +2302,16 @@ class TestMPLSL2(VppTestCase):
                          dst="00:00:de:ad:be:ef") /
                    IP(dst="10.10.10.10", src="11.11.11.11") /
                    UDP(sport=1234, dport=1234) /
-                   Raw('\xa5' * 100))
+                   Raw(b'\xa5' * 100))
         p_core2 = (Ether(dst=self.pg0.local_mac,
                          src=self.pg0.remote_mac) /
                    MPLS(label=56, ttl=64) /
-                   Raw('\x01' * 4) /  # PW CW
+                   Raw(b'\x01' * 4) /  # PW CW
                    Ether(src="00:00:de:ad:ba:b2",
                          dst="00:00:de:ad:be:ef") /
                    IP(dst="10.10.10.10", src="11.11.11.12") /
                    UDP(sport=1234, dport=1234) /
-                   Raw('\xa5' * 100))
+                   Raw(b'\xa5' * 100))
 
         #
         # The BD is learning, so send in one of each packet to learn

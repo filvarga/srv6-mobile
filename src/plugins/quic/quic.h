@@ -65,6 +65,11 @@
 #define QUIC_DBG(_lvl, _fmt, _args...)
 #endif
 
+#define QUIC_ERR(_fmt, _args...)                \
+  do {                                          \
+    clib_warning ("QUIC-ERR: " _fmt, ##_args);  \
+  } while (0)
+
 extern vlib_node_registration_t quic_input_node;
 
 typedef enum
@@ -183,7 +188,9 @@ typedef struct quic_main_
   f64 tstamp_ticks_per_clock;
 
   ptls_cipher_suite_t ***quic_ciphers;	/* available ciphers by crypto engine */
-  u8 default_cipher;
+  uword *available_crypto_engines;	/* Bitmap for registered engines */
+  u8 default_crypto_engine;	/* Used if you do connect with CRYPTO_ENGINE_NONE (0) */
+
   quic_session_cache_t session_cache;
 
   /*
@@ -193,8 +200,8 @@ typedef struct quic_main_
   ptls_handshake_properties_t hs_properties;
   quicly_cid_plaintext_t next_cid;
 
-  u64 udp_fifo_size;
-  u64 udp_fifo_prealloc;
+  u32 udp_fifo_size;
+  u32 udp_fifo_prealloc;
 } quic_main_t;
 
 #endif /* __included_quic_h__ */

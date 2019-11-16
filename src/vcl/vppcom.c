@@ -1464,11 +1464,11 @@ vppcom_session_accept (uint32_t listen_session_handle, vppcom_endpt_t * ep,
 
   is_nonblocking = VCL_SESS_ATTR_TEST (listen_session->attr,
 				       VCL_SESS_ATTR_NONBLOCK);
-  if (svm_msg_q_is_empty (wrk->app_event_queue) && is_nonblocking)
-    return VPPCOM_EAGAIN;
-
   while (1)
     {
+      if (svm_msg_q_is_empty (wrk->app_event_queue) && is_nonblocking)
+	return VPPCOM_EAGAIN;
+
       if (svm_msg_q_sub (wrk->app_event_queue, &msg, SVM_Q_WAIT, 0))
 	return VPPCOM_EAGAIN;
 
@@ -1988,6 +1988,8 @@ vppcom_session_write_msg (uint32_t session_handle, void *buf, size_t n)
 }
 
 #define vcl_fifo_rx_evt_valid_or_break(_s)				\
+if (PREDICT_FALSE (!_s->rx_fifo))					\
+  break;								\
 if (PREDICT_FALSE (svm_fifo_is_empty (_s->rx_fifo)))			\
   {									\
     if (!vcl_session_is_ct (_s))					\
@@ -2625,9 +2627,8 @@ vcl_epoll_wait_handle_mq_event (vcl_worker_t * wrk, session_event_t * e,
       break;
     case SESSION_CTRL_EVT_CONNECTED:
       connected_msg = (session_connected_msg_t *) e->data;
-      vcl_session_connected_handler (wrk, connected_msg);
+      sid = vcl_session_connected_handler (wrk, connected_msg);
       /* Generate EPOLLOUT because there's no connected event */
-      sid = vcl_session_index_from_vpp_handle (wrk, connected_msg->handle);
       if (!(session = vcl_session_get (wrk, sid)))
 	break;
       session_events = session->vep.ev.events;

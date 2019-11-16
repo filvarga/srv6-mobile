@@ -49,7 +49,7 @@
   _ (VIRTIO_NET_F_CTRL_MAC_ADDR, 23)	/* Set MAC address */ \
   _ (VIRTIO_F_NOTIFY_ON_EMPTY, 24) \
   _ (VHOST_F_LOG_ALL, 26)      /* Log all write descriptors */ \
-  _ (VIRTIO_F_ANY_LAYOUT, 27)  /* Can the device handle any descripor layout */ \
+  _ (VIRTIO_F_ANY_LAYOUT, 27)  /* Can the device handle any descriptor layout */ \
   _ (VIRTIO_RING_F_INDIRECT_DESC, 28)   /* Support indirect buffer descriptors */ \
   _ (VIRTIO_RING_F_EVENT_IDX, 29)       /* The Guest publishes the used index for which it expects an interrupt \
  * at the end of the avail ring. Host should ignore the avail->flags field. */ \
@@ -82,7 +82,7 @@ typedef enum
 
 typedef enum
 {
-  VIRTIO_IF_TYPE_TAP,
+  VIRTIO_IF_TYPE_TAP = 1,
   VIRTIO_IF_TYPE_PCI,
   VIRTIO_IF_N_TYPES,
 } virtio_if_type_t;
@@ -212,6 +212,7 @@ extern void virtio_show (vlib_main_t * vm, u32 * hw_if_indices, u8 show_descr,
 extern void virtio_pci_legacy_notify_queue (vlib_main_t * vm,
 					    virtio_if_t * vif, u16 queue_id);
 format_function_t format_virtio_device_name;
+format_function_t format_virtio_log_name;
 
 static_always_inline void
 virtio_kick (vlib_main_t * vm, virtio_vring_t * vring, virtio_if_t * vif)
@@ -227,6 +228,28 @@ virtio_kick (vlib_main_t * vm, virtio_vring_t * vring, virtio_if_t * vif)
       vring->last_kick_avail_idx = vring->avail->idx;
     }
 }
+
+
+#define virtio_log_debug(vif, f, ...)				\
+{								\
+  vlib_log(VLIB_LOG_LEVEL_DEBUG, virtio_main.log_default,	\
+	   "%U: " f, format_virtio_log_name, vif,		\
+           ##__VA_ARGS__);					\
+};
+
+#define virtio_log_warning(vif, f, ...)				\
+{								\
+  vlib_log(VLIB_LOG_LEVEL_WARNING, virtio_main.log_default,	\
+	   "%U: " f, format_virtio_log_name, vif,		\
+           ##__VA_ARGS__);					\
+};
+
+#define virtio_log_error(vif, f, ...)				\
+{								\
+  vlib_log(VLIB_LOG_LEVEL_ERR, virtio_main.log_default,		\
+	   "%U: " f, format_virtio_log_name, vif,		\
+           ##__VA_ARGS__);					\
+};
 
 #endif /* _VNET_DEVICES_VIRTIO_VIRTIO_H_ */
 

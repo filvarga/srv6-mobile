@@ -256,6 +256,7 @@ typedef enum tcp_bts_flags_
   TCP_BTS_IS_RXT = 1,
   TCP_BTS_IS_APP_LIMITED = 1 << 1,
   TCP_BTS_IS_SACKED = 1 << 2,
+  TCP_BTS_IS_RXT_LOST = 1 << 3,
 } __clib_packed tcp_bts_flags_t;
 
 typedef struct tcp_bt_sample_
@@ -434,6 +435,7 @@ typedef struct _tcp_connection
   u32 last_fib_check;	/**< Last time we checked fib route for peer */
   u16 mss;		/**< Our max seg size that includes options */
   u32 timestamp_delta;	/**< Offset for timestamp */
+  u32 ipv6_flow_label;	/**< flow label for ipv6 header */
 } tcp_connection_t;
 
 /* *INDENT-OFF* */
@@ -880,7 +882,8 @@ tcp_bytes_out (const tcp_connection_t * tc)
   if (tcp_opts_sack_permitted (&tc->rcv_opts))
     return tc->sack_sb.sacked_bytes + tc->sack_sb.lost_bytes;
   else
-    return tc->rcv_dupacks * tc->snd_mss;
+    return clib_min (tc->rcv_dupacks * tc->snd_mss,
+		     tc->snd_nxt - tc->snd_una);
 }
 
 /**
@@ -1169,8 +1172,14 @@ tcp_persist_timer_set (tcp_connection_t * tc)
 always_inline void
 tcp_persist_timer_update (tcp_connection_t * tc)
 {
-  tcp_timer_update (tc, TCP_TIMER_PERSIST,
-		    clib_max (tc->rto * TCP_TO_TIMER_TICK, 1));
+  u32 interval;
+
+  if (seq_leq (tc->snd_una, tc->snd_congestion + tc->burst_acked))
+    interval = 1;
+  else
+    interval = clib_max (tc->rto * TCP_TO_TIMER_TICK, 1);
+
+  tcp_timer_update (tc, TCP_TIMER_PERSIST, interval);
 }
 
 always_inline void
