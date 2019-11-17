@@ -1707,11 +1707,11 @@ class Program(object):
             local_mac="aa:bb:cc:dd:ee:11", remote_mac="aa:bb:cc:dd:ee:22")
 
         c1.vppctl_exec("set sr encaps source addr A1::1")
-        c1.vppctl_exec("sr policy add bsid D4:: next D2:: next D3::")
+        c1.vppctl_exec("sr policy add bsid D4:: next D2:: next D3:: next D4::")
 
-        c1.vppctl_exec("sr localsid prefix D::/64 behavior end.m.gtp6.dt4 fib-table 2")
+        c1.vppctl_exec("sr localsid prefix D::/64 behavior end.m.gtp6.dt ipv4 fib-table 0")
 
-        c1.vppctl_exec("sr steer l3 172.200.0.1/32 via bsid D4")
+        c1.vppctl_exec("sr steer l3 172.200.0.1/32 via bsid D4::")
 
         c2.vppctl_exec("sr localsid address D2:: behavior end")
 

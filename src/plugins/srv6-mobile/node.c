@@ -1850,6 +1850,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
           ip6_gtpu_header_t *hdr0 = NULL;
 	  ip4_header_t *ip4 = NULL;
 	  ip6_header_t *ip6 = NULL;
+	  ip6_address_t src, dst;
+	  u32 teid;
 	  u32 hdrlen;
 	  u32 len0;
 
@@ -1885,6 +1887,13 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
             }
           else
             {
+	      clib_memcpy_fast (src.as_u8, hdr0->ip6.src_address.as_u8,
+			      	sizeof(ip6_address_t));
+	      clib_memcpy_fast (dst.as_u8, hdr0->ip6.dst_address.as_u8,
+			      	sizeof(ip6_address_t));
+
+	      teid = hdr0->gtpu.teid;
+
 	      if (hdr0->gtpu.ver_flags & GTPU_EXTHDR_FLAG)
 		{
 		  hdrlen += sizeof(gtpu_exthdr_t);
@@ -1975,10 +1984,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 	        {
                   srv6_end_rewrite_trace_t *tr =
 		    vlib_add_trace (vm, node, b0, sizeof (*tr));
-	          clib_memcpy (tr->src.as_u8, ip6->src_address.as_u8,
+	          clib_memcpy (tr->src.as_u8, src.as_u8,
 			       sizeof (ip6_address_t));
-	          clib_memcpy (tr->dst.as_u8, ip6->dst_address.as_u8,
+	          clib_memcpy (tr->dst.as_u8, dst.as_u8,
 			       sizeof (ip6_address_t));
+		  tr->teid = teid;
 	        }
 	    }
 
