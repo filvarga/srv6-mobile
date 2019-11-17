@@ -17,6 +17,7 @@
 
 #include <vnet/vnet.h>
 #include <vnet/adj/adj.h>
+#include <vnet/fib/fib_table.h>
 #include <vnet/plugin/plugin.h>
 #include <vpp/app/version.h>
 #include <srv6-mobile/mobile.h>
@@ -69,13 +70,13 @@ clb_format_srv6_end_m_gtp6_dt (u8 * s, va_list * args)
 
   s = format (s, "SRv6 End gtp6.dt\n\t");
 
-  if (ls_mem->gtp6_dt_type == SRV6_GTP6_DT4)
+  if (ls_mem->type == SRV6_GTP6_DT4)
     s = format (s, ", Type GTP6.DT4 fib-table %u\n",
 		ls_mem->fib4_index);
-  else if (ls_mem->gtp6_dt_type == SRV6_GTP6_DT6)
+  else if (ls_mem->type == SRV6_GTP6_DT6)
     s = format (s, ", Type GTP6.DT6, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
-  else if (ls_mem->gtp6_dt_type == SRV6_GTP6_DT46)
+  else if (ls_mem->type == SRV6_GTP6_DT46)
     s = format (s, ", Type GTP6.DT46, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else
@@ -105,7 +106,7 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
   else if (unformat (input, "end.m.gtp6.dt ipv46 fib-table %u local-fib-table %u",
 	 &fib_index, &local_fib_index))
     {
-      type = SRV6_GTP6_DT46
+      type = SRV6_GTP6_DT46;
     }
   else
     {
@@ -120,7 +121,7 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
   ls_mem->fib6_index = fib_table_find (FIB_PROTOCOL_IP6, fib_index);
   ls_mem->local_fib_index = fib_table_find (FIB_PROTOCOL_IP6, local_fib_index);
 
-  ls_mem->gtp6_dt_type = type;
+  ls_mem->type = type;
 
   return 1;
 }
