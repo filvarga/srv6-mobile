@@ -37,6 +37,11 @@
 #define IP_PROTOCOL_NONE	59
 #endif
 
+#define SRV6_GTP6_UNKNOW	0
+#define SRV6_GTP6_DT4		1
+#define SRV6_GTP6_DT6		2
+#define SRV6_GTP6_DT46		3
+
 typedef struct srv6_end_gtp6_param_s
 {
   u8 nhtype;
@@ -44,6 +49,15 @@ typedef struct srv6_end_gtp6_param_s
   ip6_address_t sr_prefix;
   u32 sr_prefixlen;
 } srv6_end_gtp6_param_t;
+
+typedef struct srv6_end_gtp6_dt_param_s
+{
+  u8 type;
+
+  u32 fib4_index;
+  u32 fib6_index;
+  u32 local_fib_index;
+} srv6_end_gtp6_dt_param_t;
 
 typedef struct srv6_end_gtp4_param_s
 {
@@ -130,6 +144,19 @@ typedef struct srv6_end_main_v6_decap_di_s
 extern srv6_end_main_v6_decap_di_t srv6_end_main_v6_decap_di;
 extern vlib_node_registration_t srv6_end_m_gtp6_d_di;
 
+typedef struct srv6_end_main_v6_dt_s
+{
+  vlib_main_t *vlib_main;
+  vnet_main_t *vnet_main;
+
+  u32 end_m_gtp6_dt_node_index;
+  u32 error_node_index;
+
+  ip6_header_t cache_hdr;
+} srv6_end_main_v6_dt_t;
+
+extern srv6_end_main_v6_dt_t srv6_end_main_v6_dt;
+extern vlib_node_registration_t srv6_end_m_gtp6_dt;
 #endif /* __included_srv6_end_h__ */
 
 /*
