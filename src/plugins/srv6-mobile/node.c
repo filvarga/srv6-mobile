@@ -750,7 +750,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		    {
 		      if (ls_param->nhtype == SRV6_NHTYPE_NONE)
 	 	        {
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) == 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) == 6)
 		            ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
 		          else
 		            ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
@@ -758,7 +758,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV4)
 		        {
 		          ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 4)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 4)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
@@ -769,7 +769,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV6)
 		        {
 		          ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
@@ -815,7 +815,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		    {
 		      if (ls_param->nhtype == SRV6_NHTYPE_NONE)
 	 	        {
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) == 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) == 6)
 		            ip6srv->ip.protocol = IP_PROTOCOL_IPV6;
 		          else
 		            ip6srv->ip.protocol = IP_PROTOCOL_IP_IN_IP;
@@ -823,7 +823,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV4)
 		        {
 		          ip6srv->ip.protocol = IP_PROTOCOL_IP_IN_IP;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 4)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 4)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
@@ -834,7 +834,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV6)
 		        {
 		          ip6srv->ip.protocol = IP_PROTOCOL_IPV6;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
@@ -1357,7 +1357,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    {
 		      if (ls_param->nhtype == SRV6_NHTYPE_NONE)
 	 	        {
-	                  if ((encap->ip_version_traffic_class_and_flow_label >> 28) == 6)
+	                  if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) == 6)
 		            ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
 		          else
 		            ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
@@ -1365,7 +1365,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV4)
 	 	        {
 		          ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 4)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 4)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP6_D_NEXT_DROP;
@@ -1376,7 +1376,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV6)
 	 	        {
 		          ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP6_D_NEXT_DROP;
@@ -1423,13 +1423,13 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    {
 		      if (ls_param->nhtype == SRV6_NHTYPE_NONE)
 		        {
-	                  if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+	                  if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 	 	            ip6srv->ip.protocol = IP_PROTOCOL_IP_IN_IP;
 		        }
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV4)
 		        {
 		          ip6srv->ip.protocol = IP_PROTOCOL_IP_IN_IP;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 4)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 4)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP6_D_NEXT_DROP;
@@ -1440,7 +1440,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      else if (ls_param->nhtype == SRV6_NHTYPE_IPV6)
 		        {
 		          ip6srv->ip.protocol = IP_PROTOCOL_IPV6;
-		          if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+		          if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 			    {
 			      // Bad encap packet.
                               next0 = SRV6_END_M_GTP6_D_NEXT_DROP;
@@ -1728,7 +1728,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		{
  	          if (ls_param->nhtype == SRV6_NHTYPE_NONE)
 	            {
-	              if ((encap->ip_version_traffic_class_and_flow_label >> 28) == 6)
+	              if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) == 6)
 	                ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
 	              else
 	                ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
@@ -1736,7 +1736,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	          else if (ls_param->nhtype == SRV6_NHTYPE_IPV4)
 	            {
 	              ip6srv->sr.protocol = IP_PROTOCOL_IP_IN_IP;
-	              if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 4)
+	              if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 4)
 	  	        {
 		          // Bad encap packet.
                           next0 = SRV6_END_M_GTP6_D_DI_NEXT_DROP;
@@ -1747,7 +1747,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	          else if (ls_param->nhtype == SRV6_NHTYPE_IPV6)
 	            {
 	              ip6srv->sr.protocol = IP_PROTOCOL_IPV6;
-	              if ((encap->ip_version_traffic_class_and_flow_label >> 28) != 6)
+	              if ((clib_net_to_host_u32(encap->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 	  	        {
 		          // Bad encap packet.
                           next0 = SRV6_END_M_GTP6_D_DI_NEXT_DROP;
@@ -1927,14 +1927,15 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 	      else if (ls_param->type == SRV6_GTP6_DT6)
 		{
 		  ip6 = (ip6_header_t *)((u8 *)hdr0 + hdrlen);
-		  if ((ip6->ip_version_traffic_class_and_flow_label >> 28) != 6)
+		  if ((clib_net_to_host_u32(ip6->ip_version_traffic_class_and_flow_label) >> 28) != 6)
 		    {
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
 		      goto DONE;
 		    }
 
 		  next0 = SRV6_END_M_GTP6_DT_NEXT_LOOKUP6;
-		  if ((ip6->dst_address.as_u16[0] & 0xffc0) == 0xfe80)
+		  if ((ip6->dst_address.as_u8[0] == 0xff)
+		   && ((ip6->dst_address.as_u8[1] & 0xc0) == 0x80))
 		    {
 		      vnet_buffer (b0)->sw_if_index[VLIB_TX] = ls_param->local_fib_index;
 		    }
@@ -1947,10 +1948,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 	      else if (ls_param->type == SRV6_GTP6_DT46)
 		{
 		  ip6 = (ip6_header_t *)((u8 *)hdr0 + hdrlen);
-		  if ((ip6->ip_version_traffic_class_and_flow_label >> 28) == 6)
+		  if ((clib_net_to_host_u32(ip6->ip_version_traffic_class_and_flow_label) >> 28) == 6)
 		    {
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_LOOKUP6;
-		      if ((ip6->dst_address.as_u16[0] & 0xffc0) == 0xfe80)
+		      if ((ip6->dst_address.as_u8[0] == 0xff)
+		       && ((ip6->dst_address.as_u8[1] & 0xc0) == 0x80))
 			{
 		          vnet_buffer (b0)->sw_if_index[VLIB_TX] = ls_param->local_fib_index;
 			}
@@ -1960,7 +1962,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 		          vnet_buffer (b0)->sw_if_index[VLIB_TX] = ls_param->fib6_index;
 			}
 		    }
-		  else if ((ip6->ip_version_traffic_class_and_flow_label >> 28) == 4)
+		  else if ((clib_net_to_host_u32(ip6->ip_version_traffic_class_and_flow_label) >> 28) == 4)
 		    {
 	              vlib_buffer_advance (b0, (word) hdrlen);
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_LOOKUP4;

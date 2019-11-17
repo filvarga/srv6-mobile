@@ -61,7 +61,7 @@ const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
 static u8 fn_name[] = "SRv6-End.M.GTP6.DT-plugin";
 static u8 keyword_str[] = "end.m.gtp6.dt";
 static u8 def_str[] = "Endpoint function with DT for IPv6/GTP tunnel";
-static u8 param_str[] = "(ipv4|ipv6|ipv46) fib-index <index> [local-fib-table <index>]";
+static u8 param_str[] = "fib-index <index> [local-fib-table <index>]";
 
 static u8 *
 clb_format_srv6_end_m_gtp6_dt (u8 * s, va_list * args)
@@ -93,17 +93,17 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
   u32 fib_index, local_fib_index;
   u32 type;
 
-  if (unformat (input, "end.m.gtp6.dt ipv4 fib-table %u",
+  if (unformat (input, "end.m.gtp6.dt4 fib-table %u",
 	 &fib_index))
     {
       type = SRV6_GTP6_DT4;
     }
-  else if (unformat (input, "end.m.gtp6.dt ipv6 fib-table %u local-fib-table %u",
+  else if (unformat (input, "end.m.gtp6.dt6 fib-table %u local-fib-table %u",
 	 &fib_index, &local_fib_index))
     {
       type = SRV6_GTP6_DT6;
     }
-  else if (unformat (input, "end.m.gtp6.dt ipv46 fib-table %u local-fib-table %u",
+  else if (unformat (input, "end.m.gtp6.dt46 fib-table %u local-fib-table %u",
 	 &fib_index, &local_fib_index))
     {
       type = SRV6_GTP6_DT46;
