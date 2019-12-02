@@ -425,11 +425,7 @@ srv6_ad_init (vlib_main_t * vm)
 				      keyword_str,
 				      def_str,
 				      params_str,
-<<<<<<< HEAD
-                      128,
-=======
 				      128,
->>>>>>> upstream/master
 				      &sm->srv6_ad_dpo_type,
 				      format_srv6_ad_localsid,
 				      unformat_srv6_ad_localsid,
