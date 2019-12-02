@@ -413,6 +413,12 @@ I:	srv6-as
 M:	Francois Clad <fclad@cisco.com>
 F:	src/plugins/srv6-as/
 
+Plugin - IPv6 Segment Routing Mobile
+I:      srv6-mobile
+M:      Tetsuya Murakami <tetsuya.mrk@gmail.com>
+M:	Satoru Matsushima <satoru.matsushima@gmail.com>
+F:      src/plugins/srv6-mobile/
+
 Plugin - Link Aggregation Control Protocol
 I:	lacp
 M:	Steven Luong <sluong@cisco.com>
@@ -438,6 +444,7 @@ F:      src/plugins/mactime/
 
 Plugin - Network Delay Simulator
 I:	nsim
+Y:	src/plugins/nsim/FEATURE.yaml
 M:	Dave Barach <dave@barachs.net>
 F:	src/plugins/nsim/
 
@@ -590,6 +597,11 @@ VPP Config Tooling
 I:	vpp_config
 M:	John DeNisco <jdenisco@cisco.com>
 F:	extras/vpp_config
+
+bash functions
+I:	bash
+M:	Dave Wallace <dwallacelf@gmail.com>
+F:	extras/bash/
 
 THE REST
 I:	misc

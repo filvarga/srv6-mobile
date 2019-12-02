@@ -16,10 +16,11 @@ from util import ppp
 from vpp_ip_route import VppIpRoute, VppRoutePath, VppIpMRoute, \
     VppMRoutePath, MRouteItfFlags, MRouteEntryFlags, VppMplsIpBind, \
     VppMplsTable, VppIpTable, FibPathType, find_route, \
-    VppIpInterfaceAddress
+    VppIpInterfaceAddress, find_route_in_dump, find_mroute_in_dump
 from vpp_sub_interface import VppSubInterface, VppDot1QSubint, VppDot1ADSubint
 from vpp_papi import VppEnum
 from vpp_neighbor import VppNeighbor
+from vpp_lo_interface import VppLoInterface
 
 NUM_PKTS = 67
 
@@ -1960,6 +1961,199 @@ class TestIPv4Frag(VppTestCase):
             payload += p[Raw].load
         self.assert_equal(payload, saved_payload, "payload")
 
+
+class TestIPReplace(VppTestCase):
+    """ IPv4 Table Replace """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPReplace, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPReplace, cls).tearDownClass()
+
+    def setUp(self):
+        super(TestIPReplace, self).setUp()
+
+        self.create_pg_interfaces(range(4))
+
+        table_id = 1
+        self.tables = []
+
+        for i in self.pg_interfaces:
+            i.admin_up()
+            i.config_ip4()
+            i.resolve_arp()
+            i.generate_remote_hosts(2)
+            self.tables.append(VppIpTable(self, table_id).add_vpp_config())
+            table_id += 1
+
+    def tearDown(self):
+        super(TestIPReplace, self).tearDown()
+        for i in self.pg_interfaces:
+            i.admin_down()
+            i.unconfig_ip4()
+
+    def test_replace(self):
+        """ IP Table Replace """
+
+        N_ROUTES = 20
+        links = [self.pg0, self.pg1, self.pg2, self.pg3]
+        routes = [[], [], [], []]
+
+        # load up the tables with some routes
+        for ii, t in enumerate(self.tables):
+            for jj in range(N_ROUTES):
+                uni = VppIpRoute(
+                    self, "10.0.0.%d" % jj, 32,
+                    [VppRoutePath(links[ii].remote_hosts[0].ip4,
+                                  links[ii].sw_if_index),
+                     VppRoutePath(links[ii].remote_hosts[1].ip4,
+                                  links[ii].sw_if_index)],
+                    table_id=t.table_id).add_vpp_config()
+                multi = VppIpMRoute(
+                    self, "0.0.0.0",
+                    "239.0.0.%d" % jj, 32,
+                    MRouteEntryFlags.MFIB_ENTRY_FLAG_NONE,
+                    [VppMRoutePath(self.pg0.sw_if_index,
+                                   MRouteItfFlags.MFIB_ITF_FLAG_ACCEPT),
+                     VppMRoutePath(self.pg1.sw_if_index,
+                                   MRouteItfFlags.MFIB_ITF_FLAG_FORWARD),
+                     VppMRoutePath(self.pg2.sw_if_index,
+                                   MRouteItfFlags.MFIB_ITF_FLAG_FORWARD),
+                     VppMRoutePath(self.pg3.sw_if_index,
+                                   MRouteItfFlags.MFIB_ITF_FLAG_FORWARD)],
+                    table_id=t.table_id).add_vpp_config()
+                routes[ii].append({'uni': uni,
+                                   'multi': multi})
+
+        #
+        # replace the tables a few times
+        #
+        for kk in range(3):
+            # replace_begin each table
+            for t in self.tables:
+                t.replace_begin()
+
+            # all the routes are still there
+            for ii, t in enumerate(self.tables):
+                dump = t.dump()
+                mdump = t.mdump()
+                for r in routes[ii]:
+                    self.assertTrue(find_route_in_dump(dump, r['uni'], t))
+                    self.assertTrue(find_mroute_in_dump(mdump, r['multi'], t))
+
+            # redownload the even numbered routes
+            for ii, t in enumerate(self.tables):
+                for jj in range(0, N_ROUTES, 2):
+                    routes[ii][jj]['uni'].add_vpp_config()
+                    routes[ii][jj]['multi'].add_vpp_config()
+
+            # signal each table replace_end
+            for t in self.tables:
+                t.replace_end()
+
+            # we should find the even routes, but not the odd
+            for ii, t in enumerate(self.tables):
+                dump = t.dump()
+                mdump = t.mdump()
+                for jj in range(0, N_ROUTES, 2):
+                    self.assertTrue(find_route_in_dump(
+                        dump, routes[ii][jj]['uni'], t))
+                    self.assertTrue(find_mroute_in_dump(
+                        mdump, routes[ii][jj]['multi'], t))
+                for jj in range(1, N_ROUTES - 1, 2):
+                    self.assertFalse(find_route_in_dump(
+                        dump, routes[ii][jj]['uni'], t))
+                    self.assertFalse(find_mroute_in_dump(
+                        mdump, routes[ii][jj]['multi'], t))
+
+            # reload all the routes
+            for ii, t in enumerate(self.tables):
+                for r in routes[ii]:
+                    r['uni'].add_vpp_config()
+                    r['multi'].add_vpp_config()
+
+            # all the routes are still there
+            for ii, t in enumerate(self.tables):
+                dump = t.dump()
+                mdump = t.mdump()
+                for r in routes[ii]:
+                    self.assertTrue(find_route_in_dump(dump, r['uni'], t))
+                    self.assertTrue(find_mroute_in_dump(mdump, r['multi'], t))
+
+        #
+        # finally flush the tables for good measure
+        #
+        for t in self.tables:
+            t.flush()
+            self.assertEqual(len(t.dump()), 5)
+            self.assertEqual(len(t.mdump()), 1)
+
+
+class TestIPCover(VppTestCase):
+    """ IPv4 Table Cover """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPCover, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPCover, cls).tearDownClass()
+
+    def setUp(self):
+        super(TestIPCover, self).setUp()
+
+        self.create_pg_interfaces(range(4))
+
+        table_id = 1
+        self.tables = []
+
+        for i in self.pg_interfaces:
+            i.admin_up()
+            i.config_ip4()
+            i.resolve_arp()
+            i.generate_remote_hosts(2)
+            self.tables.append(VppIpTable(self, table_id).add_vpp_config())
+            table_id += 1
+
+    def tearDown(self):
+        super(TestIPCover, self).tearDown()
+        for i in self.pg_interfaces:
+            i.admin_down()
+            i.unconfig_ip4()
+
+    def test_cover(self):
+        """ IP Table Cover """
+
+        # add a loop back with a /32 prefix
+        lo = VppLoInterface(self)
+        lo.admin_up()
+        a = VppIpInterfaceAddress(self, lo, "127.0.0.1", 32).add_vpp_config()
+
+        # add a neighbour that matches the loopback's /32
+        nbr = VppNeighbor(self,
+                          lo.sw_if_index,
+                          lo.remote_mac,
+                          "127.0.0.1").add_vpp_config()
+
+        # add the default route which will be the cover for /32
+        r = VppIpRoute(self, "0.0.0.0", 0,
+                       [VppRoutePath("127.0.0.1",
+                                     lo.sw_if_index)],
+                       register=False).add_vpp_config()
+
+        # add/remove/add a longer mask cover
+        r = VppIpRoute(self, "127.0.0.0", 8,
+                       [VppRoutePath("127.0.0.1",
+                                     lo.sw_if_index)]).add_vpp_config()
+        r.remove_vpp_config()
+        r.add_vpp_config()
+
+        # remove the default route
+        r.remove_vpp_config()
 
 if __name__ == '__main__':
     unittest.main(testRunner=VppTestRunner)
