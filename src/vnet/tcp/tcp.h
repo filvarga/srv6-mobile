@@ -82,7 +82,7 @@ typedef enum _tcp_timers
   TCP_N_TIMERS
 } tcp_timers_e;
 
-typedef void (timer_expiration_handler) (u32 index);
+typedef void (timer_expiration_handler) (u32 index, u32 thread_index);
 
 extern timer_expiration_handler tcp_timer_delack_handler;
 extern timer_expiration_handler tcp_timer_retransmit_handler;
@@ -394,7 +394,6 @@ typedef struct _tcp_connection
   u32 prr_start;	/**< snd_una when prr starts */
   u32 rxt_delivered;	/**< Rxt bytes delivered during current cc event */
   u32 rxt_head;		/**< snd_una last time we re rxted the head */
-  u32 prev_dsegs_out;	/**< Number of dsegs after last ack */
   u32 tsecr_last_ack;	/**< Timestamp echoed to us in last healthy ACK */
   u32 snd_congestion;	/**< snd_una_max when congestion is detected */
   u32 tx_fifo_size;	/**< Tx fifo size. Used to constrain cwnd */
@@ -558,6 +557,9 @@ typedef struct tcp_configuration_
 
   /** Allow use of TSO whenever available */
   u8 allow_tso;
+
+  /** Set if csum offloading is enabled */
+  u8 csum_offload;
 
   /** Default congestion control algorithm type */
   tcp_cc_algorithm_type_e cc_algo;

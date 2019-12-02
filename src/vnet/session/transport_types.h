@@ -20,7 +20,8 @@
 #include <vnet/ip/ip.h>
 #include <vnet/tcp/tcp_debug.h>
 
-#define TRANSPORT_MAX_HDRS_LEN    100	/* Max number of bytes for headers */
+#define TRANSPORT_MAX_HDRS_LEN    140	/* Max number of bytes for headers */
+
 
 typedef enum transport_dequeue_type_
 {
@@ -53,6 +54,7 @@ typedef struct _spacer
   u64 bucket;
   clib_us_time_t last_update;
   f32 tokens_per_period;
+  u32 idle_timeout_us;
 } spacer_t;
 
 #define TRANSPORT_CONN_ID_LEN	44

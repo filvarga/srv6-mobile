@@ -630,6 +630,8 @@ static session_cb_vft_t echo_clients = {
 static clib_error_t *
 echo_clients_attach (u8 * appns_id, u64 appns_flags, u64 appns_secret)
 {
+  vnet_app_add_tls_cert_args_t _a_cert, *a_cert = &_a_cert;
+  vnet_app_add_tls_key_args_t _a_key, *a_key = &_a_key;
   u32 prealloc_fifos, segment_size = 256 << 20;
   echo_client_main_t *ecm = &echo_client_main;
   vnet_app_attach_args_t _a, *a = &_a;
@@ -671,6 +673,18 @@ echo_clients_attach (u8 * appns_id, u64 appns_flags, u64 appns_secret)
     return clib_error_return (0, "attach returned %d", rv);
 
   ecm->app_index = a->app_index;
+
+  clib_memset (a_cert, 0, sizeof (*a_cert));
+  a_cert->app_index = a->app_index;
+  vec_validate (a_cert->cert, test_srv_crt_rsa_len);
+  clib_memcpy_fast (a_cert->cert, test_srv_crt_rsa, test_srv_crt_rsa_len);
+  vnet_app_add_tls_cert (a_cert);
+
+  clib_memset (a_key, 0, sizeof (*a_key));
+  a_key->app_index = a->app_index;
+  vec_validate (a_key->key, test_srv_key_rsa_len);
+  clib_memcpy_fast (a_key->key, test_srv_key_rsa, test_srv_key_rsa_len);
+  vnet_app_add_tls_key (a_key);
   return 0;
 }
 
@@ -727,8 +741,14 @@ echo_clients_connect (vlib_main_t * vm, u32 n_clients)
       a->uri = (char *) ecm->connect_uri;
       a->api_context = i;
       a->app_index = ecm->app_index;
+
+      vlib_worker_thread_barrier_sync (vm);
       if ((rv = vnet_connect_uri (a)))
-	return clib_error_return (0, "connect returned: %d", rv);
+	{
+	  vlib_worker_thread_barrier_release (vm);
+	  return clib_error_return (0, "connect returned: %d", rv);
+	}
+      vlib_worker_thread_barrier_release (vm);
 
       /* Crude pacing for call setups  */
       if ((i % 16) == 0)
@@ -870,7 +890,8 @@ echo_clients_command_fn (vlib_main_t * vm,
   if ((rv = parse_uri ((char *) ecm->connect_uri, &sep)))
     return clib_error_return (0, "Uri parse error: %d", rv);
   ecm->transport_proto = sep.transport_proto;
-  ecm->is_dgram = (sep.transport_proto == TRANSPORT_PROTO_UDP);
+  ecm->is_dgram = (sep.transport_proto == TRANSPORT_PROTO_UDP
+		   || sep.transport_proto == TRANSPORT_PROTO_UDPC);
 
 #if ECHO_CLIENT_PTHREAD
   echo_clients_start_tx_pthread ();
@@ -903,7 +924,9 @@ echo_clients_command_fn (vlib_main_t * vm,
   /* Fire off connect requests */
   time_before_connects = vlib_time_now (vm);
   if ((error = echo_clients_connect (vm, n_clients)))
-    goto cleanup;
+    {
+      goto cleanup;
+    }
 
   /* Park until the sessions come up, or ten seconds elapse... */
   vlib_process_wait_for_event_or_clock (vm, syn_timeout);
