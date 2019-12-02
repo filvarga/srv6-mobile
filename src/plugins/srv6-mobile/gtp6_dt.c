@@ -71,8 +71,7 @@ clb_format_srv6_end_m_gtp6_dt (u8 * s, va_list * args)
   s = format (s, "SRv6 End gtp6.dt\n\t");
 
   if (ls_mem->type == SRV6_GTP6_DT4)
-    s = format (s, ", Type GTP6.DT4 fib-table %u\n",
-		ls_mem->fib4_index);
+    s = format (s, ", Type GTP6.DT4 fib-table %u\n", ls_mem->fib4_index);
   else if (ls_mem->type == SRV6_GTP6_DT6)
     s = format (s, ", Type GTP6.DT6, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
@@ -80,7 +79,7 @@ clb_format_srv6_end_m_gtp6_dt (u8 * s, va_list * args)
     s = format (s, ", Type GTP6.DT46, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else
-    s = format(s, "\n");
+    s = format (s, "\n");
 
   return s;
 }
@@ -93,18 +92,17 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
   u32 fib_index, local_fib_index;
   u32 type;
 
-  if (unformat (input, "end.m.gtp6.dt4 fib-table %u",
-	 &fib_index))
+  if (unformat (input, "end.m.gtp6.dt4 fib-table %u", &fib_index))
     {
       type = SRV6_GTP6_DT4;
     }
   else if (unformat (input, "end.m.gtp6.dt6 fib-table %u local-fib-table %u",
-	 &fib_index, &local_fib_index))
+		     &fib_index, &local_fib_index))
     {
       type = SRV6_GTP6_DT6;
     }
   else if (unformat (input, "end.m.gtp6.dt46 fib-table %u local-fib-table %u",
-	 &fib_index, &local_fib_index))
+		     &fib_index, &local_fib_index))
     {
       type = SRV6_GTP6_DT46;
     }
@@ -119,7 +117,8 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
 
   ls_mem->fib4_index = fib_table_find (FIB_PROTOCOL_IP4, fib_index);
   ls_mem->fib6_index = fib_table_find (FIB_PROTOCOL_IP6, fib_index);
-  ls_mem->local_fib_index = fib_table_find (FIB_PROTOCOL_IP6, local_fib_index);
+  ls_mem->local_fib_index =
+    fib_table_find (FIB_PROTOCOL_IP6, local_fib_index);
 
   ls_mem->type = type;
 
@@ -164,24 +163,19 @@ srv6_end_m_gtp6_dt_init (vlib_main_t * vm)
 
   ip6 = &sm->cache_hdr;
 
-  clib_memset_u8 (ip6, 0, sizeof(ip6_header_t));
+  clib_memset_u8 (ip6, 0, sizeof (ip6_header_t));
 
   dpo_type = dpo_register_new_type (&dpo_vft, dpo_nodes);
 
-  rc = sr_localsid_register_function (vm,
-                                      fn_name,
-                                      keyword_str,
-                                      def_str,
-                                      param_str,
-                                      128, //prefix len
-                                      &dpo_type,
-                                      clb_format_srv6_end_m_gtp6_dt,
-                                      clb_unformat_srv6_end_m_gtp6_dt,
-                                      clb_creation_srv6_end_m_gtp6_dt,
-                                      clb_removal_srv6_end_m_gtp6_dt);
+  rc = sr_localsid_register_function (vm, fn_name, keyword_str, def_str, param_str, 128,	//prefix len
+				      &dpo_type,
+				      clb_format_srv6_end_m_gtp6_dt,
+				      clb_unformat_srv6_end_m_gtp6_dt,
+				      clb_creation_srv6_end_m_gtp6_dt,
+				      clb_removal_srv6_end_m_gtp6_dt);
   if (rc < 0)
     clib_error_return (0, "SRv6 Endpoint GTP6.DT LocalSID function"
-                          "couldn't be registered");
+		       "couldn't be registered");
   return 0;
 }
 

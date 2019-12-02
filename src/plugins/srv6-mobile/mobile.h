@@ -80,8 +80,8 @@ typedef struct srv6_end_main_v4_s
   u32 end_m_gtp4_e_node_index;
   u32 error_node_index;
 
-  u32 dst_p_len; // dst prefix len
-  u32 src_p_len; // src prefix len
+  u32 dst_p_len;		// dst prefix len
+  u32 src_p_len;		// src prefix len
 
   ip4_gtpu_header_t cache_hdr;
 
