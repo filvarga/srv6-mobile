@@ -3,7 +3,7 @@ SRv6 Mobile User Plane Plugin for VPP
 
 ## Introduction
 
-This fork of VPP implements stateless mobile user plane protocols translation between GTP-U and SRv6.
+This plugin module can provide the stateless mobile user plane protocols translation between GTP-U and SRv6.
 The functions of the translation take advantage of SRv6 network programmability.
 [SRv6 Mobile User Plane](https://tools.ietf.org/html/draft-ietf-dmm-srv6-mobile-uplane) defines the user plane protocol using SRv6
 including following stateless translation functions:

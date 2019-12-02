@@ -1711,7 +1711,7 @@ VNET_FEATURE_ARC_INIT (arp_feat, static) =
 {
   .arc_name = "arp",
   .start_nodes = VNET_FEATURES ("arp-input"),
-  .last_in_arc = "arp-disabled",
+  .last_in_arc = "error-drop",
   .arc_index_ptr = &ethernet_arp_main.feature_arc_index,
 };
 
@@ -2474,41 +2474,6 @@ proxy_arp_intfc_walk (proxy_arp_intf_walk_t cb, void *data)
     if (eai->proxy_enabled)
       cb (eai - am->ethernet_arp_by_sw_if_index, data);
   }
-}
-
-/*
- * Remove any proxy arp entries associated with the
- * specified fib.
- */
-int
-vnet_proxy_arp_fib_reset (u32 fib_id)
-{
-  ethernet_arp_main_t *am = &ethernet_arp_main;
-  ethernet_proxy_arp_t *pa;
-  u32 *entries_to_delete = 0;
-  u32 fib_index;
-  int i;
-
-  fib_index = fib_table_find (FIB_PROTOCOL_IP4, fib_id);
-  if (~0 == fib_index)
-    return VNET_API_ERROR_NO_SUCH_ENTRY;
-
-  vec_foreach (pa, am->proxy_arps)
-  {
-    if (pa->fib_index == fib_index)
-      {
-	vec_add1 (entries_to_delete, pa - am->proxy_arps);
-      }
-  }
-
-  for (i = 0; i < vec_len (entries_to_delete); i++)
-    {
-      vec_delete (am->proxy_arps, 1, entries_to_delete[i]);
-    }
-
-  vec_free (entries_to_delete);
-
-  return 0;
 }
 
 static clib_error_t *

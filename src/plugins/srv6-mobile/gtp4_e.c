@@ -1,7 +1,7 @@
 /*
  * srv6_end_m_gtp4_e.c
  *
- * Copyright (c) 2019 Cisco and/or its affiliates.
+ * Copyright (c) 2019 Arrcus Inc and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -59,7 +59,8 @@ const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
 
 static u8 fn_name[] = "SRv6-End.M.GTP4.E-plugin";
 static u8 keyword_str[] = "end.m.gtp4.e";
-static u8 def_str[] = "Endpoint function with encapsulation for IPv4/GTP tunnel";
+static u8 def_str[] =
+  "Endpoint function with encapsulation for IPv4/GTP tunnel";
 static u8 param_str[] = "";
 
 static u8 *
@@ -81,8 +82,7 @@ clb_unformat_srv6_end_m_gtp4_e (unformat_input_t * input, va_list * args)
   srv6_end_gtp4_param_t *ls_mem;
   u32 v4src_position;
 
-  if (!unformat (input, "end.m.gtp4.e v4src_position %d",
-	  &v4src_position))
+  if (!unformat (input, "end.m.gtp4.e v4src_position %d", &v4src_position))
     return 0;
 
   ls_mem = clib_mem_alloc_aligned_at_offset (sizeof *ls_mem, 0, 0, 1);
@@ -107,7 +107,7 @@ clb_removal_srv6_end_m_gtp4_e (ip6_sr_localsid_t * localsid)
 
   ls_mem = localsid->plugin_mem;
 
-  clib_mem_free(ls_mem);
+  clib_mem_free (ls_mem);
 
   return 0;
 }
@@ -121,7 +121,7 @@ srv6_end_m_gtp4_e_init (vlib_main_t * vm)
   gtpu_header_t *gtpu = &sm->cache_hdr.gtpu;
   dpo_type_t dpo_type;
   vlib_node_t *node;
-  u32 rc;
+  int rc;
 
   sm->vlib_main = vm;
   sm->vnet_main = vnet_get_main ();
@@ -151,20 +151,15 @@ srv6_end_m_gtp4_e_init (vlib_main_t * vm)
 
   dpo_type = dpo_register_new_type (&dpo_vft, dpo_nodes);
 
-  rc = sr_localsid_register_function (vm,
-                                      fn_name,
-                                      keyword_str,
-                                      def_str,
-                                      param_str,
-                                      32, //prefix len
-                                      &dpo_type,
-                                      clb_format_srv6_end_m_gtp4_e,
-                                      clb_unformat_srv6_end_m_gtp4_e,
-                                      clb_creation_srv6_end_m_gtp4_e,
-                                      clb_removal_srv6_end_m_gtp4_e);
+  rc = sr_localsid_register_function (vm, fn_name, keyword_str, def_str, param_str, 32,	//prefix len
+				      &dpo_type,
+				      clb_format_srv6_end_m_gtp4_e,
+				      clb_unformat_srv6_end_m_gtp4_e,
+				      clb_creation_srv6_end_m_gtp4_e,
+				      clb_removal_srv6_end_m_gtp4_e);
   if (rc < 0)
     clib_error_return (0, "SRv6 Endpoint GTP4.E LocalSID function"
-                          "couldn't be registered");
+		       "couldn't be registered");
   return 0;
 }
 
