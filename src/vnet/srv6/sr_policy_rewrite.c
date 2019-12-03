@@ -350,17 +350,25 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
   /* Fill in segment list */
   segment_list->weight =
     (weight != (u32) ~ 0 ? weight : SR_SEGMENT_LIST_WEIGHT_DEFAULT);
-  segment_list->segments = vec_dup (sl);
+
+  if (sl)
+    segment_list->segments = vec_dup (sl);
 
   if (is_encap)
     {
-      segment_list->rewrite = compute_rewrite_encaps (sl);
-      segment_list->rewrite_bsid = segment_list->rewrite;
+      if (sl)
+	{
+          segment_list->rewrite = compute_rewrite_encaps (sl);
+          segment_list->rewrite_bsid = segment_list->rewrite;
+	}
     }
   else
     {
-      segment_list->rewrite = compute_rewrite_insert (sl);
-      segment_list->rewrite_bsid = compute_rewrite_bsid (sl);
+      if (sl)
+        {
+          segment_list->rewrite = compute_rewrite_insert (sl);
+          segment_list->rewrite_bsid = compute_rewrite_bsid (sl);
+	}
     }
 
   if (sr_policy->plugin)
@@ -990,13 +998,16 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   if (is_add)
     {
-      if (vec_len (segments) == 0)
+      if (!behavior && vec_len (segments) == 0)
 	return clib_error_return (0, "No Segment List specified");
+
       rv = sr_policy_add (&bsid, segments, weight,
 			  (is_spray ? SR_POLICY_TYPE_SPRAY :
 			   SR_POLICY_TYPE_DEFAULT), fib_table, is_encap,
 			  behavior, ls_plugin_mem);
-      vec_free (segments);
+
+      if (segments)
+        vec_free (segments);
     }
   else if (is_del)
     rv = sr_policy_del ((sr_policy_index != (u32) ~ 0 ? NULL : &bsid),
@@ -1011,10 +1022,13 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	return clib_error_return (0, "No Segment List specified");
       if (operation == 3 && weight == (u32) ~ 0)
 	return clib_error_return (0, "No new weight for the SL specified");
+
       rv = sr_policy_mod ((sr_policy_index != (u32) ~ 0 ? NULL : &bsid),
 			  sr_policy_index, fib_table, operation, segments,
 			  sl_index, weight);
-      vec_free (segments);
+
+      if (segments)
+        vec_free (segments);
     }
 
   switch (rv)
