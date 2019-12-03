@@ -156,7 +156,7 @@ clb_removal_srv6_end_m_gtp4_d (ip6_sr_localsid_t * localsid)
 {
   srv6_end_gtp4_param_t *ls_mem;
 
-  ls_mem = localsid->plugin_mem;
+  ls_mem = (srv6_end_gtp4_param_t *)localsid->plugin_mem;
 
   clib_mem_free (ls_mem);
 

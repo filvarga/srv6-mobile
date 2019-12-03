@@ -699,6 +699,9 @@ sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,
 						     "SRv6 steering of IP4 prefixes through BSIDs");
     }
 
+  if (plugin)
+    return 0;
+
   /* Create IPv6 FIB for the BindingSID attached to the DPO of the only SL */
   if (sr_policy->type == SR_POLICY_TYPE_DEFAULT)
     update_lb (sr_policy);
@@ -775,6 +778,19 @@ sr_policy_del (ip6_address_t * bsid, u32 index)
       vec_free (segment_list->rewrite_bsid);
     pool_put_index (sm->sid_lists, *sl_index);
   }
+
+  if (sr_policy->plugin)
+    {
+      ip6_sr_localsid_t dummy;
+      sr_localsid_fn_registration_t *plugin = 0;
+
+      plugin = pool_elt_at_index (sm->plugin_functions, sr_policy->plugin - SR_BEHAVIOR_LAST);
+
+      dummy.plugin_mem = sr_policy->plugin_mem;
+      plugin->removal (&dummy);
+      sr_policy->plugin = 0;
+      sr_policy->plugin_mem = NULL;
+    }
 
   /* Remove SR policy entry */
   mhash_unset (&sm->sr_policies_index_hash, &sr_policy->bsid, NULL);
