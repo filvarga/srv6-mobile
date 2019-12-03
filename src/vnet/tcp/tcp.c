@@ -705,6 +705,9 @@ tcp_init_snd_vars (tcp_connection_t * tc)
   tc->snd_nxt = tc->iss + 1;
   tc->snd_una_max = tc->snd_nxt;
   tc->srtt = 100;		/* 100 ms */
+
+  if (!tcp_cfg.csum_offload)
+    tc->cfg_flags |= TCP_CFG_F_NO_CSUM_OFFLOAD;
 }
 
 void
@@ -1018,6 +1021,8 @@ format_tcp_vars (u8 * s, va_list * args)
 	      tc->rto, tc->rto_boff, tc->srtt, tc->mrtt_us * 1000, tc->rttvar,
 	      tc->rtt_ts);
   s = format (s, " rtt_seq %u\n", tc->rtt_seq - tc->iss);
+  s = format (s, " next_node %u opaque 0x%x\n", tc->next_node_index,
+	      tc->next_node_opaque);
   s = format (s, " cong:   %U", format_tcp_congestion, tc);
 
   if (tc->state >= TCP_STATE_ESTABLISHED)
@@ -1394,8 +1399,11 @@ tcp_connection_tx_pacer_update (tcp_connection_t * tc)
   if (!transport_connection_is_tx_paced (&tc->connection))
     return;
 
+  f64 srtt = clib_min ((f64) tc->srtt * TCP_TICK, tc->mrtt_us);
+
   transport_connection_tx_pacer_update (&tc->connection,
-					tcp_cc_get_pacing_rate (tc));
+					tcp_cc_get_pacing_rate (tc),
+					srtt * CLIB_US_TIME_FREQ);
 }
 
 void
@@ -1403,21 +1411,20 @@ tcp_connection_tx_pacer_reset (tcp_connection_t * tc, u32 window,
 			       u32 start_bucket)
 {
   f64 srtt = clib_min ((f64) tc->srtt * TCP_TICK, tc->mrtt_us);
-  u64 rate = (u64) window / srtt;
-  transport_connection_tx_pacer_reset (&tc->connection, rate, start_bucket);
+  transport_connection_tx_pacer_reset (&tc->connection,
+				       tcp_cc_get_pacing_rate (tc),
+				       start_bucket,
+				       srtt * CLIB_US_TIME_FREQ);
 }
 
 static void
-tcp_timer_waitclose_handler (u32 conn_index)
+tcp_timer_waitclose_handler (u32 conn_index, u32 thread_index)
 {
-  u32 thread_index = vlib_get_thread_index ();
   tcp_connection_t *tc;
 
   tc = tcp_connection_get (conn_index, thread_index);
   if (!tc)
     return;
-
-  tc->timers[TCP_TIMER_WAITCLOSE] = TCP_TIMER_HANDLE_INVALID;
 
   switch (tc->state)
     {
@@ -1491,19 +1498,38 @@ static timer_expiration_handler *timer_expiration_handlers[TCP_N_TIMERS] =
 static void
 tcp_expired_timers_dispatch (u32 * expired_timers)
 {
-  int i;
+  u32 thread_index = vlib_get_thread_index ();
   u32 connection_index, timer_id;
+  tcp_connection_t *tc;
+  int i;
 
+  /*
+   * Invalidate all timer handles before dispatching. This avoids dangling
+   * index references to timer wheel pool entries that have been freed.
+   */
   for (i = 0; i < vec_len (expired_timers); i++)
     {
-      /* Get session index and timer id */
       connection_index = expired_timers[i] & 0x0FFFFFFF;
       timer_id = expired_timers[i] >> 28;
 
+      if (timer_id != TCP_TIMER_RETRANSMIT_SYN)
+	tc = tcp_connection_get (connection_index, thread_index);
+      else
+	tc = tcp_half_open_connection_get (connection_index);
+
       TCP_EVT (TCP_EVT_TIMER_POP, connection_index, timer_id);
 
-      /* Handle expiration */
-      (*timer_expiration_handlers[timer_id]) (connection_index);
+      tc->timers[timer_id] = TCP_TIMER_HANDLE_INVALID;
+    }
+
+  /*
+   * Dispatch expired timers
+   */
+  for (i = 0; i < vec_len (expired_timers); i++)
+    {
+      connection_index = expired_timers[i] & 0x0FFFFFFF;
+      timer_id = expired_timers[i] >> 28;
+      (*timer_expiration_handlers[timer_id]) (connection_index, thread_index);
     }
 }
 
@@ -1650,6 +1676,7 @@ tcp_configuration_init (void)
   tcp_cfg.initial_cwnd_multiplier = 0;
   tcp_cfg.enable_tx_pacing = 1;
   tcp_cfg.allow_tso = 0;
+  tcp_cfg.csum_offload = 1;
   tcp_cfg.cc_algo = TCP_CC_NEWRENO;
   tcp_cfg.rwnd_min_update_ack = 1;
 
@@ -1791,6 +1818,8 @@ tcp_config_fn (vlib_main_t * vm, unformat_input_t * input)
 	tcp_cfg.enable_tx_pacing = 0;
       else if (unformat (input, "tso"))
 	tcp_cfg.allow_tso = 1;
+      else if (unformat (input, "no-csum-offload"))
+	tcp_cfg.csum_offload = 0;
       else if (unformat (input, "cc-algo %U", unformat_tcp_cc_algo,
 			 &tcp_cfg.cc_algo))
 	;

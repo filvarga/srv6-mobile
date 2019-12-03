@@ -171,7 +171,7 @@ def pump_output(testclass):
                 testclass.vpp_stdout_deque.extend(split[:limit])
                 if not testclass.cache_vpp_output:
                     for line in split[:limit]:
-                        testclass.logger.debug(
+                        testclass.logger.info(
                             "VPP STDOUT: %s" % line.rstrip("\n"))
         if testclass.vpp.stderr.fileno() in readable:
             read = os.read(testclass.vpp.stderr.fileno(), 102400)
@@ -189,7 +189,7 @@ def pump_output(testclass):
                 testclass.vpp_stderr_deque.extend(split[:limit])
                 if not testclass.cache_vpp_output:
                     for line in split[:limit]:
-                        testclass.logger.debug(
+                        testclass.logger.error(
                             "VPP STDERR: %s" % line.rstrip("\n"))
                         # ignoring the dummy pipe here intentionally - the
                         # flag will take care of properly terminating the loop
@@ -267,6 +267,7 @@ class VppTestCase(unittest.TestCase):
 
     extra_vpp_punt_config = []
     extra_vpp_plugin_config = []
+    vapi_response_timeout = 5
 
     @property
     def packet_infos(self):
@@ -550,11 +551,9 @@ class VppTestCase(unittest.TestCase):
             cls.pump_thread.daemon = True
             cls.pump_thread.start()
             if cls.debug_gdb or cls.debug_gdbserver:
-                read_timeout = 0
-            else:
-                read_timeout = 5
+                cls.vapi_response_timeout = 0
             cls.vapi = VppPapiProvider(cls.shm_prefix, cls.shm_prefix, cls,
-                                       read_timeout)
+                                       cls.vapi_response_timeout)
             if cls.step:
                 hook = hookmodule.StepHook(cls)
             else:

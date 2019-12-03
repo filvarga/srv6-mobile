@@ -69,6 +69,7 @@ DEB_DEPENDS += python-all python3-all python3-setuptools python-dev
 DEB_DEPENDS += python-virtualenv python-pip libffi6 check
 DEB_DEPENDS += libboost-all-dev libffi-dev python3-ply libmbedtls-dev
 DEB_DEPENDS += cmake ninja-build uuid-dev python3-jsonschema python3-yaml yamllint
+DEB_DEPENDS += python3-venv  # ensurepip
 ifeq ($(OS_VERSION_ID),14.04)
 	DEB_DEPENDS += libssl-dev
 else ifeq ($(OS_ID)-$(OS_VERSION_ID),debian-8)
@@ -680,7 +681,7 @@ bootstrap-doxygen:
 	$(call make-doxy)
 
 .PHONY: doxygen
-doxygen:
+doxygen: bootstrap-doxygen
 	$(call make-doxy)
 
 .PHONY: wipe-doxygen
@@ -697,12 +698,13 @@ docs-venv:
 	@($(SPHINX_SCRIPTS_DIR)/sphinx-make.sh venv)
 
 .PHONY: docs
-docs: $(DOCS_DIR)
+docs: $(DOCS_DIR) docs-venv
 	@($(SPHINX_SCRIPTS_DIR)/sphinx-make.sh html)
 
 .PHONY: docs-clean
 docs-clean:
-	@($(SPHINX_SCRIPTS_DIR)/sphinx-make.sh clean)
+	@rm -rf $(DOCS_DIR)/_build
+	@rm -rf $(VENV_DIR)
 
 .PHONY: pkg-verify
 pkg-verify: install-dep $(BR)/.deps.ok install-ext-deps

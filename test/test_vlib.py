@@ -40,7 +40,7 @@ class TestVlib(VppTestCase):
                 "   IP6: 00:d0:2d:5e:86:85 -> 00:0d:ea:d0:00:00\n"
                 "   ICMP: db00::1 -> db00::2\n"
                 "   incrementing 30\n"
-                "   }\n",
+                "   }\n"
                 "}\n",
                 "elog trace dispatch",
                 "event-logger stop",
@@ -81,7 +81,7 @@ class TestVlib(VppTestCase):
                 "   IP6: 00:d0:2d:5e:86:85 -> 00:0d:ea:d0:00:00\n"
                 "   ICMP: db00::1 -> db00::2\n"
                 "   incrementing 30\n"
-                "   }\n",
+                "   }\n"
                 "}\n",
                 "show vlib graph",
                 "show vlib graph ethernet-input",
@@ -100,6 +100,53 @@ class TestVlib(VppTestCase):
                 "set node function ethernet-input default",
                 "set node function ethernet-input bozo",
                 "set node function ethernet-input",
+                ]
+
+        for cmd in cmds:
+            r = self.vapi.cli_return_response(cmd)
+            if r.retval != 0:
+                if hasattr(r, 'reply'):
+                    self.logger.info(cmd + " FAIL reply " + r.reply)
+                else:
+                    self.logger.info(cmd + " FAIL retval " + str(r.retval))
+
+    def test_vlib_buffer_c_unittest(self):
+        """ Vlib buffer.c Code Coverage Test """
+
+        cmds = ["loopback create",
+                "packet-generator new {\n"
+                " name vlib\n"
+                " limit 15\n"
+                " size 128-128\n"
+                " interface loop0\n"
+                " node ethernet-input\n"
+                " data {\n"
+                "   IP6: 00:d0:2d:5e:86:85 -> 00:0d:ea:d0:00:00\n"
+                "   ICMP: db00::1 -> db00::2\n"
+                "   incrementing 30\n"
+                "   }\n"
+                "}\n",
+                "pa en",
+                "clear interfaces",
+                "test vlib",
+                "show buffers",
+                ]
+
+        for cmd in cmds:
+            r = self.vapi.cli_return_response(cmd)
+            if r.retval != 0:
+                if hasattr(r, 'reply'):
+                    self.logger.info(cmd + " FAIL reply " + r.reply)
+                else:
+                    self.logger.info(cmd + " FAIL retval " + str(r.retval))
+
+    def test_vlib_format_unittest(self):
+        """ Vlib format.c Code Coverage Test """
+
+        cmds = ["loopback create",
+                "classify filter pcap mask l2 proto ipv6 match l2 proto 86dd",
+                "classify filter del",
+                "test format-vlib",
                 ]
 
         for cmd in cmds:
