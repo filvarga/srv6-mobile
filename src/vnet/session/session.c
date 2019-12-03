@@ -36,7 +36,8 @@ session_send_evt_to_thread (void *data, void *args, u32 thread_index,
   mq = session_main_get_vpp_event_queue (thread_index);
   if (PREDICT_FALSE (svm_msg_q_lock (mq)))
     return -1;
-  if (PREDICT_FALSE (svm_msg_q_ring_is_full (mq, SESSION_MQ_IO_EVT_RING)))
+  if (PREDICT_FALSE (svm_msg_q_is_full (mq)
+		     || svm_msg_q_ring_is_full (mq, SESSION_MQ_IO_EVT_RING)))
     {
       svm_msg_q_unlock (mq);
       return -2;
@@ -203,6 +204,32 @@ session_free (session_t * s)
     }
   SESSION_EVT (SESSION_EVT_FREE, s);
   pool_put (session_main.wrk[s->thread_index].sessions, s);
+}
+
+u8
+session_is_valid (u32 si, u8 thread_index)
+{
+  session_t *s;
+  transport_connection_t *tc;
+
+  s = pool_elt_at_index (session_main.wrk[thread_index].sessions, si);
+
+  if (!s)
+    return 1;
+
+  if (s->thread_index != thread_index || s->session_index != si)
+    return 0;
+
+  if (s->session_state == SESSION_STATE_TRANSPORT_DELETED
+      || s->session_state <= SESSION_STATE_LISTENING)
+    return 1;
+
+  tc = session_get_transport (s);
+  if (s->connection_index != tc->c_index
+      || s->thread_index != tc->thread_index || tc->s_index != si)
+    return 0;
+
+  return 1;
 }
 
 static void
@@ -1288,7 +1315,8 @@ session_transport_cleanup (session_t * s)
 		       s->thread_index);
   /* Since we called cleanup, no delete notification will come. So, make
    * sure the session is properly freed. */
-  session_free_w_fifos (s);
+  segment_manager_dealloc_fifos (s->rx_fifo, s->tx_fifo);
+  session_free (s);
 }
 
 /**

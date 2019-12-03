@@ -85,8 +85,7 @@ static void vl_api_sr_localsid_add_del_t_handler
 			mp->behavior,
 			ntohl (mp->sw_if_index),
 			ntohl (mp->vlan_index),
-			ntohl (mp->fib_table), &prefix, 
-			NULL);
+			ntohl (mp->fib_table), &prefix, NULL);
 
   BAD_SW_IF_INDEX_LABEL;
   REPLY_MACRO (VL_API_SR_LOCALSID_ADD_DEL_REPLY);
@@ -115,7 +114,7 @@ vl_api_sr_policy_add_t_handler (vl_api_sr_policy_add_t * mp)
   rv = sr_policy_add ((ip6_address_t *) & mp->bsid_addr,
 		      segments,
 		      ntohl (mp->sids.weight),
-		      mp->type, ntohl (mp->fib_table), mp->is_encap, 0, 0, NULL, 0);
+		      mp->type, ntohl (mp->fib_table), mp->is_encap);
   vec_free (segments);
 
   REPLY_MACRO (VL_API_SR_POLICY_ADD_REPLY);
