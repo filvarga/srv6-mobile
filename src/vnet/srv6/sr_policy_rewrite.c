@@ -553,7 +553,6 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 				           FIB_ENTRY_FLAG_EXCLUSIVE,
 				           &sr_policy->ip4_dpo);
 	}
-
     }
 }
 
