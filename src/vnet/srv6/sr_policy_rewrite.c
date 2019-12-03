@@ -351,20 +351,17 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
   segment_list->weight =
     (weight != (u32) ~ 0 ? weight : SR_SEGMENT_LIST_WEIGHT_DEFAULT);
 
-  if (sl)
-    {
-      segment_list->segments = vec_dup (sl);
+  segment_list->segments = vec_dup (sl);
 
-      if (is_encap)
-	{
-          segment_list->rewrite = compute_rewrite_encaps (sl);
-          segment_list->rewrite_bsid = segment_list->rewrite;
-	}
-      else
-        {
-          segment_list->rewrite = compute_rewrite_insert (sl);
-          segment_list->rewrite_bsid = compute_rewrite_bsid (sl);
-	}
+  if (is_encap)
+    {
+      segment_list->rewrite = compute_rewrite_encaps (sl);
+      segment_list->rewrite_bsid = segment_list->rewrite;
+    }
+  else
+    {
+      segment_list->rewrite = compute_rewrite_insert (sl);
+      segment_list->rewrite_bsid = compute_rewrite_bsid (sl);
     }
 
   if (sr_policy->plugin)
@@ -518,6 +515,46 @@ update_lb (ip6_sr_policy_t * sr_policy)
   vec_free (ip6_path_vector);
   vec_free (ip4_path_vector);
 
+}
+
+static inline void
+update_dpo (ip6_sr_policy_t * sr_policy)
+{
+  ip6_sr_main_t *sm = &sr_main;
+
+  if (!dpo_id_is_valid (&sr_policy->bsid_dpo))
+    {
+      fib_prefix_t pfx = {
+	.fp_proto = FIB_PROTOCOL_IP6,
+	.fp_len = 128,
+	.fp_addr = {
+		    .ip6 = sr_policy->bsid,
+		    }
+      };
+
+      /* Update FIB entry's to point to the LB DPO in the main FIB and hidden one */
+      fib_table_entry_special_dpo_add (fib_table_find (FIB_PROTOCOL_IP6,
+				  		       sr_policy->fib_table),
+				       &pfx, FIB_SOURCE_SR,
+				       FIB_ENTRY_FLAG_EXCLUSIVE,
+				       &sr_policy->bsid_dpo);
+
+      fib_table_entry_special_dpo_add (sm->fib_table_ip6,
+				       &pfx,
+				       FIB_SOURCE_SR,
+				       FIB_ENTRY_FLAG_EXCLUSIVE,
+				       &sr_policy->ip6_dpo);
+
+      if (sr_policy->is_encap)
+	{
+	  fib_table_entry_special_dpo_add (sm->fib_table_ip4,
+				           &pfx,
+				           FIB_SOURCE_SR,
+				           FIB_ENTRY_FLAG_EXCLUSIVE,
+				           &sr_policy->ip4_dpo);
+	}
+
+    }
 }
 
 /**
@@ -696,7 +733,12 @@ sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,
 
   /* Create IPv6 FIB for the BindingSID attached to the DPO of the only SL */
   if (sr_policy->type == SR_POLICY_TYPE_DEFAULT)
-    update_lb (sr_policy);
+    {
+      if (plugin)
+	update_dpo (sr_policy);
+      else
+        update_lb (sr_policy);
+    }
   else if (sr_policy->type == SR_POLICY_TYPE_SPRAY)
     update_replicate (sr_policy);
   return 0;
