@@ -352,19 +352,15 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
     (weight != (u32) ~ 0 ? weight : SR_SEGMENT_LIST_WEIGHT_DEFAULT);
 
   if (sl)
-    segment_list->segments = vec_dup (sl);
-
-  if (is_encap)
     {
-      if (sl)
+      segment_list->segments = vec_dup (sl);
+
+      if (is_encap)
 	{
           segment_list->rewrite = compute_rewrite_encaps (sl);
           segment_list->rewrite_bsid = segment_list->rewrite;
 	}
-    }
-  else
-    {
-      if (sl)
+      else
         {
           segment_list->rewrite = compute_rewrite_insert (sl);
           segment_list->rewrite_bsid = compute_rewrite_bsid (sl);
@@ -492,8 +488,10 @@ update_lb (ip6_sr_policy_t * sr_policy)
 
     }
 
+  if (sr_policy->plugin)
+    return;
+
   /* Create the LB path vector */
-  //path_vector = vec_new(load_balance_path_t, vec_len(sr_policy->segments_lists));
   vec_foreach (sl_index, sr_policy->segments_lists)
   {
     segment_list = pool_elt_at_index (sm->sid_lists, *sl_index);
@@ -698,9 +696,6 @@ sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,
 						     FIB_SOURCE_SR,
 						     "SRv6 steering of IP4 prefixes through BSIDs");
     }
-
-  if (plugin)
-    return 0;
 
   /* Create IPv6 FIB for the BindingSID attached to the DPO of the only SL */
   if (sr_policy->type == SR_POLICY_TYPE_DEFAULT)
