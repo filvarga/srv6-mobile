@@ -527,7 +527,7 @@ class Program(object):
         for p in c4.pg_read_packets():
             p.show2()
 
-''' T.Map is obsolete
+    ''' T.Map is obsolete
     def test_tmap(self):
         # TESTS:
         # trace add af-packet-input 10
@@ -810,7 +810,7 @@ class Program(object):
         print("Receiving packet on {}:".format(c4.name))
         for p in c4.pg_read_packets():
             p.show2()
-'''
+    '''
 
     def test_gtp4(self):
         # TESTS:
@@ -1991,16 +1991,14 @@ def main(op=None, prefix=None, verbose=None,
             program.test_ping()
         elif op == 'srv6':
             program.test_srv6()
-        '''
-        elif op == 'tmap':
-            program.test_tmap()
-        elif op == 'tmap_5g':
-            program.test_tmap_5g()
-        elif op == 'tmap_ipv6':
-            program.test_tmap_ipv6()
-        elif op == 'tmap_ipv6_5g':
-            program.test_tmap_ipv6_5g()
-        '''
+        # elif op == 'tmap':
+        #    program.test_tmap()
+        # elif op == 'tmap_5g':
+        #    program.test_tmap_5g()
+        # elif op == 'tmap_ipv6':
+        #    program.test_tmap_ipv6()
+        # elif op == 'tmap_ipv6_5g':
+        #    program.test_tmap_ipv6_5g()
         elif op == 'gtp4':
             program.test_gtp4()
         elif op == 'gtp4_5g':
