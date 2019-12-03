@@ -77,6 +77,9 @@ typedef struct
   dpo_id_t bsid_dpo;				/**< DPO for Encaps/Insert for BSID */
   dpo_id_t ip6_dpo;				/**< DPO for Encaps/Insert IPv6 */
   dpo_id_t ip4_dpo;				/**< DPO for Encaps IPv6 */
+
+  u16 plugin;
+  void *plugin_mem;
 } ip6_sr_sl_t;
 
 /* SR policy types */
@@ -102,6 +105,9 @@ typedef struct
   u32 fib_table;			/**< FIB table */
 
   u8 is_encap;				/**< Mode (0 is SRH insert, 1 Encaps) */
+
+  u16 plugin;
+  void *plugin_mem;
 } ip6_sr_policy_t;
 
 /**
@@ -271,7 +277,8 @@ sr_localsid_register_function (vlib_main_t * vm, u8 * fn_name,
 
 extern int
 sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,
-	       u32 weight, u8 behavior, u32 fib_table, u8 is_encap);
+	       u32 weight, u8 behavior, u32 fib_table, u8 is_encap,
+	       u16 plugin, void *plugin_mem);
 extern int sr_policy_mod (ip6_address_t * bsid, u32 index, u32 fib_table,
 			  u8 operation, ip6_address_t * segments,
 			  u32 sl_index, u32 weight);

@@ -579,7 +579,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	{
 	  u32 bi0;
 	  vlib_buffer_t *b0;
-	  ip6_sr_localsid_t *ls0;
+	  ip6_sr_sl_t *sl0;
 	  srv6_end_gtp4_param_t *ls_param;
 	  ip4_header_t *ip4;
 
@@ -597,11 +597,11 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 
 	  b0 = vlib_get_buffer (vm, bi0);
 
-	  ls0 =
-	    pool_elt_at_index (sm2->localsids,
+	  sl0 =
+	    pool_elt_at_index (sm2->sid_lists,
 			       vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
 
-	  ls_param = (srv6_end_gtp4_param_t *) ls0->plugin_mem;
+	  ls_param = (srv6_end_gtp4_param_t *) sl0->plugin_mem;
 
 	  len0 = vlib_buffer_length_in_chain (vm, b0);
 
@@ -955,7 +955,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	    (((next0 ==
 	       SRV6_END_M_GTP4_D_NEXT_DROP) ? &(sm2->sr_ls_invalid_counters) :
 	      &(sm2->sr_ls_valid_counters)), thread_index,
-	     ls0 - sm2->localsids, 1, vlib_buffer_length_in_chain (vm, b0));
+	     sl0 - sm2->sid_lists, 1, vlib_buffer_length_in_chain (vm, b0));
 
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
 					   n_left_to_next, bi0, next0);
