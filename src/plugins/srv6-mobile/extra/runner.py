@@ -838,7 +838,7 @@ class Program(object):
 
         c1.vppctl_exec("set sr encaps source addr A1::1")
         c1.vppctl_exec("sr policy add bsid D4:: next D2:: next D3::")
-        c1.vppctl_exec("sr policy add bsid D5:: behacior end.m.gtp4.d D4::/32 v6src_prefix C1::/64 nhtype ipv4")
+        c1.vppctl_exec("sr policy add bsid D5:: behavior end.m.gtp4.d D4::/32 v6src_prefix C1::/64 nhtype ipv4")
         c1.vppctl_exec("sr steer l3 172.20.0.1/32 via bsid D5::")
 
         c2.vppctl_exec("sr localsid address D2:: behavior end")
