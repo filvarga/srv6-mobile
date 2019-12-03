@@ -488,9 +488,6 @@ update_lb (ip6_sr_policy_t * sr_policy)
 
     }
 
-  if (sr_policy->plugin)
-    return;
-
   /* Create the LB path vector */
   vec_foreach (sl_index, sr_policy->segments_lists)
   {
@@ -1009,7 +1006,13 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   if (is_add)
     {
-      if (!behavior && vec_len (segments) == 0)
+      if (behavior && vec_len (segments) == 0)
+	{
+	  vec_add2(segments, this_seg, 1);
+	  clib_memset(this_seg, 0, sizeof (*this_seg));
+	}
+
+      if (vec_len (segments) == 0)
 	return clib_error_return (0, "No Segment List specified");
 
       rv = sr_policy_add (&bsid, segments, weight,
@@ -1017,8 +1020,7 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 			   SR_POLICY_TYPE_DEFAULT), fib_table, is_encap,
 			  behavior, ls_plugin_mem);
 
-      if (segments)
-        vec_free (segments);
+      vec_free (segments);
     }
   else if (is_del)
     rv = sr_policy_del ((sr_policy_index != (u32) ~ 0 ? NULL : &bsid),
