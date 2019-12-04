@@ -501,7 +501,6 @@ update_lb (ip6_sr_policy_t * sr_policy)
       }
   }
 
-#if 0
   /* Update LB multipath */
   load_balance_multipath_update (&sr_policy->bsid_dpo, b_path_vector,
 				 LOAD_BALANCE_FLAG_NONE);
@@ -510,7 +509,6 @@ update_lb (ip6_sr_policy_t * sr_policy)
   if (sr_policy->is_encap)
     load_balance_multipath_update (&sr_policy->ip4_dpo, ip4_path_vector,
 				   LOAD_BALANCE_FLAG_NONE);
-#endif
 
   /* Cleanup */
   vec_free (b_path_vector);

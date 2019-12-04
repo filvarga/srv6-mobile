@@ -978,8 +978,8 @@ VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) =
   .name = "srv6-end-m-gtp4-e",
   .vector_size = sizeof (u32),
   .format_trace = format_srv6_end_rewrite_trace,
-  .type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
-    ARRAY_LEN (srv6_end_error_v4_strings),
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = ARRAY_LEN (srv6_end_error_v4_strings),
   .error_strings = srv6_end_error_v4_strings,
   .n_next_nodes = SRV6_END_M_GTP4_E_N_NEXT,
   .next_nodes = {
