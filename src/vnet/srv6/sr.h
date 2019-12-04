@@ -110,6 +110,8 @@ typedef struct
   void *plugin_mem;
 } ip6_sr_policy_t;
 
+typedef int (sr_p_plugin_callback_t) (ip6_sr_policy_t * sr);
+
 /**
  * @brief SR LocalSID
  */
@@ -169,6 +171,34 @@ typedef struct
 
   sr_plugin_callback_t *removal;			/**< Function within plugin that will be called before localsid removal */
 } sr_localsid_fn_registration_t;
+
+/**
+ * @brief SR Policy behavior registration
+ */
+typedef struct
+{
+  u16 sr_policy_function_number;			/**< SR Policy plugin function */
+
+  u8 *function_name;					/**< Function name. (key). */
+
+  u8 *keyword_str;					/**< Behavior keyword (i.e. End.X) */
+
+  u8 *def_str;						/**< Behavior definition (i.e. Endpoint with cross-connect) */
+
+  u8 *params_str;					/**< Behavior parameters (i.e. <oif> <IP46next_hop>) */
+
+  u8 prefix_length;
+
+  dpo_type_t dpo;					/**< DPO type registration */
+
+  format_function_t *ls_format;				/**< LocalSID format function */
+
+  unformat_function_t *ls_unformat;			/**< LocalSID unformat function */
+
+  sr_p_plugin_callback_t *creation;			/**< Function within plugin that will be called after localsid creation*/
+
+  sr_p_plugin_callback_t *removal;			/**< Function within plugin that will be called before localsid removal */
+} sr_policy_fn_registration_t;
 
 /**
  * @brief Steering db key
@@ -242,6 +272,12 @@ typedef struct
   /* Find plugin function by name */
   uword *plugin_functions_by_key;
 
+  /* Plugin functions for Policy */
+  sr_policy_fn_registration_t *policy_plugin_functions;
+
+  /* Find plugin function by name */
+  uword *policy_plugin_functions_by_key;
+
   /* Counters */
   vlib_combined_counter_main_t sr_ls_valid_counters;
   vlib_combined_counter_main_t sr_ls_invalid_counters;
@@ -274,6 +310,16 @@ sr_localsid_register_function (vlib_main_t * vm, u8 * fn_name,
 			       unformat_function_t * ls_unformat,
 			       sr_plugin_callback_t * creation_fn,
 			       sr_plugin_callback_t * removal_fn);
+
+extern int
+sr_policy_register_function (vlib_main_t * vm, u8 * fn_name,
+			     u8 * keyword_str, u8 * def_str,
+			     u8 * params_str, u8 prefix_length,
+			     dpo_type_t * dpo,
+			     format_function_t * ls_format,
+			     unformat_function_t * ls_unformat,
+			     sr_p_plugin_callback_t * creation_fn,
+			     sr_p_plugin_callback_t * removal_fn);
 
 extern int
 sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,

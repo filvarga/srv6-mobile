@@ -968,31 +968,27 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 
 VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) =
 {
-  .name = "srv6-end-m-gtp4-e",
-  .vector_size = sizeof (u32),
-  .format_trace = format_srv6_end_rewrite_trace,
-  .type = VLIB_NODE_TYPE_INTERNAL,
-  .n_errors = ARRAY_LEN (srv6_end_error_v4_strings),
-  .error_strings = srv6_end_error_v4_strings,
-  .n_next_nodes = SRV6_END_M_GTP4_E_N_NEXT,
-  .next_nodes = {
+  .name = "srv6-end-m-gtp4-e",.vector_size = sizeof (u32),.format_trace =
+    format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
+    ARRAY_LEN (srv6_end_error_v4_strings),.error_strings =
+    srv6_end_error_v4_strings,.n_next_nodes =
+    SRV6_END_M_GTP4_E_N_NEXT,.next_nodes =
+  {
   [SRV6_END_M_GTP4_E_NEXT_DROP] = "error-drop",
-  [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",},
-};
+      [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",}
+,};
 
 VLIB_REGISTER_NODE (srv6_end_m_gtp4_d) =
 {
-  .name = "srv6-end-m-gtp4-d",
-  .vector_size = sizeof (u32),
-  .format_trace = format_srv6_end_rewrite_trace,
-  .type = VLIB_NODE_TYPE_INTERNAL,
-  .n_errors = ARRAY_LEN (srv6_end_error_v4_d_strings),
-  .error_strings = srv6_end_error_v4_d_strings,
-  .n_next_nodes = SRV6_END_M_GTP4_D_N_NEXT,
-  .next_nodes = {
+  .name = "srv6-end-m-gtp4-d",.vector_size = sizeof (u32),.format_trace =
+    format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
+    ARRAY_LEN (srv6_end_error_v4_d_strings),.error_strings =
+    srv6_end_error_v4_d_strings,.n_next_nodes =
+    SRV6_END_M_GTP4_D_N_NEXT,.next_nodes =
+  {
   [SRV6_END_M_GTP4_D_NEXT_DROP] = "error-drop",
-  [SRV6_END_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",},
-};
+      [SRV6_END_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",}
+,};
 
 // Function for SRv6 GTP6.E function
 VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,

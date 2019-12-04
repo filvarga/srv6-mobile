@@ -340,7 +340,7 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
 {
   ip6_sr_main_t *sm = &sr_main;
   ip6_sr_sl_t *segment_list;
-  sr_localsid_fn_registration_t *plugin = 0;
+  sr_policy_fn_registration_t *plugin = 0;
 
   pool_get (sm->sid_lists, segment_list);
   clib_memset (segment_list, 0, sizeof (*segment_list));
@@ -366,10 +366,14 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
 
   if (sr_policy->plugin)
     {
-      plugin = pool_elt_at_index (sm->plugin_functions, sr_policy->plugin - SR_BEHAVIOR_LAST);
+      plugin =
+	pool_elt_at_index (sm->policy_plugin_functions,
+			   sr_policy->plugin - SR_BEHAVIOR_LAST);
 
       segment_list->plugin = sr_policy->plugin;
       segment_list->plugin_mem = sr_policy->plugin_mem;
+
+      plugin->creation (sr_policy);
     }
 
   /* Create DPO */
@@ -379,36 +383,36 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
 
   if (is_encap)
     {
-      if (! sr_policy->plugin)
+      if (!sr_policy->plugin)
 	{
-          dpo_set (&segment_list->ip6_dpo, sr_pr_encaps_dpo_type, DPO_PROTO_IP6,
-	           segment_list - sm->sid_lists);
-          dpo_set (&segment_list->ip4_dpo, sr_pr_encaps_dpo_type, DPO_PROTO_IP4,
-	           segment_list - sm->sid_lists);
-          dpo_set (&segment_list->bsid_dpo, sr_pr_bsid_encaps_dpo_type,
-	           DPO_PROTO_IP6, segment_list - sm->sid_lists);
+	  dpo_set (&segment_list->ip6_dpo, sr_pr_encaps_dpo_type,
+		   DPO_PROTO_IP6, segment_list - sm->sid_lists);
+	  dpo_set (&segment_list->ip4_dpo, sr_pr_encaps_dpo_type,
+		   DPO_PROTO_IP4, segment_list - sm->sid_lists);
+	  dpo_set (&segment_list->bsid_dpo, sr_pr_bsid_encaps_dpo_type,
+		   DPO_PROTO_IP6, segment_list - sm->sid_lists);
 	}
       else
-        {
+	{
 	  dpo_set (&segment_list->ip6_dpo, plugin->dpo, DPO_PROTO_IP6,
-	           segment_list - sm->sid_lists);
+		   segment_list - sm->sid_lists);
 	  dpo_set (&segment_list->ip4_dpo, plugin->dpo, DPO_PROTO_IP4,
-	           segment_list - sm->sid_lists);
+		   segment_list - sm->sid_lists);
 	  dpo_set (&segment_list->bsid_dpo, plugin->dpo, DPO_PROTO_IP6,
 		   segment_list - sm->sid_lists);
 	}
     }
   else
     {
-      if (! sr_policy->plugin)
-        {
-          dpo_set (&segment_list->ip6_dpo, sr_pr_insert_dpo_type, DPO_PROTO_IP6,
-	           segment_list - sm->sid_lists);
-          dpo_set (&segment_list->bsid_dpo, sr_pr_bsid_insert_dpo_type,
-	           DPO_PROTO_IP6, segment_list - sm->sid_lists);
+      if (!sr_policy->plugin)
+	{
+	  dpo_set (&segment_list->ip6_dpo, sr_pr_insert_dpo_type,
+		   DPO_PROTO_IP6, segment_list - sm->sid_lists);
+	  dpo_set (&segment_list->bsid_dpo, sr_pr_bsid_insert_dpo_type,
+		   DPO_PROTO_IP6, segment_list - sm->sid_lists);
 	}
       else
-        {
+	{
 	  dpo_set (&segment_list->ip6_dpo, plugin->dpo, DPO_PROTO_IP6,
 		   segment_list - sm->sid_lists);
 	  dpo_set (&segment_list->bsid_dpo, plugin->dpo, DPO_PROTO_IP6,
@@ -769,13 +773,13 @@ sr_policy_del (ip6_address_t * bsid, u32 index)
 
   if (sr_policy->plugin)
     {
-      ip6_sr_localsid_t dummy;
-      sr_localsid_fn_registration_t *plugin = 0;
+      sr_policy_fn_registration_t *plugin = 0;
 
-      plugin = pool_elt_at_index (sm->plugin_functions, sr_policy->plugin - SR_BEHAVIOR_LAST);
+      plugin =
+	pool_elt_at_index (sm->policy_plugin_functions,
+			   sr_policy->plugin - SR_BEHAVIOR_LAST);
 
-      dummy.plugin_mem = sr_policy->plugin_mem;
-      plugin->removal (&dummy);
+      plugin->removal (sr_policy);
       sr_policy->plugin = 0;
       sr_policy->plugin_mem = NULL;
     }
@@ -965,25 +969,25 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	is_spray = 1;
       else if (!behavior && unformat (input, "behavior"))
 	{
-	  sr_localsid_fn_registration_t *plugin = 0, **vec_plugins = 0;
-	  sr_localsid_fn_registration_t **plugin_it = 0;
+	  sr_policy_fn_registration_t *plugin = 0, **vec_plugins = 0;
+	  sr_policy_fn_registration_t **plugin_it = 0;
 
 	  /* *INDENT-OFF* */
-	  pool_foreach (plugin, sm->plugin_functions,
+	  pool_foreach (plugin, sm->policy_plugin_functions,
 	    {
 	      vec_add1 (vec_plugins, plugin);
 	    });
 	  /* *INDENT-ON* */
 
 	  vec_foreach (plugin_it, vec_plugins)
-	    {
-	      if (unformat
-	          (input, "%U", (*plugin_it)->ls_unformat, &ls_plugin_mem))
-		{
-		  behavior = (*plugin_it)->sr_localsid_function_number;
-		  break;
-		}
-	    }
+	  {
+	    if (unformat
+		(input, "%U", (*plugin_it)->ls_unformat, &ls_plugin_mem))
+	      {
+		behavior = (*plugin_it)->sr_policy_function_number;
+		break;
+	      }
+	  }
 
 	  if (!behavior)
 	    {
@@ -1004,8 +1008,8 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
     {
       if (behavior && vec_len (segments) == 0)
 	{
-	  vec_add2(segments, this_seg, 1);
-	  clib_memset(this_seg, 0, sizeof (*this_seg));
+	  vec_add2 (segments, this_seg, 1);
+	  clib_memset (this_seg, 0, sizeof (*this_seg));
 	}
 
       if (vec_len (segments) == 0)
@@ -1037,7 +1041,7 @@ sr_policy_command_fn (vlib_main_t * vm, unformat_input_t * input,
 			  sl_index, weight);
 
       if (segments)
-        vec_free (segments);
+	vec_free (segments);
     }
 
   switch (rv)
@@ -3289,6 +3293,96 @@ VLIB_REGISTER_NODE (sr_policy_rewrite_b_encaps_node) = {
     foreach_sr_policy_rewrite_next
 #undef _
   },
+};
+/* *INDENT-ON* */
+
+/*************************** SR Policy plugins ******************************/
+/**
+ * @brief SR Policy plugin registry
+ */
+int
+sr_policy_register_function (vlib_main_t * vm, u8 * fn_name,
+			     u8 * keyword_str, u8 * def_str,
+			     u8 * params_str, u8 prefix_length,
+			     dpo_type_t * dpo,
+			     format_function_t * ls_format,
+			     unformat_function_t * ls_unformat,
+			     sr_p_plugin_callback_t * creation_fn,
+			     sr_p_plugin_callback_t * removal_fn)
+{
+  ip6_sr_main_t *sm = &sr_main;
+  uword *p;
+
+  sr_policy_fn_registration_t *plugin;
+
+  /* Did this function exist? If so update it */
+  p = hash_get_mem (sm->policy_plugin_functions_by_key, fn_name);
+  if (p)
+    {
+      plugin = pool_elt_at_index (sm->policy_plugin_functions, p[0]);
+    }
+  /* Else create a new one and set hash key */
+  else
+    {
+      pool_get (sm->policy_plugin_functions, plugin);
+      hash_set_mem (sm->policy_plugin_functions_by_key, fn_name,
+		    plugin - sm->policy_plugin_functions);
+    }
+
+  clib_memset (plugin, 0, sizeof (*plugin));
+
+  plugin->sr_policy_function_number = (plugin - sm->policy_plugin_functions);
+  plugin->sr_policy_function_number += SR_BEHAVIOR_LAST;
+  plugin->prefix_length = prefix_length;
+  plugin->ls_format = ls_format;
+  plugin->ls_unformat = ls_unformat;
+  plugin->creation = creation_fn;
+  plugin->removal = removal_fn;
+  clib_memcpy (&plugin->dpo, dpo, sizeof (dpo_type_t));
+  plugin->function_name = format (0, "%s%c", fn_name, 0);
+  plugin->keyword_str = format (0, "%s%c", keyword_str, 0);
+  plugin->def_str = format (0, "%s%c", def_str, 0);
+  plugin->params_str = format (0, "%s%c", params_str, 0);
+
+  return plugin->sr_policy_function_number;
+}
+
+/**
+ * @brief CLI function to 'show' all available SR LocalSID behaviors
+ */
+static clib_error_t *
+show_sr_policy_behaviors_command_fn (vlib_main_t * vm,
+				     unformat_input_t * input,
+				     vlib_cli_command_t * cmd)
+{
+  ip6_sr_main_t *sm = &sr_main;
+  sr_policy_fn_registration_t *plugin;
+  sr_policy_fn_registration_t **plugins_vec = 0;
+  int i;
+
+  vlib_cli_output (vm, "SR Policy behaviors:\n-----------------------\n\n");
+
+  /* *INDENT-OFF* */
+  pool_foreach (plugin, sm->policy_plugin_functions,
+    ({ vec_add1 (plugins_vec, plugin); }));
+  /* *INDENT-ON* */
+
+  vlib_cli_output (vm, "Plugin behaviors:\n");
+  for (i = 0; i < vec_len (plugins_vec); i++)
+    {
+      plugin = plugins_vec[i];
+      vlib_cli_output (vm, "\t%s\t-> %s.\n", plugin->keyword_str,
+		       plugin->def_str);
+      vlib_cli_output (vm, "\t\tParameters: '%s'\n", plugin->params_str);
+    }
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (show_sr_policy_behaviors_command, static) = {
+  .path = "show sr policy behaviors",
+  .short_help = "show sr policy behaviors",
+  .function = show_sr_policy_behaviors_command_fn,
 };
 /* *INDENT-ON* */
 
