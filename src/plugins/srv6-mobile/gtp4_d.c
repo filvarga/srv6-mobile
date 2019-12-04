@@ -53,7 +53,7 @@ const static char *const srv6_end_m_gtp4_d_nodes[] = {
   NULL,
 };
 
-const static char *const dpo_nodes[DPO_PROTO_NUM] = {
+const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
   [DPO_PROTO_IP4] = srv6_end_m_gtp4_d_nodes,
 };
 
