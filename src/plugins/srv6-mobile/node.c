@@ -601,7 +601,19 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	    pool_elt_at_index (sm2->sid_lists,
 			       vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
 
+	  if (! sl0) {
+			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      bad_n++;
+			      goto DONE;
+	  }
+
 	  ls_param = (srv6_end_gtp4_param_t *) sl0->plugin_mem;
+
+	  if (! ls_param) {
+			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      bad_n++;
+			      goto DONE;
+	  }
 
 	  len0 = vlib_buffer_length_in_chain (vm, b0);
 
