@@ -573,6 +573,7 @@ update_dpo (ip6_sr_policy_t * sr_policy)
   vec_foreach (sl_index, sr_policy->segments_lists)
   {
     segment_list = pool_elt_at_index (sm->sid_lists, *sl_index);
+    path.path_weight = segment_list->weight;
     if (sr_policy->is_encap)
       {
 	path.path_dpo = segment_list->ip4_dpo;
