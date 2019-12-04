@@ -525,6 +525,7 @@ static inline void
 update_dpo (ip6_sr_policy_t * sr_policy)
 {
   ip6_sr_main_t *sm = &sr_main;
+  flow_hash_config_t fhc;
 
   fib_prefix_t pfx = {
     .fp_proto = FIB_PROTOCOL_IP6,
@@ -535,6 +536,9 @@ update_dpo (ip6_sr_policy_t * sr_policy)
   };
 
   /* Update FIB entry's to point to the LB DPO in the main FIB and hidden one */
+  fhc = fib_table_get_flow_hash_config (sr_policy->fib_table,
+  			  	        FIB_PROTOCOL_IP6);
+
 #if 0
   fib_table_entry_special_dpo_update (fib_table_find (FIB_PROTOCOL_IP6,
  			    		           sr_policy->fib_table),
@@ -551,6 +555,9 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 
   if (sr_policy->is_encap)
     {
+      dpo_set (&sr_policy->ip4_dpo, DPO_LOAD_BALANCE, DPO_PROTO_IP4,
+ 	       load_balance_create (0, DPO_PROTO_IP4, fhc));
+
       fib_table_entry_special_dpo_update (sm->fib_table_ip4,
 			               &pfx,
 			               FIB_SOURCE_SR,
