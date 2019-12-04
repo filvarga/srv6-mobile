@@ -561,7 +561,6 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
   srv6_end_main_v4_decap_t *sm = &srv6_end_main_v4_decap;
   ip6_sr_main_t *sm2 = &sr_main;
   u32 n_left_from, next_index, *from, *to_next;
-  u32 thread_index = vm->thread_index;
 
   u32 good_n = 0, bad_n = 0;
 
