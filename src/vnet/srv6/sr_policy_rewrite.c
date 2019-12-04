@@ -531,13 +531,13 @@ update_dpo (ip6_sr_policy_t * sr_policy)
   };
 
   /* Update FIB entry's to point to the LB DPO in the main FIB and hidden one */
-  fib_table_entry_special_dpo_add (fib_table_find (FIB_PROTOCOL_IP6,
+  fib_table_entry_special_dpo_update (fib_table_find (FIB_PROTOCOL_IP6,
  			    		           sr_policy->fib_table),
 				   &pfx, FIB_SOURCE_SR,
 				   FIB_ENTRY_FLAG_EXCLUSIVE,
 				   &sr_policy->bsid_dpo);
 
-  fib_table_entry_special_dpo_add (sm->fib_table_ip6,
+  fib_table_entry_special_dpo_update (sm->fib_table_ip6,
 			           &pfx,
 			           FIB_SOURCE_SR,
 			           FIB_ENTRY_FLAG_EXCLUSIVE,
@@ -545,7 +545,7 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 
   if (sr_policy->is_encap)
     {
-      fib_table_entry_special_dpo_add (sm->fib_table_ip4,
+      fib_table_entry_special_dpo_update (sm->fib_table_ip4,
 			               &pfx,
 			               FIB_SOURCE_SR,
 				       FIB_ENTRY_FLAG_EXCLUSIVE,
