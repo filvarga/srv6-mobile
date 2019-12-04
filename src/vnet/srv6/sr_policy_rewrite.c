@@ -390,12 +390,16 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
 	}
       else
         {
+#if 0
 	  dpo_set (&segment_list->ip6_dpo, plugin->dpo, DPO_PROTO_IP6,
 	           segment_list - sm->sid_lists);
+#endif
 	  dpo_set (&segment_list->ip4_dpo, plugin->dpo, DPO_PROTO_IP4,
 	           segment_list - sm->sid_lists);
+#if 0
 	  dpo_set (&segment_list->bsid_dpo, plugin->dpo, DPO_PROTO_IP6,
 		   segment_list - sm->sid_lists);
+#endif
 	}
     }
   else
@@ -531,6 +535,7 @@ update_dpo (ip6_sr_policy_t * sr_policy)
   };
 
   /* Update FIB entry's to point to the LB DPO in the main FIB and hidden one */
+#if 0
   fib_table_entry_special_dpo_update (fib_table_find (FIB_PROTOCOL_IP6,
  			    		           sr_policy->fib_table),
 				   &pfx, FIB_SOURCE_SR,
@@ -542,6 +547,7 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 			           FIB_SOURCE_SR,
 			           FIB_ENTRY_FLAG_EXCLUSIVE,
 			           &sr_policy->ip6_dpo);
+#endif
 
   if (sr_policy->is_encap)
     {
