@@ -518,7 +518,6 @@ update_lb (ip6_sr_policy_t * sr_policy)
   vec_free (b_path_vector);
   vec_free (ip6_path_vector);
   vec_free (ip4_path_vector);
-
 }
 
 static inline void
@@ -526,6 +525,11 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 {
   ip6_sr_main_t *sm = &sr_main;
   flow_hash_config_t fhc;
+  u32 *sl_index;
+  ip6_sr_sl_t *segment_list;
+  load_balance_path_t path;
+  path.path_index = FIB_NODE_INDEX_INVALID;
+  load_balance_path_t *ip4_path_vector = 0;
 
   fib_prefix_t pfx = {
     .fp_proto = FIB_PROTOCOL_IP6,
@@ -564,6 +568,25 @@ update_dpo (ip6_sr_policy_t * sr_policy)
 				       FIB_ENTRY_FLAG_EXCLUSIVE,
 				       &sr_policy->ip4_dpo);
     }
+
+  /* Create the LB path vector */
+  vec_foreach (sl_index, sr_policy->segments_lists)
+  {
+    segment_list = pool_elt_at_index (sm->sid_lists, *sl_index);
+    if (sr_policy->is_encap)
+      {
+	path.path_dpo = segment_list->ip4_dpo;
+	vec_add1 (ip4_path_vector, path);
+      }
+  }
+
+  /* Update LB multipath */
+  if (sr_policy->is_encap)
+    load_balance_multipath_update (&sr_policy->ip4_dpo, ip4_path_vector,
+				   LOAD_BALANCE_FLAG_NONE);
+
+  /* Cleanup */
+  vec_free (ip4_path_vector);
 }
 
 /**
