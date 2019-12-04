@@ -390,16 +390,12 @@ create_sl (ip6_sr_policy_t * sr_policy, ip6_address_t * sl, u32 weight,
 	}
       else
         {
-#if 0
 	  dpo_set (&segment_list->ip6_dpo, plugin->dpo, DPO_PROTO_IP6,
 	           segment_list - sm->sid_lists);
-#endif
 	  dpo_set (&segment_list->ip4_dpo, plugin->dpo, DPO_PROTO_IP4,
 	           segment_list - sm->sid_lists);
-#if 0
 	  dpo_set (&segment_list->bsid_dpo, plugin->dpo, DPO_PROTO_IP6,
 		   segment_list - sm->sid_lists);
-#endif
 	}
     }
   else
@@ -505,6 +501,7 @@ update_lb (ip6_sr_policy_t * sr_policy)
       }
   }
 
+#if 0
   /* Update LB multipath */
   load_balance_multipath_update (&sr_policy->bsid_dpo, b_path_vector,
 				 LOAD_BALANCE_FLAG_NONE);
@@ -513,80 +510,11 @@ update_lb (ip6_sr_policy_t * sr_policy)
   if (sr_policy->is_encap)
     load_balance_multipath_update (&sr_policy->ip4_dpo, ip4_path_vector,
 				   LOAD_BALANCE_FLAG_NONE);
+#endif
 
   /* Cleanup */
   vec_free (b_path_vector);
   vec_free (ip6_path_vector);
-  vec_free (ip4_path_vector);
-}
-
-static inline void
-update_dpo (ip6_sr_policy_t * sr_policy)
-{
-  ip6_sr_main_t *sm = &sr_main;
-  flow_hash_config_t fhc;
-  u32 *sl_index;
-  ip6_sr_sl_t *segment_list;
-  load_balance_path_t path;
-  path.path_index = FIB_NODE_INDEX_INVALID;
-  load_balance_path_t *ip4_path_vector = 0;
-
-  fib_prefix_t pfx = {
-    .fp_proto = FIB_PROTOCOL_IP6,
-    .fp_len = 128,
-    .fp_addr = {
-  	         .ip6 = sr_policy->bsid,
-	        }
-  };
-
-  /* Update FIB entry's to point to the LB DPO in the main FIB and hidden one */
-  fhc = fib_table_get_flow_hash_config (sr_policy->fib_table,
-  			  	        FIB_PROTOCOL_IP6);
-
-#if 0
-  fib_table_entry_special_dpo_update (fib_table_find (FIB_PROTOCOL_IP6,
- 			    		           sr_policy->fib_table),
-				   &pfx, FIB_SOURCE_SR,
-				   FIB_ENTRY_FLAG_EXCLUSIVE,
-				   &sr_policy->bsid_dpo);
-
-  fib_table_entry_special_dpo_update (sm->fib_table_ip6,
-			           &pfx,
-			           FIB_SOURCE_SR,
-			           FIB_ENTRY_FLAG_EXCLUSIVE,
-			           &sr_policy->ip6_dpo);
-#endif
-
-  if (sr_policy->is_encap)
-    {
-      dpo_set (&sr_policy->ip4_dpo, DPO_LOAD_BALANCE, DPO_PROTO_IP4,
- 	       load_balance_create (0, DPO_PROTO_IP4, fhc));
-
-      fib_table_entry_special_dpo_update (sm->fib_table_ip4,
-			               &pfx,
-			               FIB_SOURCE_SR,
-				       FIB_ENTRY_FLAG_EXCLUSIVE,
-				       &sr_policy->ip4_dpo);
-    }
-
-  /* Create the LB path vector */
-  vec_foreach (sl_index, sr_policy->segments_lists)
-  {
-    segment_list = pool_elt_at_index (sm->sid_lists, *sl_index);
-    path.path_weight = segment_list->weight;
-    if (sr_policy->is_encap)
-      {
-	path.path_dpo = segment_list->ip4_dpo;
-	vec_add1 (ip4_path_vector, path);
-      }
-  }
-
-  /* Update LB multipath */
-  if (sr_policy->is_encap)
-    load_balance_multipath_update (&sr_policy->ip4_dpo, ip4_path_vector,
-				   LOAD_BALANCE_FLAG_NONE);
-
-  /* Cleanup */
   vec_free (ip4_path_vector);
 }
 
@@ -766,12 +694,7 @@ sr_policy_add (ip6_address_t * bsid, ip6_address_t * segments,
 
   /* Create IPv6 FIB for the BindingSID attached to the DPO of the only SL */
   if (sr_policy->type == SR_POLICY_TYPE_DEFAULT)
-    {
-      if (plugin)
-	update_dpo (sr_policy);
-      else
-        update_lb (sr_policy);
-    }
+    update_lb (sr_policy);
   else if (sr_policy->type == SR_POLICY_TYPE_SPRAY)
     update_replicate (sr_policy);
   return 0;
