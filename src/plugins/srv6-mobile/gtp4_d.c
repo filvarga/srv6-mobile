@@ -66,7 +66,7 @@ const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
 static u8 fn_name[] = "SRv6-T.M.GTP4.D-plugin";
 static u8 keyword_str[] = "t.m.gtp4.d";
 static u8 def_str[] =
-  "Transit function with dencapsulation for IPv6/GTP tunnel";
+  "Transit function with decapsulation for IPv4/GTP tunnel";
 static u8 param_str[] =
   "<sr-prefix>/<sr-prefixlen> v6src_prefix <v6src_prefix>/<prefixlen> [nhtype <nhtype>]";
 
