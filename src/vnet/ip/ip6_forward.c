@@ -1136,6 +1136,52 @@ VNET_FEATURE_ARC_INIT (ip6_local) =
 };
 /* *INDENT-ON* */
 
+static_always_inline u8
+ip6_tcp_udp_icmp_bad_length (vlib_main_t * vm, vlib_buffer_t * p0)
+{
+
+  u16 payload_length_host_byte_order;
+  u32 n_this_buffer, n_bytes_left;
+  ip6_header_t *ip0 = vlib_buffer_get_current (p0);
+  u32 headers_size = sizeof (ip0[0]);
+  u8 *data_this_buffer;
+
+
+  data_this_buffer = (u8 *) (ip0 + 1);
+
+  ip6_hop_by_hop_ext_t *ext_hdr = (ip6_hop_by_hop_ext_t *) data_this_buffer;
+
+  /* validate really icmp6 next */
+
+  if (!(ext_hdr->next_hdr == IP_PROTOCOL_ICMP6)
+      || (ext_hdr->next_hdr == IP_PROTOCOL_UDP))
+    return 0;
+
+
+  payload_length_host_byte_order = clib_net_to_host_u16 (ip0->payload_length);
+  n_bytes_left = n_this_buffer = payload_length_host_byte_order;
+
+  if (p0)
+    {
+      u32 n_ip_bytes_this_buffer =
+	p0->current_length - (((u8 *) ip0 - p0->data) - p0->current_data);
+      if (n_this_buffer + headers_size > n_ip_bytes_this_buffer)
+	{
+	  n_this_buffer = p0->current_length > headers_size ?
+	    n_ip_bytes_this_buffer - headers_size : 0;
+	}
+    }
+
+  n_bytes_left -= n_this_buffer;
+  n_bytes_left -= p0->total_length_not_including_first_buffer;
+
+  if (n_bytes_left == 0)
+    return 0;
+  else
+    return 1;
+}
+
+
 always_inline uword
 ip6_local_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 		  vlib_frame_t * frame, int head_of_feature_arc)
@@ -1250,16 +1296,28 @@ ip6_local_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	    {
 	      flags[0] = ip6_tcp_udp_icmp_validate_checksum (vm, b[0]);
 	      good_l4_csum[0] = flags[0] & VNET_BUFFER_F_L4_CHECKSUM_CORRECT;
+	      error[0] = IP6_ERROR_UNKNOWN_PROTOCOL;
+	    }
+	  else
+	    {
+	      if (ip6_tcp_udp_icmp_bad_length (vm, b[0]))
+		error[0] = IP6_ERROR_BAD_LENGTH;
 	    }
 	  if (PREDICT_FALSE (need_csum[1]))
 	    {
 	      flags[1] = ip6_tcp_udp_icmp_validate_checksum (vm, b[1]);
 	      good_l4_csum[1] = flags[1] & VNET_BUFFER_F_L4_CHECKSUM_CORRECT;
+	      error[1] = IP6_ERROR_UNKNOWN_PROTOCOL;
+	    }
+	  else
+	    {
+	      if (ip6_tcp_udp_icmp_bad_length (vm, b[1]))
+		error[1] = IP6_ERROR_BAD_LENGTH;
 	    }
 
-	  error[0] = IP6_ERROR_UNKNOWN_PROTOCOL;
+
 	  error[0] = len_diff[0] < 0 ? IP6_ERROR_UDP_LENGTH : error[0];
-	  error[1] = IP6_ERROR_UNKNOWN_PROTOCOL;
+
 	  error[1] = len_diff[1] < 0 ? IP6_ERROR_UDP_LENGTH : error[1];
 
 	  STATIC_ASSERT (IP6_ERROR_UDP_CHECKSUM + IP_BUILTIN_PROTOCOL_UDP ==
@@ -1391,9 +1449,16 @@ ip6_local_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	    {
 	      flags = ip6_tcp_udp_icmp_validate_checksum (vm, b[0]);
 	      good_l4_csum = flags & VNET_BUFFER_F_L4_CHECKSUM_CORRECT;
+	      error = IP6_ERROR_UNKNOWN_PROTOCOL;
+	    }
+	  else
+	    {
+	      if (ip6_tcp_udp_icmp_bad_length (vm, b[0]))
+		error = IP6_ERROR_BAD_LENGTH;
 	    }
 
-	  error = IP6_ERROR_UNKNOWN_PROTOCOL;
+
+
 	  error = len_diff < 0 ? IP6_ERROR_UDP_LENGTH : error;
 
 	  STATIC_ASSERT (IP6_ERROR_UDP_CHECKSUM + IP_BUILTIN_PROTOCOL_UDP ==
@@ -1680,8 +1745,7 @@ always_inline uword
 ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 			     vlib_node_runtime_t * node,
 			     vlib_frame_t * frame,
-			     int do_counters, int is_midchain, int is_mcast,
-			     int do_gso)
+			     int do_counters, int is_midchain, int is_mcast)
 {
   ip_lookup_main_t *lm = &ip6_main.lookup_main;
   u32 *from = vlib_frame_vector_args (frame);
@@ -1699,7 +1763,7 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 
       while (n_left_from >= 4 && n_left_to_next >= 2)
 	{
-	  ip_adjacency_t *adj0, *adj1;
+	  const ip_adjacency_t *adj0, *adj1;
 	  vlib_buffer_t *p0, *p1;
 	  ip6_header_t *ip0, *ip1;
 	  u32 pi0, rw_len0, next0, error0, adj_index0;
@@ -1833,9 +1897,9 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 	  u16 ip1_len =
 	    clib_net_to_host_u16 (ip1->payload_length) +
 	    sizeof (ip6_header_t);
-	  if (do_gso && (p0->flags & VNET_BUFFER_F_GSO))
+	  if (p0->flags & VNET_BUFFER_F_GSO)
 	    ip0_len = gso_mtu_sz (p0);
-	  if (do_gso && (p1->flags & VNET_BUFFER_F_GSO))
+	  if (p1->flags & VNET_BUFFER_F_GSO)
 	    ip1_len = gso_mtu_sz (p1);
 
 
@@ -2010,7 +2074,7 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 	  u16 ip0_len =
 	    clib_net_to_host_u16 (ip0->payload_length) +
 	    sizeof (ip6_header_t);
-	  if (do_gso && (p0->flags & VNET_BUFFER_F_GSO))
+	  if (p0->flags & VNET_BUFFER_F_GSO)
 	    ip0_len = gso_mtu_sz (p0);
 
 	  ip6_mtu_check (p0, ip0_len,
@@ -2081,15 +2145,8 @@ ip6_rewrite_inline (vlib_main_t * vm,
 		    vlib_frame_t * frame,
 		    int do_counters, int is_midchain, int is_mcast)
 {
-  vnet_main_t *vnm = vnet_get_main ();
-  if (PREDICT_FALSE (vnm->interface_main.gso_interface_count > 0))
-    return ip6_rewrite_inline_with_gso (vm, node, frame, do_counters,
-					is_midchain, is_mcast,
-					1 /* do_gso */ );
-  else
-    return ip6_rewrite_inline_with_gso (vm, node, frame, do_counters,
-					is_midchain, is_mcast,
-					0 /* no do_gso */ );
+  return ip6_rewrite_inline_with_gso (vm, node, frame, do_counters,
+				      is_midchain, is_mcast);
 }
 
 VLIB_NODE_FN (ip6_rewrite_node) (vlib_main_t * vm,

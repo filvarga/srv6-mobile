@@ -43,6 +43,7 @@
 
 #define QUIC_SEND_MAX_BATCH_PACKETS 16
 #define QUIC_RCV_MAX_BATCH_PACKETS 16
+#define QUIC_DEFAULT_CONN_TIMEOUT (30 * 1000)	/* 30 seconds */
 
 /* Taken from quicly.c */
 #define QUICLY_QUIC_BIT 0x40
@@ -68,10 +69,22 @@
 #define QUIC_DBG(_lvl, _fmt, _args...)
 #endif
 
+#if CLIB_ASSERT_ENABLE
+#define QUIC_ASSERT(truth) ASSERT (truth)
+#else
+#define QUIC_ASSERT(truth)                        \
+  do {                                            \
+    if (PREDICT_FALSE (! (truth)))                \
+      QUIC_ERR ("ASSERT(%s) failed", # truth);    \
+  } while (0)
+#endif
+
 #define QUIC_ERR(_fmt, _args...)                \
   do {                                          \
     clib_warning ("QUIC-ERR: " _fmt, ##_args);  \
   } while (0)
+
+
 
 extern vlib_node_registration_t quic_input_node;
 
@@ -166,6 +179,7 @@ typedef struct quic_stream_data_
   u32 ctx_id;
   u32 thread_index;
   u32 app_rx_data_len;		/**< bytes received, to be read by external app */
+  u32 app_tx_data_len;		/**< bytes sent */
 } quic_stream_data_t;
 
 typedef struct quic_worker_ctx_
@@ -216,6 +230,7 @@ typedef struct quic_main_
 
   u32 udp_fifo_size;
   u32 udp_fifo_prealloc;
+  u32 connection_timeout;
 } quic_main_t;
 
 #endif /* __included_quic_h__ */
