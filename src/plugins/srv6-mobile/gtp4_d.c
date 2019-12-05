@@ -75,7 +75,7 @@ clb_format_srv6_t_m_gtp4_d (u8 * s, va_list * args)
 {
   srv6_end_gtp4_param_t *ls_mem = va_arg (*args, void *);
 
-  s = format (s, "SRv6 End gtp4.d\n\t");
+  s = format (s, "SRv6 T.M.GTP4.D\n\t");
 
   s =
     format (s, "SR Prefix: %U/%d, ", format_ip6_address, &ls_mem->sr_prefix,
