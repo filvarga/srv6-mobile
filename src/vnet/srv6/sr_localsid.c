@@ -516,10 +516,10 @@ show_sr_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	{
 	case SR_BEHAVIOR_END:
 	  if (ls->usid_index)
-	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d]",
+	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d, length: %d]",
 			    format_ip6_address, &ls->localsid,
 			    format_ip6_address, &ls->usid_block,
-			    ls->usid_index * 8);
+			    ls->usid_index * 8, ls->usid_len * 8);
 	  else
 	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
 			     format_ip6_address, &ls->localsid);

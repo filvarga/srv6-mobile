@@ -809,14 +809,18 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 		      ip6srv->sr.length += sizeof (ip6_address_t) / 8;
 		      ip6srv->sr.segments[0] = seg;
+
+		      ip6srv->ip.payload_length += sizeof(ip6_address_t);
 		    }
 		  else
 		    {
 		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
 
 		      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+
 		      ip6srv->sr.segments_left = 1;
 		      ip6srv->sr.last_entry = 0;
+
 		      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + sizeof(ip6_address_t)) / 8) - 1;
 		      ip6srv->sr.flags = 0;
 
@@ -1454,17 +1458,39 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		  clib_memcpy_fast (ip6srv, sl->rewrite,
 				    vec_len (sl->rewrite));
 
-		  ip6srv->ip.src_address = src0;
-		  ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
+		  if (vec_len (sl->segments))
+		    {
+		      ip6srv->ip.src_address = src0;
 
-		  ip6srv->sr.tag =
-		    clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+		      ip6srv->sr.tag =
+		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
-		  ip6srv->sr.segments_left += 1;
-		  ip6srv->sr.last_entry += 1;
+		      ip6srv->sr.segments_left += 1;
+		      ip6srv->sr.last_entry += 1;
 
-		  ip6srv->sr.length += sizeof (ip6_address_t) / 8;
-		  ip6srv->sr.segments[0] = seg0;
+		      ip6srv->sr.length += sizeof (ip6_address_t) / 8;
+		      ip6srv->sr.segments[0] = seg0;
+
+                      ip6srv->ip.payload_length += sizeof(ip6_address_t);
+		    }
+		  else
+		    {
+		      ip6srv->ip.src_address = src0;
+		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
+
+                      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+                      ip6srv->sr.segments_left = 1;
+                      ip6srv->sr.last_entry = 0;
+                      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + sizeof(ip6_address_t)) / 8) - 1;
+                      ip6srv->sr.flags = 0;
+
+                      ip6srv->sr.tag =
+                        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+
+                      ip6srv->sr.segments[0] = seg0;
+
+                      ip6srv->ip.payload_length = sizeof(ip6_sr_header_t) + sizeof(ip6_address_t);
+		    }
 
 		  if (PREDICT_TRUE (encap != NULL))
 		    {
@@ -1513,12 +1539,13 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
 		    }
 
-		  clib_memcpy_fast (&ip6srv->sr.segments[1],
-				    (u8 *) (sl->rewrite +
-					    sizeof (ip6_header_t) +
-					    sizeof (ip6_sr_header_t)),
-				    vec_len (sl->segments) *
-				    sizeof (ip6_address_t));
+		  if (vec_len(sl->segments))
+		    clib_memcpy_fast (&ip6srv->sr.segments[1],
+				      (u8 *) (sl->rewrite +
+				 	      sizeof (ip6_header_t) +
+					      sizeof (ip6_sr_header_t)),
+				      vec_len (sl->segments) *
+				      sizeof (ip6_address_t));
 		}
 	      else
 		{
@@ -1840,13 +1867,38 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  clib_memcpy_fast (ip6srv, sl->rewrite,
 				    vec_len (sl->rewrite));
 
-		  ip6srv->ip.src_address = src0;
+		  if (vec_len(sl->segments))
+		    {
+		      ip6srv->ip.src_address = src0;
 
-		  ip6srv->sr.tag =
-		    clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+		      ip6srv->sr.tag =
+		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
-		  ip6srv->sr.segments_left += 2;
-		  ip6srv->sr.last_entry += 2;
+		      ip6srv->sr.segments_left += 2;
+		      ip6srv->sr.last_entry += 2;
+
+	              ip6srv->sr.length += ((sizeof (ip6_address_t) * 2) / 8);
+                      ip6srv->ip.payload_length += 2 * sizeof(ip6_address_t);
+		    }
+		  else
+		    {
+		      ip6srv->ip.src_address = src0;
+		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
+
+                      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+                      ip6srv->sr.segments_left = 2;
+                      ip6srv->sr.last_entry = 1;
+                      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + 2 * sizeof(ip6_address_t)) / 8) - 1;
+                      ip6srv->sr.flags = 0;
+
+                      ip6srv->sr.tag =
+                        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+
+                      ip6srv->ip.payload_length = sizeof(ip6_sr_header_t) + 2 * sizeof(ip6_address_t);
+		    }
+
+	          ip6srv->sr.segments[0] = dst0;
+	          ip6srv->sr.segments[1] = seg0;
 		}
 	      else
 		{
@@ -1862,6 +1914,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  ip6srv->sr.segments_left += 1;
 		  ip6srv->sr.last_entry += 1;
 		  ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+
+	          ip6srv->sr.length += (sizeof (ip6_address_t) / 8);
+                  ip6srv->ip.payload_length += sizeof(ip6_address_t);
+
+	          ip6srv->sr.segments[0] = dst0;
 		}
 
 	      ip6srv->ip.payload_length =
@@ -1915,18 +1972,15 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  ip6srv->sr.protocol = IP_PROTOCOL_NONE;
 		}
 
-	      ip6srv->sr.length += ((sizeof (ip6_address_t) * 2) / 8);
-	      ip6srv->sr.segments[0] = dst0;
-	      ip6srv->sr.segments[1] = seg0;
-
 	      if (sl)
 		{
-		  clib_memcpy_fast (&ip6srv->sr.segments[2],
-				    (u8 *) (sl->rewrite +
-					    sizeof (ip6_header_t) +
-					    sizeof (ip6_sr_header_t)),
-				    vec_len (sl->segments) *
-				    sizeof (ip6_address_t));
+		  if (vec_len(sl->segments))
+		    clib_memcpy_fast (&ip6srv->sr.segments[2],
+				      (u8 *) (sl->rewrite +
+					      sizeof (ip6_header_t) +
+					      sizeof (ip6_sr_header_t)),
+				      vec_len (sl->segments) *
+				      sizeof (ip6_address_t));
 		}
 
 	      good_n++;
