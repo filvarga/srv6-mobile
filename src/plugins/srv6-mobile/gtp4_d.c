@@ -1,5 +1,5 @@
 /*
- * srv6_end_m_gtp4_d.c
+ * srv6_t_m_gtp4_d.c
  *
  * Copyright (c) 2019 Cisco and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,20 +21,20 @@
 #include <vpp/app/version.h>
 #include <srv6-mobile/mobile.h>
 
-srv6_end_main_v4_decap_t srv6_end_main_v4_decap;
+srv6_t_main_v4_decap_t srv6_t_main_v4_decap;
 
 static void
-clb_dpo_lock_srv6_end_m_gtp4_d (dpo_id_t * dpo)
+clb_dpo_lock_srv6_t_m_gtp4_d (dpo_id_t * dpo)
 {
 }
 
 static void
-clb_dpo_unlock_srv6_end_m_gtp4_d (dpo_id_t * dpo)
+clb_dpo_unlock_srv6_t_m_gtp4_d (dpo_id_t * dpo)
 {
 }
 
 static u8 *
-clb_dpo_format_srv6_end_m_gtp4_d (u8 * s, va_list * args)
+clb_dpo_format_srv6_t_m_gtp4_d (u8 * s, va_list * args)
 {
   index_t index = va_arg (*args, index_t);
   CLIB_UNUSED (u32 indent) = va_arg (*args, u32);
@@ -43,35 +43,35 @@ clb_dpo_format_srv6_end_m_gtp4_d (u8 * s, va_list * args)
 }
 
 const static dpo_vft_t dpo_vft = {
-  .dv_lock = clb_dpo_lock_srv6_end_m_gtp4_d,
-  .dv_unlock = clb_dpo_unlock_srv6_end_m_gtp4_d,
-  .dv_format = clb_dpo_format_srv6_end_m_gtp4_d,
+  .dv_lock = clb_dpo_lock_srv6_t_m_gtp4_d,
+  .dv_unlock = clb_dpo_unlock_srv6_t_m_gtp4_d,
+  .dv_format = clb_dpo_format_srv6_t_m_gtp4_d,
 };
 
-const static char *const srv6_end_m_gtp4_d_nodes[] = {
-  "srv6-end-m-gtp4-d",
+const static char *const srv6_t_m_gtp4_d_nodes[] = {
+  "srv6-t-m-gtp4-d",
   NULL,
 };
 
-const static char *const srv6_end_m_gtp4_d_v6_nodes[] = {
+const static char *const srv6_t_m_gtp4_d_v6_nodes[] = {
   "error-drop",
   NULL,
 };
 
 const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
-  [DPO_PROTO_IP6] = srv6_end_m_gtp4_d_v6_nodes,
-  [DPO_PROTO_IP4] = srv6_end_m_gtp4_d_nodes,
+  [DPO_PROTO_IP6] = srv6_t_m_gtp4_d_v6_nodes,
+  [DPO_PROTO_IP4] = srv6_t_m_gtp4_d_nodes,
 };
 
-static u8 fn_name[] = "SRv6-End.M.GTP4.D-plugin";
-static u8 keyword_str[] = "end.m.gtp4.d";
+static u8 fn_name[] = "SRv6-T.M.GTP4.D-plugin";
+static u8 keyword_str[] = "t.m.gtp4.d";
 static u8 def_str[] =
-  "Endpoint function with dencapsulation for IPv6/GTP tunnel";
+  "Transit function with dencapsulation for IPv6/GTP tunnel";
 static u8 param_str[] =
   "<sr-prefix>/<sr-prefixlen> v6src_prefix <v6src_prefix>/<prefixlen> [nhtype <nhtype>]";
 
 static u8 *
-clb_format_srv6_end_m_gtp4_d (u8 * s, va_list * args)
+clb_format_srv6_t_m_gtp4_d (u8 * s, va_list * args)
 {
   srv6_end_gtp4_param_t *ls_mem = va_arg (*args, void *);
 
@@ -103,7 +103,7 @@ clb_format_srv6_end_m_gtp4_d (u8 * s, va_list * args)
 }
 
 static uword
-clb_unformat_srv6_end_m_gtp4_d (unformat_input_t * input, va_list * args)
+clb_unformat_srv6_t_m_gtp4_d (unformat_input_t * input, va_list * args)
 {
   void **plugin_mem_p = va_arg (*args, void **);
   srv6_end_gtp4_param_t *ls_mem;
@@ -113,7 +113,7 @@ clb_unformat_srv6_end_m_gtp4_d (unformat_input_t * input, va_list * args)
   u32 v6src_prefixlen;
   u8 nhtype;
 
-  if (unformat (input, "end.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype ipv4",
+  if (unformat (input, "t.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype ipv4",
 		unformat_ip6_address, &sr_prefix, &sr_prefixlen,
 		unformat_ip6_address, &v6src_prefix, &v6src_prefixlen))
     {
@@ -121,7 +121,7 @@ clb_unformat_srv6_end_m_gtp4_d (unformat_input_t * input, va_list * args)
     }
   else
     if (unformat
-	(input, "end.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype ipv6",
+	(input, "t.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype ipv6",
 	 unformat_ip6_address, &sr_prefix, &sr_prefixlen,
 	 unformat_ip6_address, &v6src_prefix, &v6src_prefixlen))
     {
@@ -129,13 +129,13 @@ clb_unformat_srv6_end_m_gtp4_d (unformat_input_t * input, va_list * args)
     }
   else
     if (unformat
-	(input, "end.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype non-ip",
+	(input, "t.m.gtp4.d %U/%d v6src_prefix %U/%d nhtype non-ip",
 	 unformat_ip6_address, &sr_prefix, &sr_prefixlen,
 	 unformat_ip6_address, &v6src_prefix, &v6src_prefixlen))
     {
       nhtype = SRV6_NHTYPE_NON_IP;
     }
-  else if (unformat (input, "end.m.gtp4.d %U/%d v6src_prefix %U/%d",
+  else if (unformat (input, "t.m.gtp4.d %U/%d v6src_prefix %U/%d",
 		     unformat_ip6_address, &sr_prefix, &sr_prefixlen,
 		     unformat_ip6_address, &v6src_prefix, &v6src_prefixlen))
     {
@@ -162,13 +162,13 @@ clb_unformat_srv6_end_m_gtp4_d (unformat_input_t * input, va_list * args)
 }
 
 static int
-clb_creation_srv6_end_m_gtp4_d (ip6_sr_policy_t * sr_policy)
+clb_creation_srv6_t_m_gtp4_d (ip6_sr_policy_t * sr_policy)
 {
   return 0;
 }
 
 static int
-clb_removal_srv6_end_m_gtp4_d (ip6_sr_policy_t * sr_policy)
+clb_removal_srv6_t_m_gtp4_d (ip6_sr_policy_t * sr_policy)
 {
   srv6_end_gtp4_param_t *ls_mem;
 
@@ -180,9 +180,9 @@ clb_removal_srv6_end_m_gtp4_d (ip6_sr_policy_t * sr_policy)
 }
 
 static clib_error_t *
-srv6_end_m_gtp4_d_init (vlib_main_t * vm)
+srv6_t_m_gtp4_d_init (vlib_main_t * vm)
 {
-  srv6_end_main_v4_decap_t *sm = &srv6_end_main_v4_decap;
+  srv6_t_main_v4_decap_t *sm = &srv6_t_main_v4_decap;
   ip6_header_t *ip6;
   dpo_type_t dpo_type;
   vlib_node_t *node;
@@ -191,8 +191,8 @@ srv6_end_m_gtp4_d_init (vlib_main_t * vm)
   sm->vlib_main = vm;
   sm->vnet_main = vnet_get_main ();
 
-  node = vlib_get_node_by_name (vm, (u8 *) "srv6-end-m-gtp4-d");
-  sm->end_m_gtp4_d_node_index = node->index;
+  node = vlib_get_node_by_name (vm, (u8 *) "srv6-t-m-gtp4-d");
+  sm->t_m_gtp4_d_node_index = node->index;
 
   node = vlib_get_node_by_name (vm, (u8 *) "error-drop");
   sm->error_node_index = node->index;
@@ -210,25 +210,25 @@ srv6_end_m_gtp4_d_init (vlib_main_t * vm)
 
   rc = sr_policy_register_function (vm, fn_name, keyword_str, def_str, param_str, 128,	//prefix len
 				    &dpo_type,
-				    clb_format_srv6_end_m_gtp4_d,
-				    clb_unformat_srv6_end_m_gtp4_d,
-				    clb_creation_srv6_end_m_gtp4_d,
-				    clb_removal_srv6_end_m_gtp4_d);
+				    clb_format_srv6_t_m_gtp4_d,
+				    clb_unformat_srv6_t_m_gtp4_d,
+				    clb_creation_srv6_t_m_gtp4_d,
+				    clb_removal_srv6_t_m_gtp4_d);
   if (rc < 0)
-    clib_error_return (0, "SRv6 Endpoint GTP4.D LocalSID function"
+    clib_error_return (0, "SRv6 Transit GTP4.D Policy function"
 		       "couldn't be registered");
   return 0;
 }
 
 /* *INDENT-OFF* */
-VNET_FEATURE_INIT (srv6_end_m_gtp4_d, static) =
+VNET_FEATURE_INIT (srv6_t_m_gtp4_d, static) =
 {
   .arc_name = "ip4-unicast",
-  .node_name = "srv6-end-m-gtp4-d",
+  .node_name = "srv6-t-m-gtp4-d",
   .runs_before = 0,
 };
 
-VLIB_INIT_FUNCTION (srv6_end_m_gtp4_d_init);
+VLIB_INIT_FUNCTION (srv6_t_m_gtp4_d_init);
 /* *INDENT-ON* */
 
 /*
