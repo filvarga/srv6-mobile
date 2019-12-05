@@ -1,7 +1,7 @@
 /*
  * srv6_end_m_gtp6_dt.c
  *
- * Copyright (c) 2019 Cisco and/or its affiliates.
+ * Copyright (c) 2019 Arrcus Inc and/or its affiliates.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
