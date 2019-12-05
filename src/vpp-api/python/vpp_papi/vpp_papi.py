@@ -27,6 +27,7 @@ import threading
 import fnmatch
 import weakref
 import atexit
+import time
 from . vpp_serializer import VPPType, VPPEnumType, VPPUnionType
 from . vpp_serializer import VPPMessage, vpp_get_type, VPPTypeAlias
 
@@ -353,6 +354,7 @@ class VPPApiClient(object):
         self.use_socket = use_socket
         self.server_address = server_address
         self._apifiles = apifiles
+        self.stats = {}
 
         if use_socket:
             from . vpp_transport_socket import VppTransport
@@ -596,6 +598,24 @@ class VPPApiClient(object):
             raise VPPValueError('Invalid argument {} to {}'
                                 .format(list(d), msg.name))
 
+    def _add_stat(self, name, ms):
+        if not name in self.stats:
+            self.stats[name] = {'max': ms, 'count': 1, 'avg': ms}
+        else:
+            if ms > self.stats[name]['max']:
+                self.stats[name]['max'] = ms
+            self.stats[name]['count'] += 1
+            n = self.stats[name]['count']
+            self.stats[name]['avg'] = self.stats[name]['avg'] * (n - 1) / n + ms / n
+
+    def get_stats(self):
+        s = '\n=== API PAPI STATISTICS ===\n'
+        s += '{:<30} {:>4} {:>6} {:>6}\n'.format('message', 'cnt', 'avg', 'max')
+        for n in sorted(self.stats.items(), key=lambda v: v[1]['avg'], reverse=True):
+            s += '{:<30} {:>4} {:>6.2f} {:>6.2f}\n'.format(n[0], n[1]['count'],
+                                                           n[1]['avg'], n[1]['max'])
+        return s
+
     def _call_vpp(self, i, msgdef, multipart, **kwargs):
         """Given a message, send the message and await a reply.
 
@@ -611,7 +631,7 @@ class VPPApiClient(object):
         the response.  It will raise an IOError exception if there was
         no response within the timeout window.
         """
-
+        ts = time.time()
         if 'context' not in kwargs:
             context = self.get_context()
             kwargs['context'] = context
@@ -620,6 +640,7 @@ class VPPApiClient(object):
         kwargs['_vl_msg_id'] = i
 
         no_type_conversion = kwargs.pop('_no_type_conversion', False)
+        timeout = kwargs.pop('_timeout', None)
 
         try:
             if self.transport.socket_index:
@@ -645,7 +666,7 @@ class VPPApiClient(object):
         # Block until we get a reply.
         rl = []
         while (True):
-            r = self.read_blocking(no_type_conversion)
+            r = self.read_blocking(no_type_conversion, timeout)
             if r is None:
                 raise VPPIOError(2, 'VPP API client: read failed')
             msgname = type(r).__name__
@@ -668,6 +689,8 @@ class VPPApiClient(object):
         if len(s) > 80:
             s = s[:80] + "..."
         self.logger.debug(s)
+        te = time.time()
+        self._add_stat(msgdef.name, (te - ts) * 1000)
         return rl
 
     def _call_vpp_async(self, i, msg, **kwargs):
@@ -699,10 +722,10 @@ class VPPApiClient(object):
         self.transport.write(b)
         return context
 
-    def read_blocking(self, no_type_conversion=False):
+    def read_blocking(self, no_type_conversion=False, timeout=None):
         """Get next received message from transport within timeout, decoded.
 
-        Note that noticifations have context zero
+        Note that notifications have context zero
         and are not put into receive queue (at least for socket transport),
         use async_thread with registered callback for processing them.
 
@@ -720,8 +743,9 @@ class VPPApiClient(object):
         :type no_type_conversion: bool
         :returns: Decoded message, or None if no message (within timeout).
         :rtype: Whatever VPPType.unpack returns, depends on no_type_conversion.
+        :raises VppTransportShmemIOError if timed out.
         """
-        msg = self.transport.read()
+        msg = self.transport.read(timeout=timeout)
         if not msg:
             return None
         return self.decode_incoming_msg(msg, no_type_conversion)

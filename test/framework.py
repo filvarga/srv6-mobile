@@ -28,6 +28,7 @@ from vpp_sub_interface import VppSubInterface
 from vpp_lo_interface import VppLoInterface
 from vpp_bvi_interface import VppBviInterface
 from vpp_papi_provider import VppPapiProvider
+import vpp_papi
 from vpp_papi.vpp_stats import VPPStats
 from vpp_papi.vpp_transport_shmem import VppTransportShmemIOError
 from log import RED, GREEN, YELLOW, double_line_delim, single_line_delim, \
@@ -571,11 +572,10 @@ class VppTestCase(unittest.TestCase):
                 raise
             try:
                 cls.vapi.connect()
-            except Exception:
-                try:
-                    cls.vapi.disconnect()
-                except Exception:
-                    pass
+            except vpp_papi.VPPIOError as e:
+                cls.logger.debug("Exception connecting to vapi: %s" % e)
+                cls.vapi.disconnect()
+
                 if cls.debug_gdbserver:
                     print(colorize("You're running VPP inside gdbserver but "
                                    "VPP-API connection failed, did you forget "
@@ -616,6 +616,7 @@ class VppTestCase(unittest.TestCase):
 
         if hasattr(cls, 'vpp'):
             if hasattr(cls, 'vapi'):
+                cls.logger.debug(cls.vapi.vpp.get_stats())
                 cls.logger.debug("Disconnecting class vapi client on %s",
                                  cls.__name__)
                 cls.vapi.disconnect()
@@ -1007,13 +1008,15 @@ class VppTestCase(unittest.TestCase):
         while True:
             layer = temp.getlayer(counter)
             if layer:
+                layer = layer.copy()
+                layer.remove_payload()
                 for cf in checksum_fields:
                     if hasattr(layer, cf):
                         if ignore_zero_udp_checksums and \
                                 0 == getattr(layer, cf) and \
                                 layer.name in udp_layers:
                             continue
-                        delattr(layer, cf)
+                        delattr(temp.getlayer(counter), cf)
                         checksums.append((counter, cf))
             else:
                 break
@@ -1171,11 +1174,6 @@ class VppTestCase(unittest.TestCase):
                 timeout = 0.1
 
         return rx
-
-    def runTest(self):
-        """ unittest calls runTest when TestCase is instantiated without a
-        test case.  Use case: Writing unittests against VppTestCase"""
-        pass
 
 
 def get_testcase_doc_name(test):
@@ -1394,7 +1392,7 @@ class VppTestResult(unittest.TestResult):
             test.__class__._header_printed = True
 
         print_header(test)
-
+        self.start_test = time.time()
         unittest.TestResult.startTest(self, test)
         if self.verbosity > 0:
             self.stream.writeln(
@@ -1409,14 +1407,17 @@ class VppTestResult(unittest.TestResult):
 
         """
         unittest.TestResult.stopTest(self, test)
+
         if self.verbosity > 0:
             self.stream.writeln(single_line_delim)
             self.stream.writeln("%-73s%s" % (self.getDescription(test),
                                              self.result_string))
             self.stream.writeln(single_line_delim)
         else:
-            self.stream.writeln("%-73s%s" % (self.getDescription(test),
-                                             self.result_string))
+            self.stream.writeln("%-68s %4.2f %s" %
+                                (self.getDescription(test),
+                                 time.time() - self.start_test,
+                                 self.result_string))
 
         self.send_result_through_pipe(test, TEST_RUN)
 
