@@ -515,8 +515,14 @@ show_sr_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
       switch (ls->behavior)
 	{
 	case SR_BEHAVIOR_END:
-	  vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
-			   format_ip6_address, &ls->localsid);
+	  if (ls->usid_index)
+	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d]",
+			    format_ip6_address, &ls->localsid,
+			    format_ip6_address, &ls->usid_block,
+			    ls->usid_index * 8);
+	  else
+	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
+			     format_ip6_address, &ls->localsid);
 	  break;
 	case SR_BEHAVIOR_X:
 	  vlib_cli_output (vm,
