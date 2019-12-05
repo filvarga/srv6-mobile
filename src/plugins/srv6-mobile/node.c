@@ -113,9 +113,9 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP4_E_PACKETS, "srv6 End.M.GTP4.E packets") \
   _(M_GTP4_E_BAD_PACKETS, "srv6 End.M.GTP4.E bad packets")
 
-#define foreach_srv6_end_v4_d_error \
-  _(M_GTP4_D_PACKETS, "srv6 End.M.GTP4.D packets") \
-  _(M_GTP4_D_BAD_PACKETS, "srv6 End.M.GTP4.D bad packets")
+#define foreach_srv6_t_v4_d_error \
+  _(M_GTP4_D_PACKETS, "srv6 T.M.GTP4.D packets") \
+  _(M_GTP4_D_BAD_PACKETS, "srv6 T.M.GTP4.D bad packets")
 
 #define foreach_srv6_end_v6_e_error \
   _(M_GTP6_E_PACKETS, "srv6 End.M.GTP6.E packets") \
@@ -143,11 +143,11 @@ typedef enum
 
 typedef enum
 {
-#define _(sym,str) SRV6_END_ERROR_##sym,
-  foreach_srv6_end_v4_d_error
+#define _(sym,str) SRV6_T_ERROR_##sym,
+  foreach_srv6_t_v4_d_error
 #undef _
-    SRV6_END_N_V4_D_ERROR,
-} srv6_end_error_v4_d_t;
+    SRV6_T_N_V4_D_ERROR,
+} srv6_t_error_v4_d_t;
 
 typedef enum
 {
@@ -187,9 +187,9 @@ static char *srv6_end_error_v4_strings[] = {
 #undef _
 };
 
-static char *srv6_end_error_v4_d_strings[] = {
+static char *srv6_t_error_v4_d_strings[] = {
 #define _(sym,string) string,
-  foreach_srv6_end_v4_d_error
+  foreach_srv6_t_v4_d_error
 #undef _
 };
 
@@ -226,10 +226,10 @@ typedef enum
 
 typedef enum
 {
-  SRV6_END_M_GTP4_D_NEXT_DROP,
-  SRV6_END_M_GTP4_D_NEXT_LOOKUP,
-  SRV6_END_M_GTP4_D_N_NEXT,
-} srv6_end_m_gtp4_d_next_t;
+  SRV6_T_M_GTP4_D_NEXT_DROP,
+  SRV6_T_M_GTP4_D_NEXT_LOOKUP,
+  SRV6_T_M_GTP4_D_N_NEXT,
+} srv6_T_m_gtp4_d_next_t;
 
 typedef enum
 {
@@ -554,14 +554,13 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 }
 
 // Function for SRv6 GTP4.D function.
-VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
-				  vlib_node_runtime_t * node,
-				  vlib_frame_t * frame)
+VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
+				vlib_node_runtime_t * node,
+				vlib_frame_t * frame)
 {
-  srv6_end_main_v4_decap_t *sm = &srv6_end_main_v4_decap;
+  srv6_t_main_v4_decap_t *sm = &srv6_t_main_v4_decap;
   ip6_sr_main_t *sm2 = &sr_main;
   u32 n_left_from, next_index, *from, *to_next;
-  u32 thread_index = vm->thread_index;
 
   u32 good_n = 0, bad_n = 0;
 
@@ -579,13 +578,13 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	{
 	  u32 bi0;
 	  vlib_buffer_t *b0;
-	  ip6_sr_localsid_t *ls0;
+	  ip6_sr_sl_t *sl0;
 	  srv6_end_gtp4_param_t *ls_param;
 	  ip4_header_t *ip4;
 
 	  uword len0;
 
-	  u32 next0 = SRV6_END_M_GTP4_D_NEXT_LOOKUP;
+	  u32 next0 = SRV6_T_M_GTP4_D_NEXT_LOOKUP;
 
 	  // defaults
 	  bi0 = from[0];
@@ -597,11 +596,11 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 
 	  b0 = vlib_get_buffer (vm, bi0);
 
-	  ls0 =
-	    pool_elt_at_index (sm2->localsids,
+	  sl0 =
+	    pool_elt_at_index (sm2->sid_lists,
 			       vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
 
-	  ls_param = (srv6_end_gtp4_param_t *) ls0->plugin_mem;
+	  ls_param = (srv6_end_gtp4_param_t *) sl0->plugin_mem;
 
 	  len0 = vlib_buffer_length_in_chain (vm, b0);
 
@@ -610,7 +609,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	  if (ip4->protocol != IP_PROTOCOL_UDP
 	      || len0 < sizeof (ip4_gtpu_header_t))
 	    {
-	      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+	      next0 = SRV6_T_M_GTP4_D_NEXT_DROP;
 
 	      bad_n++;
 	    }
@@ -830,7 +829,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 			       >> 28) != 4)
 			    {
 			      // Bad encap packet.
-			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      next0 = SRV6_T_M_GTP4_D_NEXT_DROP;
 			      bad_n++;
 			      goto DONE;
 			    }
@@ -843,7 +842,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 			       >> 28) != 6)
 			    {
 			      // Bad encap packet.
-			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      next0 = SRV6_T_M_GTP4_D_NEXT_DROP;
 			      bad_n++;
 			      goto DONE;
 			    }
@@ -906,7 +905,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 			       >> 28) != 4)
 			    {
 			      // Bad encap packet.
-			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      next0 = SRV6_T_M_GTP4_D_NEXT_DROP;
 			      bad_n++;
 			      goto DONE;
 			    }
@@ -919,7 +918,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 			       >> 28) != 6)
 			    {
 			      // Bad encap packet.
-			      next0 = SRV6_END_M_GTP4_D_NEXT_DROP;
+			      next0 = SRV6_T_M_GTP4_D_NEXT_DROP;
 			      bad_n++;
 			      goto DONE;
 			    }
@@ -951,12 +950,6 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
 	    }
 
 	DONE:
-	  vlib_increment_combined_counter
-	    (((next0 ==
-	       SRV6_END_M_GTP4_D_NEXT_DROP) ? &(sm2->sr_ls_invalid_counters) :
-	      &(sm2->sr_ls_valid_counters)), thread_index,
-	     ls0 - sm2->localsids, 1, vlib_buffer_length_in_chain (vm, b0));
-
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
 					   n_left_to_next, bi0, next0);
 	}
@@ -964,11 +957,11 @@ VLIB_NODE_FN (srv6_end_m_gtp4_d) (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, sm->end_m_gtp4_d_node_index,
-			       SRV6_END_ERROR_M_GTP4_D_BAD_PACKETS, bad_n);
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_d_node_index,
+			       SRV6_T_ERROR_M_GTP4_D_BAD_PACKETS, bad_n);
 
-  vlib_node_increment_counter (vm, sm->end_m_gtp4_d_node_index,
-			       SRV6_END_ERROR_M_GTP4_D_PACKETS, good_n);
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_d_node_index,
+			       SRV6_T_ERROR_M_GTP4_D_PACKETS, good_n);
 
   return frame->n_vectors;
 }
@@ -985,16 +978,16 @@ VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) =
       [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",}
 ,};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp4_d) =
+VLIB_REGISTER_NODE (srv6_t_m_gtp4_d) =
 {
-  .name = "srv6-end-m-gtp4-d",.vector_size = sizeof (u32),.format_trace =
+  .name = "srv6-t-m-gtp4-d",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
-    ARRAY_LEN (srv6_end_error_v4_d_strings),.error_strings =
-    srv6_end_error_v4_d_strings,.n_next_nodes =
-    SRV6_END_M_GTP4_D_N_NEXT,.next_nodes =
+    ARRAY_LEN (srv6_t_error_v4_d_strings),.error_strings =
+    srv6_t_error_v4_d_strings,.n_next_nodes =
+    SRV6_T_M_GTP4_D_N_NEXT,.next_nodes =
   {
-  [SRV6_END_M_GTP4_D_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",}
+  [SRV6_T_M_GTP4_D_NEXT_DROP] = "error-drop",
+      [SRV6_T_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",}
 ,};
 
 // Function for SRv6 GTP6.E function
