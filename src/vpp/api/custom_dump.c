@@ -1792,8 +1792,8 @@ static void *vl_api_gre_tunnel_add_del_t_print
   if (mp->tunnel.type == GRE_API_TUNNEL_TYPE_ERSPAN)
     s = format (s, "erspan %d ", (mp->tunnel.session_id));
 
-  if (mp->tunnel.outer_fib_id)
-    s = format (s, "outer-fib-id %d ", (mp->tunnel.outer_fib_id));
+  if (mp->tunnel.outer_table_id)
+    s = format (s, "outer-table-id %d ", mp->tunnel.outer_table_id);
 
   if (mp->is_add == 0)
     s = format (s, "del ");
@@ -2453,13 +2453,13 @@ static void *vl_api_policer_classify_dump_t_print
   s = format (0, "SCRIPT: policer_classify_dump ");
   switch (mp->type)
     {
-    case POLICER_CLASSIFY_TABLE_IP4:
+    case POLICER_CLASSIFY_API_TABLE_IP4:
       s = format (s, "type ip4 ");
       break;
-    case POLICER_CLASSIFY_TABLE_IP6:
+    case POLICER_CLASSIFY_API_TABLE_IP6:
       s = format (s, "type ip6 ");
       break;
-    case POLICER_CLASSIFY_TABLE_L2:
+    case POLICER_CLASSIFY_API_TABLE_L2:
       s = format (s, "type l2 ");
       break;
     default:
@@ -3431,10 +3431,10 @@ static void *vl_api_flow_classify_dump_t_print
   s = format (0, "SCRIPT: flow_classify_dump ");
   switch (mp->type)
     {
-    case FLOW_CLASSIFY_TABLE_IP4:
+    case FLOW_CLASSIFY_API_TABLE_IP4:
       s = format (s, "type ip4 ");
       break;
-    case FLOW_CLASSIFY_TABLE_IP6:
+    case FLOW_CLASSIFY_API_TABLE_IP6:
       s = format (s, "type ip6 ");
       break;
     default:
