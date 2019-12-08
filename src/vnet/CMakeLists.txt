@@ -584,6 +584,7 @@ list(APPEND VNET_SOURCES
   ipsec/ah_decrypt.c
   ipsec/ah_encrypt.c
   ipsec/ipsec_api.c
+  ipsec/ipsec_types_api.c
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
@@ -596,6 +597,7 @@ list(APPEND VNET_MULTIARCH_SOURCES
   ipsec/ipsec_tun_in.c
 )
 
+list(APPEND VNET_API_FILES ipsec/ipsec_types.api)
 list(APPEND VNET_API_FILES ipsec/ipsec.api)
 
 list(APPEND VNET_SOURCES
@@ -608,6 +610,7 @@ list(APPEND VNET_HEADERS
   ipsec/ipsec_spd_policy.h
   ipsec/ipsec_sa.h
   ipsec/ipsec_tun.h
+  ipsec/ipsec_types_api.h
   ipsec/ipsec_punt.h
   ipsec/esp.h
   ipsec/ah.h
@@ -719,6 +722,7 @@ list(APPEND VNET_SOURCES
   ipip/sixrd.c
   ipip/ipip_api.c
   ipip/ipip_cli.c
+  ipip/ipip_types_api.c
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
@@ -727,9 +731,13 @@ list(APPEND VNET_MULTIARCH_SOURCES
 
 list(APPEND VNET_HEADERS
   ipip/ipip.h
+  ipip/ipip_types_api.h
 )
 
-list(APPEND VNET_API_FILES ipip/ipip.api)
+list(APPEND VNET_API_FILES
+  ipip/ipip_types.api
+  ipip/ipip.api
+)
 
 ##############################################################################
 # Tunnel protocol: l2tpv3
@@ -1240,21 +1248,22 @@ list(APPEND VNET_SOURCES
   fib/fib_node_list.c
   fib/fib_entry.c
   fib/fib_entry_src.c
-  fib/fib_entry_src_rr.c
+  fib/fib_entry_src_adj.c
+  fib/fib_entry_src_api.c
+  fib/fib_entry_src_drop.c
   fib/fib_entry_src_interface.c
   fib/fib_entry_src_interpose.c
-  fib/fib_entry_src_default_route.c
-  fib/fib_entry_src_special.c
-  fib/fib_entry_src_api.c
-  fib/fib_entry_src_adj.c
-  fib/fib_entry_src_mpls.c
   fib/fib_entry_src_lisp.c
+  fib/fib_entry_src_mpls.c
+  fib/fib_entry_src_simple.c
+  fib/fib_entry_src_rr.c
   fib/fib_entry_cover.c
   fib/fib_entry_delegate.c
   fib/fib_entry_track.c
   fib/fib_path_list.c
   fib/fib_path.c
   fib/fib_path_ext.c
+  fib/fib_source.c
   fib/fib_urpf_list.c
   fib/fib_attached_export.c
   fib/fib_api.c
@@ -1272,6 +1281,7 @@ list(APPEND VNET_HEADERS
   fib/fib_node_list.h
   fib/fib_entry.h
   fib/fib_entry_delegate.h
+  fib/fib_source.h
 )
 
 list(APPEND VNET_API_FILES fib/fib_types.api)
@@ -1482,6 +1492,22 @@ list(APPEND VNET_HEADERS
 )
 
 list(APPEND VNET_API_FILES syslog/syslog.api)
+
+##############################################################################
+# NHRP
+##############################################################################
+
+list (APPEND VNET_SOURCES
+  nhrp/nhrp_api.c
+  nhrp/nhrp_cli.c
+  nhrp/nhrp.c
+)
+
+list(APPEND VNET_HEADERS
+  nhrp/nhrp.h
+)
+
+list(APPEND VNET_API_FILES nhrp/nhrp.api)
 
 ##############################################################################
 # VNET Library

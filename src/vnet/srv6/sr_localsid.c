@@ -65,7 +65,8 @@ static dpo_type_t sr_localsid_d_dpo_type;
 int
 sr_cli_localsid (char is_del, ip6_address_t * localsid_addr, u16 prefixlen,
 		 char end_psp, u8 behavior, u32 sw_if_index, u32 vlan_index,
-		 u32 fib_table, ip46_address_t * nh_addr, void *ls_plugin_mem)
+		 u32 fib_table, ip46_address_t * nh_addr, int usid_len,
+		 void *ls_plugin_mem)
 {
   ip6_sr_main_t *sm = &sr_main;
   uword *p;
@@ -132,8 +133,8 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr, u16 prefixlen,
     }
   else
     /* delete; localsid does not exist; complain */
-  if (is_del)
-    return -2;
+    if (is_del)
+      return -2;
 
   if (behavior >= SR_BEHAVIOR_LAST)
     {
@@ -180,6 +181,23 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr, u16 prefixlen,
   switch (behavior)
     {
     case SR_BEHAVIOR_END:
+      if (usid_len)
+	{
+	  int usid_width;
+	  clib_memcpy (&ls->usid_block, localsid_addr, sizeof (ip6_address_t));
+
+	  usid_width = prefixlen != 0 ? prefixlen - usid_len : pref_length - usid_len;
+	  if (usid_width % 8)
+	    {
+	      pool_put (sm->localsids, ls);
+	      return -6;
+	    }
+	  ip6_address_mask_from_width (&ls->usid_block_mask, usid_width);
+
+	  ls->usid_index = usid_width / 8;
+	  ls->usid_len = usid_len / 8;
+	  ls->usid_next_index = ls->usid_index + ls->usid_len;
+	}
       break;
     case SR_BEHAVIOR_X:
       ls->sw_if_index = sw_if_index;
@@ -299,6 +317,7 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
   char address_set = 0;
   char behavior = 0;
   void *ls_plugin_mem = 0;
+  int usid_size = 0;
 
   int rv;
 
@@ -374,8 +393,15 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
 	  if (!behavior)
 	    {
-	      if (unformat (input, "end"))
-		behavior = SR_BEHAVIOR_END;
+ 	      if (unformat (input, "end.usid %d", &usid_size))
+	        {
+		  if (usid_size != 16 && usid_size != 32)
+		    break;
+
+		  behavior = SR_BEHAVIOR_END;
+	        }
+	      else if (unformat (input, "end"))
+	        behavior = SR_BEHAVIOR_END;
 	      else
 		break;
 	    }
@@ -405,7 +431,7 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
   rv =
     sr_cli_localsid (is_del, &resulting_address, prefix_len, end_psp,
 		     behavior, sw_if_index, vlan_index, fib_index, &next_hop,
-		     ls_plugin_mem);
+		     usid_size, ls_plugin_mem);
 
   switch (rv)
     {
@@ -489,8 +515,14 @@ show_sr_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
       switch (ls->behavior)
 	{
 	case SR_BEHAVIOR_END:
-	  vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
-			   format_ip6_address, &ls->localsid);
+	  if (ls->usid_index)
+	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d, length: %d]",
+			    format_ip6_address, &ls->localsid,
+			    format_ip6_address, &ls->usid_block,
+			    ls->usid_index * 8, ls->usid_len * 8);
+	  else
+	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
+			     format_ip6_address, &ls->localsid);
 	  break;
 	case SR_BEHAVIOR_X:
 	  vlib_cli_output (vm,
@@ -740,6 +772,45 @@ end_srh_processing (vlib_node_runtime_t * node,
 
   if (PREDICT_TRUE (sr0->type == ROUTING_HEADER_TYPE_SR))
     {
+      if (ls0->behavior == SR_BEHAVIOR_END
+       && ls0->usid_index
+       && ip6_address_is_equal_masked (&ip0->dst_address,
+			               &ls0->usid_block, &ls0->usid_block_mask))
+	{
+  	  bool next_usid = false;
+	  u8 index;
+
+	  /* uSID */
+	  for (index = 0; index < ls0->usid_len; index++)
+	    {
+	      if (ip0->dst_address.as_u8[ls0->usid_next_index + index] != 0)
+		{
+		  next_usid = true;
+		  break;
+		}
+	    }
+
+	  if (next_usid)
+	    {
+	      u8 index, offset;
+	      index = ls0->usid_index;
+	      offset = ls0->usid_len;
+
+	      /* advance next usid */
+	      for (; index < 16 - offset; index++)
+	        {
+		  ip0->dst_address.as_u8[index] = ip0->dst_address.as_u8[index + offset];
+		}
+
+	      for (; index < 16; index++)
+		{
+		  ip0->dst_address.as_u8[index] = 0;
+		}
+
+	      return;
+	    }
+	}
+
       if (sr0->segments_left == 1 && psp)
 	{
 	  u32 new_l0, sr_len;

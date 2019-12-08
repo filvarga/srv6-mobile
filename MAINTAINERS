@@ -127,9 +127,15 @@ F:	src/vnet/mfib/
 F:	src/vnet/dpo
 F:	src/vnet/adj
 
-VNET IPv4 and IPv6 LPM
+VNET IPv4 LPM
 I:	ip
 M:	Dave Barach <dave@barachs.net>
+F:	src/vnet/ip/
+
+VNET IPv6 LPM
+I:	ip6
+M:	Neale Ranns <nranns@cisco.com>
+M:	Jon Loeliger <jdl@netgate.com>
 F:	src/vnet/ip/
 
 VNET QoS
@@ -202,6 +208,11 @@ M:	Florin Coras <fcoras@cisco.com>
 F:	src/vnet/lisp-cp/
 F:	src/vnet/lisp-gpe/
 
+VNET GRE
+I:	gre
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/vnet/gre/
+
 VNET GSO
 I:	gso
 M:	Andrew Yourtchenko <ayourtch@gmail.com>
@@ -212,6 +223,7 @@ Plugin - MAP
 I:	map
 Y:	src/plugins/map/FEATURE.yaml
 M:	Ole Troan <ot@cisco.com>
+M:	Jon Loeliger <jdl@netgate.com>
 F:	src/plugins/map
 
 VNET MPLS
@@ -289,6 +301,11 @@ VNET FLOW
 I:	flow
 M:	Damjan Marion <damarion@cisco.com>
 F:	src/vnet/flow/
+
+VNET Classify
+I:	classify
+M:	N/A
+F:	src/vnet/classify/
 
 Plugin - Access Control List (ACL) Based Forwarding
 I:	abf
