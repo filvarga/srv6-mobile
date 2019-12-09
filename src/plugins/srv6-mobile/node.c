@@ -475,7 +475,11 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  gtpu_pdu_session_t *sess;
 
 		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
+
 		  hdr0->gtpu.ext->seq = seq;
+		  if (seq)
+		    hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
+
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = GTPU_EXTHDR_PDU_SESSION;
 
@@ -497,7 +501,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		}
 	      else if (seq)
 	        {
-		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
+		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = 0;
@@ -672,7 +676,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 	      gtpu_type = hdr->gtpu.type;
 
-	      if (hdr->gtpu.ver_flags & GTPU_EXTHDR_FLAG)
+	      if (hdr->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
 		{
 		  // Extention header.
 		  hdr_len += sizeof (gtpu_exthdr_t);
@@ -1220,7 +1224,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  gtpu_pdu_session_t *sess;
 
 		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
+
 		  hdr0->gtpu.ext->seq = seq;
+		  if (seq)
+		    hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
+
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = GTPU_EXTHDR_PDU_SESSION;
 
@@ -1242,7 +1250,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		}
 	      else if (seq)
 	        {
-		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
+		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = 0;
@@ -1394,7 +1402,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	      teid = hdr0->gtpu.teid;
 	      teidp = (u8 *) & teid;
 
-	      if (hdr0->gtpu.ver_flags & GTPU_EXTHDR_FLAG)
+	      if (hdr0->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
 		{
 		  // Extention header.
 		  hdrlen += sizeof (gtpu_exthdr_t);
@@ -1833,7 +1841,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      teid = hdr0->gtpu.teid;
 	      teidp = (u8 *) & teid;
 
-	      if (hdr0->gtpu.ver_flags & GTPU_EXTHDR_FLAG)
+	      if (hdr0->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
 		{
 		  // Extention header.
 		  hdrlen += sizeof (gtpu_exthdr_t);
