@@ -865,6 +865,7 @@ class Program(object):
         print("Sending packet on {}:".format(c1.name))
         p.show2()
 
+        time.sleep(10) 
         c1.enable_trace(10)
         c4.enable_trace(10)
 
@@ -934,6 +935,7 @@ class Program(object):
         print("Sending packet on {}:".format(c1.name))
         p.show2()
 
+        time.sleep(10) 
         c1.enable_trace(10)
         c4.enable_trace(10)
 
