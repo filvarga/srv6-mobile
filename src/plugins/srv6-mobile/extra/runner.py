@@ -911,9 +911,9 @@ class Program(object):
         c1.vppctl_exec("sr policy add bsid D5:: behavior t.m.gtp4.d D4::/32 v6src_prefix C1::/64 nhtype ipv4")
         c1.vppctl_exec("sr steer l3 172.20.0.1/32 via bsid D5::")
 
-        c2.vppctl_exec("sr localsid prefix D2:1111:aaaa::/48 behavior end.usid 16")
+        c2.vppctl_exec("sr localsid prefix D2:1111:aaaa::/48 behavior end usid 16")
 
-        c3.vppctl_exec("sr localsid prefix D2:1111:bbbb::/48 behavior end.usid 16")
+        c3.vppctl_exec("sr localsid prefix D2:1111:bbbb::/48 behavior end usid 16")
 
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
