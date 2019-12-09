@@ -1068,7 +1068,7 @@ class Program(object):
         p = (Ether(src="aa:bb:cc:dd:ee:02", dst="aa:bb:cc:dd:ee:01") /
              IP(src="172.20.0.2", dst="172.20.0.1") /
              UDP(sport=2152, dport=2152) /
-             GTP_U_Header(gtp_type="echo_request", teid=200))
+             GTP_U_Header(gtp_type="echo_request", S=1, teid=200, seq=200))
 
         print("Sending packet on {}:".format(c1.name))
         p.show2()
@@ -1431,7 +1431,7 @@ class Program(object):
         p = (Ether(src="aa:bb:cc:dd:ee:02", dst="aa:bb:cc:dd:ee:01") /
              IPv6(src="C::2", dst="D::2") /
              UDP(sport=2152, dport=2152) /
-             GTP_U_Header(gtp_type="echo_request", teid=200))
+             GTP_U_Header(gtp_type="echo_request", S=1, teid=200, seq=300))
 
         print("Sending packet on {}:".format(c1.name))
         p.show2()
