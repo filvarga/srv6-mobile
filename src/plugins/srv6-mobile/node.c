@@ -442,12 +442,12 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		{
 		  hdrlen =
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
-		  len0 += hdrlen;
 		}
 	      else if (seq)
 		{
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
+ 	      len0 += hdrlen;
 
 	      hdrlen += sizeof (ip4_gtpu_header_t);
 
