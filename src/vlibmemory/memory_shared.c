@@ -35,6 +35,7 @@
 #include <vlib/unix/unix.h>
 #include <vlibmemory/memory_api.h>
 #include <vlibmemory/vl_memory_msg_enum.h>
+#include <vlibapi/api_common.h>
 
 #define vl_typedefs
 #include <vlibmemory/vl_memory_api_h.h>
@@ -43,7 +44,8 @@
 #define DEBUG_MESSAGE_BUFFER_OVERRUN 0
 
 CLIB_NOSANITIZE_ADDR static inline void *
-vl_msg_api_alloc_internal (int nbytes, int pool, int may_return_null)
+vl_msg_api_alloc_internal (svm_region_t * vlib_rp, int nbytes, int pool,
+			   int may_return_null)
 {
   int i;
   msgbuf_t *rv;
@@ -51,9 +53,9 @@ vl_msg_api_alloc_internal (int nbytes, int pool, int may_return_null)
   svm_queue_t *q;
   void *oldheap;
   vl_shmem_hdr_t *shmem_hdr;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
-  shmem_hdr = am->shmem_hdr;
+  shmem_hdr = (void *) vlib_rp->user_ctx;
 
 #if DEBUG_MESSAGE_BUFFER_OVERRUN > 0
   nbytes += 4;
@@ -120,9 +122,9 @@ vl_msg_api_alloc_internal (int nbytes, int pool, int may_return_null)
 			 q->head);
 		      msg_idp = (u16 *) (rv->data);
 		      msg_id = clib_net_to_host_u16 (*msg_idp);
-		      if (msg_id < vec_len (api_main.msg_names))
+		      if (msg_id < vec_len (vlibapi_get_main ()->msg_names))
 			clib_warning ("msg id %d name %s", (u32) msg_id,
-				      api_main.msg_names[msg_id]);
+				      vlibapi_get_main ()->msg_names[msg_id]);
 		    }
 		  shmem_hdr->garbage_collects++;
 		  goto collected;
@@ -161,15 +163,15 @@ vl_msg_api_alloc_internal (int nbytes, int pool, int may_return_null)
    */
   am->ring_misses++;
 
-  pthread_mutex_lock (&am->vlib_rp->mutex);
-  oldheap = svm_push_data_heap (am->vlib_rp);
+  pthread_mutex_lock (&vlib_rp->mutex);
+  oldheap = svm_push_data_heap (vlib_rp);
   if (may_return_null)
     {
       rv = clib_mem_alloc_or_null (nbytes);
       if (PREDICT_FALSE (rv == 0))
 	{
 	  svm_pop_heap (oldheap);
-	  pthread_mutex_unlock (&am->vlib_rp->mutex);
+	  pthread_mutex_unlock (&vlib_rp->mutex);
 	  return 0;
 	}
     }
@@ -179,7 +181,7 @@ vl_msg_api_alloc_internal (int nbytes, int pool, int may_return_null)
   rv->q = 0;
   rv->gc_mark_timestamp = 0;
   svm_pop_heap (oldheap);
-  pthread_mutex_unlock (&am->vlib_rp->mutex);
+  pthread_mutex_unlock (&vlib_rp->mutex);
 
 out:
 #if DEBUG_MESSAGE_BUFFER_OVERRUN > 0
@@ -200,14 +202,15 @@ void *
 vl_msg_api_alloc (int nbytes)
 {
   int pool;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   vl_shmem_hdr_t *shmem_hdr = am->shmem_hdr;
 
   /*
    * Clients use pool-0, vlib proc uses pool 1
    */
   pool = (am->our_pid == shmem_hdr->vl_pid);
-  return vl_msg_api_alloc_internal (nbytes, pool, 0 /* may_return_null */ );
+  return vl_msg_api_alloc_internal (am->vlib_rp, nbytes, pool,
+				    0 /* may_return_null */ );
 }
 
 void *
@@ -224,17 +227,20 @@ void *
 vl_msg_api_alloc_or_null (int nbytes)
 {
   int pool;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   vl_shmem_hdr_t *shmem_hdr = am->shmem_hdr;
 
   pool = (am->our_pid == shmem_hdr->vl_pid);
-  return vl_msg_api_alloc_internal (nbytes, pool, 1 /* may_return_null */ );
+  return vl_msg_api_alloc_internal (am->vlib_rp, nbytes, pool,
+				    1 /* may_return_null */ );
 }
 
 void *
 vl_msg_api_alloc_as_if_client (int nbytes)
 {
-  return vl_msg_api_alloc_internal (nbytes, 0, 0 /* may_return_null */ );
+  api_main_t *am = vlibapi_get_main ();
+  return vl_msg_api_alloc_internal (am->vlib_rp, nbytes, 0,
+				    0 /* may_return_null */ );
 }
 
 void *
@@ -250,34 +256,23 @@ vl_msg_api_alloc_zero_as_if_client (int nbytes)
 void *
 vl_msg_api_alloc_as_if_client_or_null (int nbytes)
 {
-  return vl_msg_api_alloc_internal (nbytes, 0, 1 /* may_return_null */ );
+  api_main_t *am = vlibapi_get_main ();
+  return vl_msg_api_alloc_internal (am->vlib_rp, nbytes, 0,
+				    1 /* may_return_null */ );
 }
 
 void *
 vl_mem_api_alloc_as_if_client_w_reg (vl_api_registration_t * reg, int nbytes)
 {
-  api_main_t *am = &api_main;
-  vl_shmem_hdr_t *save_shmem_hdr = am->shmem_hdr;
-  svm_region_t *vlib_rp, *save_vlib_rp = am->vlib_rp;
-  void *msg;
-
-  vlib_rp = am->vlib_rp = reg->vlib_rp;
-  am->shmem_hdr = (void *) vlib_rp->user_ctx;
-
-  msg = vl_msg_api_alloc_internal (nbytes, 0, 0 /* may_return_null */ );
-
-  am->shmem_hdr = save_shmem_hdr;
-  am->vlib_rp = save_vlib_rp;
-
-  return msg;
+  return vl_msg_api_alloc_internal (reg->vlib_rp, nbytes, 0,
+				    0 /* may_return_null */ );
 }
 
 void
-vl_msg_api_free (void *a)
+vl_msg_api_free_w_region (svm_region_t * vlib_rp, void *a)
 {
   msgbuf_t *rv;
   void *oldheap;
-  api_main_t *am = &api_main;
 
   rv = (msgbuf_t *) (((u8 *) a) - offsetof (msgbuf_t, data));
 
@@ -301,8 +296,8 @@ vl_msg_api_free (void *a)
       return;
     }
 
-  pthread_mutex_lock (&am->vlib_rp->mutex);
-  oldheap = svm_push_data_heap (am->vlib_rp);
+  pthread_mutex_lock (&vlib_rp->mutex);
+  oldheap = svm_push_data_heap (vlib_rp);
 
 #if DEBUG_MESSAGE_BUFFER_OVERRUN > 0
   {
@@ -314,7 +309,14 @@ vl_msg_api_free (void *a)
 
   clib_mem_free (rv);
   svm_pop_heap (oldheap);
-  pthread_mutex_unlock (&am->vlib_rp->mutex);
+  pthread_mutex_unlock (&vlib_rp->mutex);
+}
+
+void
+vl_msg_api_free (void *a)
+{
+  api_main_t *am = vlibapi_get_main ();
+  vl_msg_api_free_w_region (am->vlib_rp, a);
 }
 
 static void
@@ -322,7 +324,7 @@ vl_msg_api_free_nolock (void *a)
 {
   msgbuf_t *rv;
   void *oldheap;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   rv = (msgbuf_t *) (((u8 *) a) - offsetof (msgbuf_t, data));
   /*
@@ -345,7 +347,7 @@ vl_msg_api_free_nolock (void *a)
 void
 vl_set_memory_root_path (const char *name)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->root_path = name;
 }
@@ -353,7 +355,7 @@ vl_set_memory_root_path (const char *name)
 void
 vl_set_memory_uid (int uid)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->api_uid = uid;
 }
@@ -361,7 +363,7 @@ vl_set_memory_uid (int uid)
 void
 vl_set_memory_gid (int gid)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->api_gid = gid;
 }
@@ -369,7 +371,7 @@ vl_set_memory_gid (int gid)
 void
 vl_set_global_memory_baseva (u64 baseva)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->global_baseva = baseva;
 }
@@ -377,7 +379,7 @@ vl_set_global_memory_baseva (u64 baseva)
 void
 vl_set_global_memory_size (u64 size)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->global_size = size;
 }
@@ -385,7 +387,7 @@ vl_set_global_memory_size (u64 size)
 void
 vl_set_api_memory_size (u64 size)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->api_size = size;
 }
@@ -393,7 +395,7 @@ vl_set_api_memory_size (u64 size)
 void
 vl_set_global_pvt_heap_size (u64 size)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->global_pvt_heap_size = size;
 }
@@ -401,7 +403,7 @@ vl_set_global_pvt_heap_size (u64 size)
 void
 vl_set_api_pvt_heap_size (u64 size)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   am->api_pvt_heap_size = size;
 }
@@ -409,7 +411,7 @@ vl_set_api_pvt_heap_size (u64 size)
 static void
 vl_api_default_mem_config (vl_shmem_hdr_t * shmem_hdr)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   u32 vlib_input_queue_length;
 
   /* vlib main input queue */
@@ -495,7 +497,7 @@ void
 vl_init_shmem (svm_region_t * vlib_rp, vl_api_shm_elem_config_t * config,
 	       int is_vlib, int is_private_region)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   vl_shmem_hdr_t *shmem_hdr = 0;
   void *oldheap;
   ASSERT (vlib_rp);
@@ -538,7 +540,7 @@ vl_map_shmem (const char *region_name, int is_vlib)
 {
   svm_map_region_args_t _a, *a = &_a;
   svm_region_t *vlib_rp, *root_rp;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   int i;
   struct timespec ts, tsrem;
   char *vpe_api_region_suffix = "-vpe-api";
@@ -708,7 +710,7 @@ vl_map_shmem (const char *region_name, int is_vlib)
 void
 vl_register_mapped_shmem_region (svm_region_t * rp)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   vec_add1 (am->mapped_shmem_regions, rp);
 }
@@ -718,7 +720,7 @@ vl_unmap_shmem_internal (u8 is_client)
 {
   svm_region_t *rp;
   int i;
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
 
   if (!svm_get_root_rp ())
     return;
@@ -755,7 +757,7 @@ vl_unmap_shmem_client (void)
 void
 vl_msg_api_send_shmem (svm_queue_t * q, u8 * elem)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   void *msg = (void *) *(uword *) elem;
 
   if (am->tx_trace && am->tx_trace->enabled)
@@ -802,7 +804,7 @@ vl_mem_api_can_send (svm_queue_t * q)
 void
 vl_msg_api_send_shmem_nolock (svm_queue_t * q, u8 * elem)
 {
-  api_main_t *am = &api_main;
+  api_main_t *am = vlibapi_get_main ();
   void *msg = (void *) *(uword *) elem;
 
   if (am->tx_trace && am->tx_trace->enabled)
