@@ -272,20 +272,22 @@ hash_uword_to_u16 (uword * key)
 #endif
 }
 
-static inline void
-gtp_type_set (gtpu_header_t * gtpu, u16 tag)
+static inline u8
+gtpu_type_get (u16 tag)
 {
   u16 val;
 
   val = clib_net_to_host_u16 (tag);
   if (val & SRH_TAG_ECHO_REPLY)
-    gtpu->type = GTPU_TYPE_ECHO_REPLY;
+    return GTPU_TYPE_ECHO_REPLY;
   else if (val & SRH_TAG_ECHO_REQUEST)
-    gtpu->type = GTPU_TYPE_ECHO_REQUEST;
+    return GTPU_TYPE_ECHO_REQUEST;
   else if (val & SRH_TAG_ERROR_INDICATION)
-    gtpu->type = GTPU_TYPE_ERROR_INDICATION;
+    return GTPU_TYPE_ERROR_INDICATION;
   else if (val & SRH_TAG_END_MARKER)
-    gtpu->type = GTPU_TYPE_END_MARKER;
+    return GTPU_TYPE_END_MARKER;
+
+  return GTPU_TYPE_GTPU;
 }
 
 // Function for SRv6 GTP4.E function.
@@ -357,6 +359,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	    }
 	  else
 	    {
+	      u8 gtpu_type = 0;
 	      u16 tag = 0;
 	      u32 teid;
 	      u8 *teid8p = (u8 *) & teid;
@@ -438,12 +441,15 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		    }
 		}
 
+	      gtpu_type = gtpu_type_get (tag);
+
 	      if (qfi)
 		{
 		  hdrlen =
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
-	      else if (seq)
+	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		    || gtpu_type == GTPU_TYPE_ECHO_REPLY)
 		{
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -464,10 +470,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	      hdr0->gtpu.teid = teid;
 	      hdr0->gtpu.length = clib_host_to_net_u16 (len0);
 
-	      if (PREDICT_FALSE (tag != 0))
-		{
-		  gtp_type_set (&hdr0->gtpu, tag);
-		}
+	      hdr0->gtpu.type = gtpu_type;
 
 	      if (qfi)
 		{
@@ -476,9 +479,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 
 		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
 
-		  hdr0->gtpu.ext->seq = seq;
-		  if (seq)
-		    hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
+		  hdr0->gtpu.ext->seq = 0;
 
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = GTPU_EXTHDR_PDU_SESSION;
@@ -499,7 +500,9 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  sess->u.val = qfi;
 		  sess->nextexthdr = 0;
 		}
-	      else if (seq)
+
+	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY
+	       || gtpu_type == GTPU_TYPE_ECHO_REQUEST)
 	        {
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
@@ -1151,6 +1154,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      u8 *teid8p = (u8 *) & teid;
 	      u8 qfi = 0;
 	      u16 seq = 0;
+	      u8 gtpu_type = 0;
 	      u16 index;
 	      u16 offset, shift;
 	      u32 hdrlen = 0;
@@ -1190,12 +1194,15 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		    }
 		}
 
+	      gtpu_type = gtpu_type_get (tag);
+
 	      if (qfi)
 		{
 		  hdrlen =
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
-	      else if (seq)
+	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+	            || gtpu_type == GTPU_TYPE_ECHO_REPLY)
 	        {
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -1213,10 +1220,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      hdr0->gtpu.teid = teid;
 	      hdr0->gtpu.length = clib_host_to_net_u16 (len0);
 
-	      if (PREDICT_FALSE (tag != 0))
-		{
-		  gtp_type_set (&hdr0->gtpu, tag);
-		}
+	      hdr0->gtpu.type = gtpu_type;
 
 	      if (qfi)
 		{
@@ -1225,10 +1229,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 
 		  hdr0->gtpu.ver_flags |= GTPU_EXTHDR_FLAG;
 
-		  hdr0->gtpu.ext->seq = seq;
-		  if (seq)
-		    hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
-
+		  hdr0->gtpu.ext->seq = 0;
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = GTPU_EXTHDR_PDU_SESSION;
 
@@ -1248,7 +1249,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  sess->u.val = qfi;
 		  sess->nextexthdr = 0;
 		}
-	      else if (seq)
+
+	      if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+	       || gtpu_type == GTPU_TYPE_ECHO_REPLY)
 	        {
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
