@@ -361,7 +361,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	    {
 	      u8 gtpu_type = 0;
 	      u16 tag = 0;
-	      u32 teid;
+	      u32 teid = 0;
 	      u8 *teid8p = (u8 *) & teid;
 	      u8 qfi = 0;
 	      u16 seq = 0;
@@ -401,15 +401,24 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	      offset = ls0->localsid_len / 8;
 	      shift = ls0->localsid_len % 8;
 
+	      gtpu_type = gtpu_type_get (tag);
+
 	      if (PREDICT_TRUE (shift == 0))
 		{
 		  clib_memcpy_fast (&dst4.as_u8[0], &dst0.as_u8[offset], 4);
 
 		  qfi = dst0.as_u8[offset + 4];
 
-		  clib_memcpy_fast (teid8p, &dst0.as_u8[offset + 5], 4);
-
-		  clib_memcpy_fast (&seq, &dst0.as_u8[offset + 9], 2);
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      clib_memcpy_fast (&seq, &dst0.as_u8[offset + 5], 2);
+		    }
+		  else
+		    {
+		      clib_memcpy_fast (teid8p, &dst0.as_u8[offset + 5], 4);
+		    }
 		}
 	      else
 		{
@@ -425,23 +434,28 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  qfi |= dst0.as_u8[offset + 4] << shift;
 		  qfi |= dst0.as_u8[offset + 5] >> (8 - shift);
 
-		  for (index = 0; index < 4; index++)
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      *teid8p = dst0.as_u8[offset + 5 + index] << shift;
-		      *teid8p |=
-			dst0.as_u8[offset + 6 + index] >> (8 - shift);
-		      teid8p++;
+		      sp = (u8 *)&seq;
+		      for (index = 0; index < 2; index++)
+		        {
+		          sp[index] = dst0.as_u8[offset + 5 + index] << shift;
+		          sp[index] = dst0.as_u8[offset + 6 + index] >> (8 - shift);
+		        }
 		    }
-
-		  sp = (u8 *)&seq;
-		  for (index = 0; index < 2; index++)
+		  else
 		    {
-		      sp[index] = dst0.as_u8[offset + 9 + index] << shift;
-		      sp[index] = dst0.as_u8[offset + 10 + index] >> (8 - shift);
+		      for (index = 0; index < 4; index++)
+		        {
+		          *teid8p = dst0.as_u8[offset + 5 + index] << shift;
+		          *teid8p |=
+			    dst0.as_u8[offset + 6 + index] >> (8 - shift);
+		          teid8p++;
+			}
 		    }
 		}
-
-	      gtpu_type = gtpu_type_get (tag);
 
 	      if (qfi)
 		{
@@ -449,7 +463,8 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		    || gtpu_type == GTPU_TYPE_ECHO_REPLY)
+		    || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		    || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		{
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -502,7 +517,8 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY
-	       || gtpu_type == GTPU_TYPE_ECHO_REQUEST)
+	       || gtpu_type == GTPU_TYPE_ECHO_REQUEST
+	       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 	        {
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
@@ -733,10 +749,16 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		      seg.as_u8[offset + 4] = qfi;
 		    }
 
-		  clib_memcpy_fast (&seg.as_u8[offset + 5], teidp, 4);
-
-		  if (seqp)
-		    clib_memcpy_fast (&seg.as_u8[offset + 9], seqp, 2);
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      clib_memcpy_fast (&seg.as_u8[offset + 5], seqp, 2);
+		    }
+		  else
+		    {
+		      clib_memcpy_fast (&seg.as_u8[offset + 5], teidp, 4);
+		    }
 		}
 	      else
 		{
@@ -745,19 +767,6 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		      seg.as_u8[offset + index] |= dstp[index] >> shift;
 		      seg.as_u8[offset + index + 1] |=
 			dstp[index] << (8 - shift);
-
-		      seg.as_u8[offset + index + 5] |= teidp[index] >> shift;
-		      seg.as_u8[offset + index + 6] |=
-			teidp[index] << (8 - shift);
-		    }
-
-		  if (seqp)
-		    {
-		      for (index = 0; index < 2; index++)
-			{
-			  seg.as_u8[offset + 9 + index] |= seqp[index] >> shift;
-			  seg.as_u8[offset + 10 + index] |= seqp[index] << (8 - shift);
-			}
 		    }
 
 		  if (qfip)
@@ -773,6 +782,26 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 		      seg.as_u8[offset + 4] |= qfi >> shift;
 		      seg.as_u8[offset + 5] |= qfi << (8 - shift);
+		    }
+
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      for (index = 0; index < 2; index++)
+			{
+			  seg.as_u8[offset + 5 + index] |= seqp[index] >> shift;
+			  seg.as_u8[offset + 6 + index] |= seqp[index] << (8 - shift);
+			}
+		    }
+		  else
+	            {
+		      for (index = 0; index < 4; index++)
+		        {	      
+		          seg.as_u8[offset + index + 5] |= teidp[index] >> shift;
+		          seg.as_u8[offset + index + 6] |=
+			    teidp[index] << (8 - shift);
+			}
 		    }
 		}
 
@@ -1150,7 +1179,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 
 	      len0 = vlib_buffer_length_in_chain (vm, b0);
 
-	      u32 teid;
+	      u32 teid = 0;
 	      u8 *teid8p = (u8 *) & teid;
 	      u8 qfi = 0;
 	      u16 seq = 0;
@@ -1164,37 +1193,51 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      offset = index / 8;
 	      shift = index % 8;
 
+	      gtpu_type = gtpu_type_get (tag);
+
 	      if (PREDICT_TRUE (shift == 0))
 		{
-		  clib_memcpy_fast (teid8p, &dst0.as_u8[offset], 4);
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      clib_memcpy_fast (&seq, &dst0.as_u8[offset], 2);
+		    }
+		  else
+		    {
+		      clib_memcpy_fast (teid8p, &dst0.as_u8[offset], 4);
+		    }
 
 		  qfi = dst0.as_u8[offset + 4];
-
-		  clib_memcpy_fast (&seq, &dst0.as_u8[offset + 5], 2);
 		}
 	      else
 		{
 		  u8 *sp;
 
-		  for (index = offset; index < offset + 4; index++)
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      *teid8p = dst0.as_u8[index] << shift;
-		      *teid8p |= dst0.as_u8[index + 1] >> (8 - shift);
-		      teid8p++;
+		      sp = (u8 *)&seq;
+		      for (index = 0; index < 2; index++)
+		        {
+		          sp[index] = dst0.as_u8[offset + index] << shift;
+		          sp[index] = dst0.as_u8[offset + index + 1] >> (8 - shift);
+		        }
+		    }
+		  else
+		    {
+		      for (index = 0; index < 4; index++)
+		        {
+		          *teid8p = dst0.as_u8[offset + index] << shift;
+		          *teid8p |= dst0.as_u8[offset + index + 1] >> (8 - shift);
+		          teid8p++;
+			}
 		    }
 
 		  qfi |= dst0.as_u8[offset + 4] << shift;
 		  qfi |= dst0.as_u8[offset + 5] >> (8 - shift);
-
-		  sp = (u8 *)&seq;
-		  for (index = 0; index < 2; index++)
-		    {
-		      sp[index] = dst0.as_u8[offset + 5 + index] << shift;
-		      sp[index] = dst0.as_u8[offset + 6 + index] >> (8 - shift);
-		    }
 		}
-
-	      gtpu_type = gtpu_type_get (tag);
 
 	      if (qfi)
 		{
@@ -1202,7 +1245,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-	            || gtpu_type == GTPU_TYPE_ECHO_REPLY)
+	            || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		    || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 	        {
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -1251,7 +1295,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-	       || gtpu_type == GTPU_TYPE_ECHO_REPLY)
+	       || gtpu_type == GTPU_TYPE_ECHO_REPLY
+	       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 	        {
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
@@ -1438,7 +1483,18 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	      offset += 1;
 	      if (PREDICT_TRUE (shift == 0))
 		{
-		  clib_memcpy_fast (&seg0.as_u8[offset], teidp, 4);
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      if (seqp)
+		        clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+		    }
+		  else
+		    {
+		      clib_memcpy_fast (&seg0.as_u8[offset], teidp, 4);
+		    }
+
 		  if (qfip)
 		    {
 		      qfi =
@@ -1452,19 +1508,32 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 
 		      seg0.as_u8[offset + 4] = qfi;
 		    }
-
-		  if (seqp)
-		    clib_memcpy_fast (&seg0.as_u8[offset + 5], seqp, 2);
 		}
 	      else
 		{
 		  int idx;
 
-		  for (idx = 0; idx < 4; idx++)
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
-		      seg0.as_u8[offset + idx + 1] |=
-			teidp[idx] << (8 - shift);
+		      if (seqp)
+		        {
+		          for (idx = 0; idx < 2; idx++)
+		            {
+		              seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			      seg0.as_u8[offset + idx + 1] |= seqp[idx] << (8 - shift);
+			    }
+			}
+		    }
+		  else
+		    {
+		      for (idx = 0; idx < 4; idx++)
+		        {
+		          seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
+		          seg0.as_u8[offset + idx + 1] |=
+			    teidp[idx] << (8 - shift);
+		        }
 		    }
 
 		  if (qfip)
@@ -1480,15 +1549,6 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 
 		      seg0.as_u8[offset + 4] |= qfi >> shift;
 		      seg0.as_u8[offset + 5] |= qfi << (8 - shift);
-		    }
-
-		  if (seqp)
-		    {
-		      for (idx = 0; idx < 2; idx++)
-		        {
-		          seg0.as_u8[offset + 5 + idx] |= seqp[idx] >> shift;
-			  seg0.as_u8[offset + 6 + idx] |= seqp[idx] << (8 - shift);
-			}
 		    }
 		}
 
@@ -1875,7 +1935,17 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      offset += 1;
 	      if (PREDICT_TRUE (shift == 0))
 		{
-		  clib_memcpy_fast (&seg0.as_u8[offset], teidp, 4);
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		    {
+		      if (seqp)
+		        clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+		    }
+		  else
+		    {
+		      clib_memcpy_fast (&seg0.as_u8[offset], teidp, 4);
+		    }
 
 		  if (qfip)
 		    {
@@ -1890,19 +1960,32 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 
 		      seg0.as_u8[offset + 4] = qfi;
 		    }
-
-		  if (seqp)
-		    clib_memcpy_fast (&seg0.as_u8[offset + 5], seqp, 2);
 		}
 	      else
 		{
 		  int idx;
 
-		  for (idx = 0; idx < 4; idx++)
+		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
-		      seg0.as_u8[offset + idx + 1] |=
-			teidp[idx] << (8 - shift);
+		      if (seqp)
+		        {
+		          for (idx = 0; idx < 2; idx++)
+		            {
+		              seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			      seg0.as_u8[offset + idx + 1] |= seqp[idx] << (8 - shift);
+			    }
+			}
+		    }
+		  else
+		    {
+		      for (idx = 0; idx < 4; idx++)
+		        {
+		          seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
+		          seg0.as_u8[offset + idx + 1] |=
+			    teidp[idx] << (8 - shift);
+		        }
 		    }
 
 		  if (qfip)
@@ -1918,15 +2001,6 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 
 		      seg0.as_u8[offset + 4] |= qfi >> shift;
 		      seg0.as_u8[offset + 5] |= qfi << (8 - shift);
-		    }
-
-		  if (seqp)
-		    {
-		      for (idx = 0; idx < 2; idx++)
-		        {
-			  seg0.as_u8[offset + 5 + idx] |= seqp[idx] >> shift;
-			  seg0.as_u8[offset + 6 + idx] |= seqp[idx] << (8 - shift);
-			}
 		    }
 		}
 
