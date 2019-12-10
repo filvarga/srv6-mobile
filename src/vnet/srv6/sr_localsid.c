@@ -343,6 +343,7 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
       else if (unformat (input, "fib-table %u", &fib_index));
       else if (vlan_index == (u32) ~ 0
 	       && unformat (input, "vlan %u", &vlan_index));
+      else if (!usid_size && unformat (input, "usid %d", &usid_size));
       else if (!behavior && unformat (input, "behavior"))
 	{
 	  if (unformat (input, "end.x %U %U",
@@ -393,14 +394,7 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
 	  if (!behavior)
 	    {
- 	      if (unformat (input, "end.usid %d", &usid_size))
-	        {
-		  if (usid_size != 16 && usid_size != 32)
-		    break;
-
-		  behavior = SR_BEHAVIOR_END;
-	        }
-	      else if (unformat (input, "end"))
+	      if (unformat (input, "end"))
 	        behavior = SR_BEHAVIOR_END;
 	      else
 		break;
@@ -414,6 +408,17 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   if (!behavior && end_psp)
     behavior = SR_BEHAVIOR_END;
+
+  if (usid_size)
+    {
+      if (usid_size != 16 && usid_size != 32)
+	return clib_error_return (0,
+			          "Error: Invalid uSID length (16 or 32).");
+
+      if (behavior != SR_BEHAVIOR_END)
+	return clib_error_return (0,
+			          "Error: Unsupported behavior for uSID.");
+    }
 
   if (!address_set)
     return clib_error_return (0,
