@@ -59,6 +59,16 @@
 #define SRH_TAG_ERROR_INDICATION        0x0002
 #define SRH_TAG_END_MARKER              0x0001
 
+#define GTPU_RECOVERY_IE_TYPE		0x0e
+
+/* *INDENT-OFF* */
+typedef struct
+{
+  u8 type;
+  u8 restart_counter;
+} __attribute__ ((packed)) gtpu_recovery_ie;
+/* *INDENT-ON* */
+
 /* *INDENT-OFF* */
 typedef struct
 {

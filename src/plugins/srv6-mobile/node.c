@@ -468,6 +468,12 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		{
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
+
+	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
+	        {
+		  hdrlen += sizeof(gtpu_recovery_ie);
+		}
+
  	      len0 += hdrlen;
 
 	      hdrlen += sizeof (ip4_gtpu_header_t);
@@ -524,6 +530,15 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = 0;
+
+		  if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
+		    {
+		      gtpu_recovery_ie *recovery;
+
+		      recovery = (gtpu_recovery_ie *)((u8 *)hdr0 + (hdrlen - sizeof(gtpu_recovery_ie)));
+		      recovery->type = GTPU_RECOVERY_IE_TYPE;
+		      recovery->restart_counter = 0;
+		    }
 		}
 
 	      offset = ls_param->v4src_position / 8;
@@ -1251,6 +1266,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
 
+	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
+	        {
+		  hdrlen += sizeof(gtpu_recovery_ie);
+		}
+
  	      len0 += hdrlen;
 	      hdrlen += sizeof (ip6_gtpu_header_t);
 
@@ -1302,6 +1322,15 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
 		  hdr0->gtpu.ext->nextexthdr = 0;
+
+		  if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
+		    {
+		      gtpu_recovery_ie *recovery;
+
+		      recovery = (gtpu_recovery_ie *)((u8 *)hdr0 + (hdrlen - sizeof(gtpu_recovery_ie)));
+		      recovery->type = GTPU_RECOVERY_IE_TYPE;
+		      recovery->restart_counter = 0;
+		    }
 		}
 
 	      hdr0->udp.length = clib_host_to_net_u16 (len0 +
