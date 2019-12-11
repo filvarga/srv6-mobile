@@ -68,7 +68,7 @@ static void __vl_msg_api_add_##tag##_function_##x (void)                \
                                                                         \
 static void __vl_msg_api_add_##tag##_function_##x (void)                \
 {                                                                       \
- api_main_t * am = &api_main;                                           \
+ api_main_t * am = vlibapi_get_main();                                  \
  static _vl_msg_api_function_list_elt_t _vl_msg_api_function;           \
  _vl_msg_api_function.next_init_function                                \
     = am->tag##_function_registrations;                                 \
@@ -105,9 +105,10 @@ int vl_msg_api_trace_onoff (api_main_t * am, vl_api_trace_which_t which,
 int vl_msg_api_trace_free (api_main_t * am, vl_api_trace_which_t which);
 int vl_msg_api_trace_configure (api_main_t * am, vl_api_trace_which_t which,
 				u32 nitems);
-void vl_msg_api_handler_with_vm_node (api_main_t * am,
+void vl_msg_api_handler_with_vm_node (api_main_t * am, svm_region_t * vlib_rp,
 				      void *the_msg, vlib_main_t * vm,
-				      vlib_node_runtime_t * node);
+				      vlib_node_runtime_t * node,
+				      u8 is_private);
 vl_api_trace_t *vl_msg_api_trace_get (api_main_t * am,
 				      vl_api_trace_which_t which);
 void vl_msg_api_add_msg_name_crc (api_main_t * am, const char *string,

@@ -24,6 +24,7 @@
 #include <vpp/app/version.h>
 
 /* define message IDs */
+#include <vnet/format_fns.h>
 #include <mactime/mactime.api_enum.h>
 #include <mactime/mactime.api_types.h>
 
@@ -248,7 +249,7 @@ mactime_send_create_entry_message (u8 * mac_address)
   u8 *name;
   vl_api_mactime_add_del_range_t *mp;
 
-  am = &api_main;
+  am = vlibapi_get_main ();
   shmem_hdr = am->shmem_hdr;
   mp = vl_msg_api_alloc_as_if_client (sizeof (*mp));
   clib_memset (mp, 0, sizeof (*mp));

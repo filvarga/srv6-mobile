@@ -586,6 +586,10 @@ def generate_include_types(s, module, stream):
 
             write('} vl_api_%s_t;\n' % o.name)
 
+    for t in s['Define']:
+        write('#define VL_API_{ID}_CRC "{n}_{crc:08x}"\n'
+              .format(n=t.name, ID=t.name.upper(), crc=t.crc))
+
     write("\n#endif\n")
 
 
@@ -608,7 +612,7 @@ def generate_c_boilerplate(services, defines, file_crc, module, stream):
     write(hdr.format(module=module))
     write('static u16\n')
     write('setup_message_id_table (void) {\n')
-    write('   api_main_t *am = &api_main;\n')
+    write('   api_main_t *am = my_api_main;\n')
     write('   u16 msg_id_base = vl_msg_api_get_msg_ids ("{}_{crc:08x}", VL_MSG_FIRST_AVAILABLE);\n'
           .format(module, crc=file_crc))
 
