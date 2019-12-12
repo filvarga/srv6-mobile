@@ -61,6 +61,9 @@
 
 #define GTPU_RECOVERY_IE_TYPE		0x0e
 
+#define GTPU_IE_MAX_SIZ			256
+#define SRH_TLV_5GS_CONTAINER		0x0a	/* tentative */
+
 /* *INDENT-OFF* */
 typedef struct
 {
