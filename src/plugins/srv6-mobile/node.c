@@ -372,7 +372,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	      u16 port;
 	      ip4_address_t dst4;
 	      u16 ie_size = 0;
-	      u8 ie_buff[GTPU_IE_MAX_SIZ];
+	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 	      void *p;
 
 	      if (ip6srv0->ip.protocol == IPPROTO_IPV6_ROUTE)
@@ -471,7 +471,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		      if (tlv->type == SRH_TLV_5GS_CONTAINER)
 		        {
 		          ie_size = tlv->length;
-		          clib_memcpy_fast (ie_buff, tlv->value, ie_size);
+		          clib_memcpy_fast (ie_buf, tlv->value, ie_size);
 
 		          hdrlen += ie_size;
 			}
@@ -566,7 +566,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		          u8 *ie_ptr;
 
 		          ie_ptr =(u8 *)((u8 *)hdr0 + (hdrlen - ie_size));
-			  clib_memcpy_fast (ie_ptr, ie_buff, ie_size);
+			  clib_memcpy_fast (ie_ptr, ie_buf, ie_size);
 			}
 		    }
 		}
@@ -1264,7 +1264,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      u16 offset, shift;
 	      u32 hdrlen = 0;
 	      u16 ie_size = 0;
-	      u8 ie_buff[GTPU_IE_MAX_SIZ];
+	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	      index = ls0->localsid_len;
 	      index += 8;
@@ -1349,7 +1349,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
                       if (tlv->type == SRH_TLV_5GS_CONTAINER)
                         {
                           ie_size = tlv->length;
-                          clib_memcpy_fast (ie_buff, tlv->value, ie_size);
+                          clib_memcpy_fast (ie_buf, tlv->value, ie_size);
 
                           hdrlen += ie_size;
                         }
@@ -1439,7 +1439,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
                           u8 *ie_ptr;
 
                           ie_ptr =(u8 *)((u8 *)hdr0 + (hdrlen - ie_size));
-                          clib_memcpy_fast (ie_ptr, ie_buff, ie_size);
+                          clib_memcpy_fast (ie_ptr, ie_buf, ie_size);
                         }
                     }
 		}
@@ -1548,8 +1548,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	  ip6_header_t *encap = NULL;
 	  gtpu_pdu_session_t *sess = NULL;
 	  u16 ie_size = 0;
-	  u16 tlv_size = 0;
-	  u9 ie_buff[GTPU_IE_MAX_SIZ];
+	  u16 tlv_siz = 0;
+	  u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	  u32 next0 = SRV6_END_M_GTP6_D_NEXT_LOOKUP;
 
@@ -1699,16 +1699,16 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
                 {
                   u16 payload_len;
 
-                  payload_len = clib_net_to_host_u16(hdr->gtpu.length);
+                  payload_len = clib_net_to_host_u16(hdr0->gtpu.length);
                   if (payload_len != 0
-                   && payload_len > hdr_len - sizeof(ip4_gtpu_header_t))
+                   && payload_len > hdrlen - sizeof(ip6_gtpu_header_t))
                     {
                       u8 *ies;
 
-                      ies = (u8 *)((u8 *)hdr + hdr_len);
-                      ie_size = payload_len - (hdr_len - sizeof(ip4_gtpu_header_t));
+                      ies = (u8 *)((u8 *)hdr0 + hdrlen);
+                      ie_size = payload_len - (hdrlen - sizeof(ip4_gtpu_header_t));
                       clib_memcpy_fast (ie_buf, ies, ie_size);
-                      hdr_len += ie_size;
+                      hdrlen += ie_size;
                     }
                 }
 
