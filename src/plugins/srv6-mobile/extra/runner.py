@@ -2219,6 +2219,7 @@ def get_args():
             "gtp4_5g",
             "gtp4_echo",
             "gtp4_reply",
+            "gtp4_error",
             "gtp4_ipv6",
             "gtp4_ipv6_5g",
             "gtp6_drop_in",
