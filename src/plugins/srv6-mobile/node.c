@@ -730,6 +730,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      ip6srv_combo_header_t *ip6srv;
 	      gtpu_pdu_session_t *sess = NULL;
 	      u16 ie_size = 0;
+	      u16 tlv_siz = 0;
 	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	      // Decap from GTP-U.
@@ -935,11 +936,10 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 	      if (ie_size)
 	        {
-		  u16 tlv_siz;
-
 		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
 
-		  hdr_len += (tlv_siz & 0x8) + (tlv_siz & 0x7 ? 0x8 : 0x0);
+		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0); 
+		  hdr_len += tlv_siz;
 		}
 
 	      vlib_buffer_advance (b0, -(word) hdr_len);
@@ -1111,12 +1111,13 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	        {
 		  ip6_sr_tlv_t *tlv;
 
-		  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - sizeof (ip6_sr_tlv_t) - ie_size));
+		  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
 		  tlv->type = SRH_TLV_5GS_CONTAINER;
 		  tlv->length = ie_size;
+		  clib_memset (tlv->value, 0, tlv_siz);
 		  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
 
-		  ip6srv->sr.length += (sizeof (ip6_sr_tlv_t) + ie_size) / 8;
+		  ip6srv->sr.length += tlv_siz / 8;
 		}
 
 	      ip6srv->ip.payload_length =
