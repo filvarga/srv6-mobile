@@ -1356,7 +1356,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
                     }
                 }
 
-	      if (ip6srv->ip.protocol == IPPROTO_IPV6_ROUTE)
+	      if (ip6srv0->ip.protocol == IPPROTO_IPV6_ROUTE)
 	        {
 	          vlib_buffer_advance (b0, (word) sizeof (ip6srv_combo_header_t) +
 		 		       ip6srv0->sr.length * 8);
@@ -1547,6 +1547,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
 	  gtpu_pdu_session_t *sess = NULL;
+	  u16 ie_size = 0;
+	  u16 tlv_size = 0;
+	  u9 ie_buff[GTPU_IE_MAX_SIZ];
 
 	  u32 next0 = SRV6_END_M_GTP6_D_NEXT_LOOKUP;
 
@@ -1692,6 +1695,23 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    }
 		}
 
+	      if (PREDICT_FALSE(gtpu_type == GTPU_TYPE_ERROR_INDICATION))
+                {
+                  u16 payload_len;
+
+                  payload_len = clib_net_to_host_u16(hdr->gtpu.length);
+                  if (payload_len != 0
+                   && payload_len > hdr_len - sizeof(ip4_gtpu_header_t))
+                    {
+                      u8 *ies;
+
+                      ies = (u8 *)((u8 *)hdr + hdr_len);
+                      ie_size = payload_len - (hdr_len - sizeof(ip4_gtpu_header_t));
+                      clib_memcpy_fast (ie_buf, ies, ie_size);
+                      hdr_len += ie_size;
+                    }
+                }
+
 	      // jump over variable length data
 	      vlib_buffer_advance (b0, (word) hdrlen);
 
@@ -1743,6 +1763,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      hdr_len += sizeof (ip6_address_t);
 		    }
 		}
+
+	      if (ie_size)
+                {
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+
+                  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
+                  hdr_len += tlv_siz;
+                }
 
 	      // jump back to data[0] or pre_data if required
 	      vlib_buffer_advance (b0, -(word) hdr_len);
@@ -1910,6 +1938,19 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    }
 		}
 
+	      if (PREDICT_FALSE(ie_size))
+                {
+                  ip6_sr_tlv_t *tlv;
+
+                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+                  tlv->type = SRH_TLV_5GS_CONTAINER;
+                  tlv->length = ie_size;
+                  clib_memset (tlv->value, 0, tlv_siz);
+                  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+
+                  ip6srv->sr.length += tlv_siz / 8;
+                }
+
 	      ip6srv->ip.payload_length =
 		clib_host_to_net_u16 (len0 + hdr_len - sizeof (ip6_header_t));
 
@@ -2000,6 +2041,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
 	  gtpu_pdu_session_t *sess;
+	  u16 ie_size = 0;
+          u16 tlv_siz = 0;
+          u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	  u32 next0 = SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP;
 
@@ -2144,6 +2188,23 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		    }
 		}
 
+	      if (PREDICT_FALSE(gtpu_type == GTPU_TYPE_ERROR_INDICATION))
+                {
+                  u16 payload_len;
+
+                  payload_len = clib_net_to_host_u16(hdr->gtpu.length);
+                  if (payload_len != 0
+                   && payload_len > hdr_len - sizeof(ip4_gtpu_header_t))
+                    {
+                      u8 *ies;
+
+                      ies = (u8 *)((u8 *)hdr + hdr_len);
+                      ie_size = payload_len - (hdr_len - sizeof(ip4_gtpu_header_t));
+                      clib_memcpy_fast (ie_buf, ies, ie_size);
+                      hdr_len += ie_size;
+                    }
+                }
+
 	      // jump over variable length data
 	      vlib_buffer_advance (b0, (word) hdrlen);
 
@@ -2186,6 +2247,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		hdr_len += vec_len (sl->segments) * sizeof (ip6_address_t);
 
 	      hdr_len += sizeof (ip6_address_t) * 2;
+
+	      if (ie_size)
+                {
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+
+                  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
+                  hdr_len += tlv_siz;
+                }
 
 	      // jump back to data[0] or pre_data if required
 	      vlib_buffer_advance (b0, -(word) hdr_len);
@@ -2263,6 +2332,19 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 
 	          ip6srv->sr.segments[0] = dst0;
 		}
+
+	      if (PREDICT_FALSE(ie_size))
+                {
+                  ip6_sr_tlv_t *tlv;
+
+                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+                  tlv->type = SRH_TLV_5GS_CONTAINER;
+                  tlv->length = ie_size;
+                  clib_memset (tlv->value, 0, tlv_siz);
+                  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+
+                  ip6srv->sr.length += tlv_siz / 8;
+                }
 
 	      ip6srv->ip.payload_length =
 		clib_host_to_net_u16 (len0 + hdr_len - sizeof (ip6_header_t));
