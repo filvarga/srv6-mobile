@@ -1255,16 +1255,6 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      // in the pre_data area for this kind of
 	      // logic
 
-	      // jump over variable length data
-	      // not sure about the length
-	      vlib_buffer_advance (b0, (word) sizeof (ip6srv_combo_header_t) +
-				   ip6srv0->sr.length * 8);
-
-	      // get length of encapsulated IPv6 packet (the remaining part)
-	      p = vlib_buffer_get_current (b0);
-
-	      len0 = vlib_buffer_length_in_chain (vm, b0);
-
 	      u32 teid = 0;
 	      u8 *teid8p = (u8 *) & teid;
 	      u8 qfi = 0;
@@ -1273,6 +1263,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      u16 index;
 	      u16 offset, shift;
 	      u32 hdrlen = 0;
+	      u16 ie_size = 0;
+	      u8 ie_buff[GTPU_IE_MAX_SIZ];
 
 	      index = ls0->localsid_len;
 	      index += 8;
@@ -1342,7 +1334,45 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  hdrlen += sizeof(gtpu_recovery_ie);
 		}
 
+	      if (PREDICT_FALSE(gtpu_type == GTPU_TYPE_ERROR_INDICATION))
+                {
+                  ip6_sr_tlv_t *tlv;
+                  u16 ext_len;
+
+                  ext_len = ip6srv0->sr.length * 8;
+
+                  if (ext_len > sizeof(ip6_address_t) * (ip6srv0->sr.last_entry + 1))
+                    {
+                      tlv = (ip6_sr_tlv_t *)((u8 *)&ip6srv0->sr + sizeof(ip6_sr_header_t)
+                                  + sizeof(ip6_address_t) * (ip6srv0->sr.last_entry + 1));
+
+                      if (tlv->type == SRH_TLV_5GS_CONTAINER)
+                        {
+                          ie_size = tlv->length;
+                          clib_memcpy_fast (ie_buff, tlv->value, ie_size);
+
+                          hdrlen += ie_size;
+                        }
+                    }
+                }
+
+	      if (ip6srv->ip.protocol == IPPROTO_IPV6_ROUTE)
+	        {
+	          vlib_buffer_advance (b0, (word) sizeof (ip6srv_combo_header_t) +
+		 		       ip6srv0->sr.length * 8);
+		}
+	      else
+	        {
+		  vlib_buffer_advance (b0, (word) sizeof (ip6_header_t));
+		}
+
+	      // get length of encapsulated IPv6 packet (the remaining part)
+	      p = vlib_buffer_get_current (b0);
+
+	      len0 = vlib_buffer_length_in_chain (vm, b0);
+
  	      len0 += hdrlen;
+
 	      hdrlen += sizeof (ip6_gtpu_header_t);
 
 	      vlib_buffer_advance (b0, -(word) hdrlen);
@@ -1402,6 +1432,16 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		      recovery->type = GTPU_RECOVERY_IE_TYPE;
 		      recovery->restart_counter = 0;
 		    }
+		  else if (gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+                    {
+                      if (ie_size)
+                        {
+                          u8 *ie_ptr;
+
+                          ie_ptr =(u8 *)((u8 *)hdr0 + (hdrlen - ie_size));
+                          clib_memcpy_fast (ie_ptr, ie_buff, ie_size);
+                        }
+                    }
 		}
 
 	      hdr0->udp.length = clib_host_to_net_u16 (len0 +
