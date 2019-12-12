@@ -1206,6 +1206,7 @@ class Program(object):
              IE_TEIDI(TEIDI=65535)/IE_GSNAddress(address="1.1.1.1")/
              IE_PrivateExtension(extention_value="z"))
 
+        time.sleep(30)
         print("Sending packet on {}:".format(c1.name))
         p.show2()
 
@@ -1641,6 +1642,81 @@ class Program(object):
              IPv6(src="C::2", dst="D::2") /
              UDP(sport=2152, dport=2152) /
              GTP_U_Header(gtp_type="echo_response", S=1, teid=200, seq=300))
+
+        print("Sending packet on {}:".format(c1.name))
+        p.show2()
+
+        c1.enable_trace(10)
+        c4.enable_trace(10)
+
+        c4.pg_start_capture()
+
+        c1.pg_create_stream(p)
+        c1.pg_enable()
+
+        # timeout (sleep) if needed
+        print("Sleeping")
+        time.sleep(5)
+
+        print("Receiving packet on {}:".format(c4.name))
+        for p in c4.pg_read_packets():
+            p.show2()
+
+    def test_gtp6_drop_in_error(self):
+        # TESTS:
+        # trace add af-packet-input 10
+        # pg interface on c1 172.20.0.1
+        # pg interface on c4 B::1/120
+
+        self.start_containers()
+
+        print("Deleting the old containers...")
+        time.sleep(30)
+        print("Starting the new containers...")
+
+        c1 = self.containers.get(self.get_name(self.instance_names[0]))
+        c2 = self.containers.get(self.get_name(self.instance_names[1]))
+        c3 = self.containers.get(self.get_name(self.instance_names[2]))
+        c4 = self.containers.get(self.get_name(self.instance_names[-1]))
+
+        c1.pg_create_interface(
+            local_ip="C::1/120",
+            remote_ip="C::2",
+            local_mac="aa:bb:cc:dd:ee:01",
+            remote_mac="aa:bb:cc:dd:ee:02")
+        c4.pg_create_interface(
+            local_ip="B::1/120",
+            remote_ip="B::2",
+            local_mac="aa:bb:cc:dd:ee:11",
+            remote_mac="aa:bb:cc:dd:ee:22")
+
+        c1.vppctl_exec("set sr encaps source addr A1::1")
+        c1.vppctl_exec("sr policy add bsid D4:: next D2:: next D3::")
+
+        c1.vppctl_exec(
+            "sr localsid prefix D::/64 behavior end.m.gtp6.d.di D4::/64")
+
+        c2.vppctl_exec("sr localsid address D2:: behavior end")
+
+        c3.vppctl_exec("sr localsid address D3:: behavior end")
+
+        c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
+
+        c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
+        c2.set_ipv6_route("eth1", "A1::1", "C::/120")
+        c3.set_ipv6_route("eth2", "A3::2", "D4::/32")
+        c3.set_ipv6_route("eth1", "A2::1", "C::/120")
+        c4.set_ip_pgroute("pg0", "B::2", "D::2/128")
+
+        print("Waiting...")
+        time.sleep(30)
+
+        p = (Ether(src="aa:bb:cc:dd:ee:02", dst="aa:bb:cc:dd:ee:01") /
+             IPv6(src="C::2", dst="D::2") /
+             UDP(sport=2152, dport=2152) /
+             GTP_U_Header(gtp_type="error_indication", S=1, teid=200, seq=300)/
+             IE_TEIDI(TEIDI=65535)/IE_GSNAddress(address="1.1.1.1")/
+             IE_PrivateExtension(extention_value="z"))
 
         print("Sending packet on {}:".format(c1.name))
         p.show2()
@@ -2226,6 +2302,7 @@ def get_args():
             "gtp6_drop_in_5g",
             "gtp6_drop_in_echo",
             "gtp6_drop_in_reply",
+            "gtp6_drop_in_error",
             "gtp6_drop_in_ipv6",
             "gtp6_drop_in_ipv6_5g",
             "gtp6",
@@ -2307,6 +2384,8 @@ def main(op=None, prefix=None, verbose=None,
             program.test_gtp6_drop_in_echo()
         elif op == 'gtp6_drop_in_reply':
             program.test_gtp6_drop_in_reply()
+        elif op == 'gtp6_drop_in_error':
+            program.test_gtp6_drop_in_error()
         elif op == 'gtp6_drop_in_ipv6':
             program.test_gtp6_drop_in_ipv6()
         elif op == 'gtp6_drop_in_ipv6_5g':
