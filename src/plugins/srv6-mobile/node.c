@@ -867,7 +867,6 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		      clib_memcpy_fast (ie_buf, ies, ie_size);
 		      hdr_len += ie_size;
 		    }
-		  printf("GTP4: payload %d, ie_size %d, hdr_len %d\n", payload_len, ie_size, hdr_len);
 		}
 
 	      src6 = ls_param->v6src_prefix;
@@ -937,12 +936,10 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      if (ie_size)
 	        {
 		  u16 tlv_siz;
-		  u16 tlv_rem;
 
 		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
-		  tlv_rem = tlv_siz % 8;
 
-		  hdr_len += tlv_siz + tlv_rem;
+		  hdr_len += (tlv_siz & 0x8) + (tlv_siz & 0x7 ? 0x8 : 0x0);
 		}
 
 	      vlib_buffer_advance (b0, -(word) hdr_len);
@@ -1110,7 +1107,6 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 	      ip6srv->ip.src_address = src6;
 
-	      printf("GTP4: IE size %d\n", ie_size);
 	      if (PREDICT_FALSE(ie_size))
 	        {
 		  ip6_sr_tlv_t *tlv;
