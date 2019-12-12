@@ -858,13 +858,14 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 		  payload_len = clib_net_to_host_u16(hdr->gtpu.length);
 		  if (payload_len != 0
-		   || payload_len > hdr_len - sizeof(ip4_gtpu_header_t))
+		   && payload_len > hdr_len - sizeof(ip4_gtpu_header_t))
 		    {
 		      u8 *ies;
 
 		      ies = (u8 *)((u8 *)hdr + hdr_len);
-		      ie_size = payload_len + sizeof(ip4_gtpu_header_t) - hdr_len; 
+		      ie_size = payload_len - (hdr_len - sizeof(ip4_gtpu_header_t)); 
 		      clib_memcpy_fast (ie_buf, ies, ie_size);
+		      hdr_len += ie_size;
 		    }
 		}
 
