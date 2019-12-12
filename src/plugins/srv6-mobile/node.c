@@ -2198,7 +2198,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
                     {
                       u8 *ies;
 
-                      ies = (u8 *)((u8 *)hdr + hdrlen);
+                      ies = (u8 *)((u8 *)hdr0 + hdrlen);
                       ie_size = payload_len - (hdrlen - sizeof(ip6_gtpu_header_t));
                       clib_memcpy_fast (ie_buf, ies, ie_size);
                       hdrlen += ie_size;
