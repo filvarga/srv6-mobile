@@ -1206,7 +1206,6 @@ class Program(object):
              IE_TEIDI(TEIDI=65535)/IE_GSNAddress(address="1.1.1.1")/
              IE_PrivateExtension(extention_value="z"))
 
-        time.sleep(30)
         print("Sending packet on {}:".format(c1.name))
         p.show2()
 
