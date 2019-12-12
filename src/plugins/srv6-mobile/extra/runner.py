@@ -1204,7 +1204,7 @@ class Program(object):
              UDP(sport=2152, dport=2152) /
              GTP_U_Header(gtp_type="error_indication", S=1, teid=200, seq=200)/
              IE_TEIDI(TEIDI=65535)/IE_GSNAddress(address="1.1.1.1")/
-             IE_PrivateExtension(extention_value="runner"))
+             IE_PrivateExtension(extention_value="z"))
 
         print("Sending packet on {}:".format(c1.name))
         p.show2()
