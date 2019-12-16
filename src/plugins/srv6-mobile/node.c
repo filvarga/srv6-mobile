@@ -468,10 +468,14 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		      tlv = (ip6_sr_tlv_t *)((u8 *)&ip6srv0->sr + sizeof(ip6_sr_header_t)
 				  + sizeof(ip6_address_t) * (ip6srv0->sr.last_entry + 1));
 
-		      if (tlv->type == SRH_TLV_5GS_CONTAINER)
+		      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
 		        {
-		          ie_size = tlv->length;
-		          clib_memcpy_fast (ie_buf, tlv->value, ie_size);
+			  user_plane_sub_tlv_t *sub_tlv;
+			  
+			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+
+		          ie_size = sub_tlv->length;
+		          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
 		          hdrlen += ie_size;
 			}
@@ -936,7 +940,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 
 	      if (ie_size)
 	        {
-		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+		  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0); 
 		  hdr_len += tlv_siz;
@@ -1110,12 +1114,17 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      if (PREDICT_FALSE(ie_size))
 	        {
 		  ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
 		  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
-		  tlv->type = SRH_TLV_5GS_CONTAINER;
-		  tlv->length = ie_size;
-		  clib_memset (tlv->value, 0, tlv_siz);
-		  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+		  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+		  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
+		  sub_tlv->length = ie_size;
+		  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}
@@ -1346,10 +1355,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
                       tlv = (ip6_sr_tlv_t *)((u8 *)&ip6srv0->sr + sizeof(ip6_sr_header_t)
                                   + sizeof(ip6_address_t) * (ip6srv0->sr.last_entry + 1));
 
-                      if (tlv->type == SRH_TLV_5GS_CONTAINER)
+                      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
                         {
-                          ie_size = tlv->length;
-                          clib_memcpy_fast (ie_buf, tlv->value, ie_size);
+			  user_plane_sub_tlv_t *sub_tlv;
+
+			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+
+                          ie_size = sub_tlv->length;
+                          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
                           hdrlen += ie_size;
                         }
@@ -1766,7 +1779,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 
 	      if (ie_size)
                 {
-                  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
 
                   tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
                   hdr_len += tlv_siz;
@@ -1941,12 +1954,17 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	      if (PREDICT_FALSE(ie_size))
                 {
                   ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
                   tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
-                  tlv->type = SRH_TLV_5GS_CONTAINER;
-                  tlv->length = ie_size;
-                  clib_memset (tlv->value, 0, tlv_siz);
-                  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+                  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
+                  sub_tlv->length = ie_size;
+                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
                   ip6srv->sr.length += tlv_siz / 8;
                 }
@@ -2250,7 +2268,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 
 	      if (ie_size)
                 {
-                  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) + ie_size;
 
                   tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
                   hdr_len += tlv_siz;
@@ -2336,12 +2354,16 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      if (PREDICT_FALSE(ie_size))
                 {
                   ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
                   tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
-                  tlv->type = SRH_TLV_5GS_CONTAINER;
-                  tlv->length = ie_size;
-                  clib_memset (tlv->value, 0, tlv_siz);
-                  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+                  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+                  sub_tlv->length = ie_size;
+                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
                   ip6srv->sr.length += tlv_siz / 8;
                 }

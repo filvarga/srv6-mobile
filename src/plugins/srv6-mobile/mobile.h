@@ -62,7 +62,7 @@
 #define GTPU_RECOVERY_IE_TYPE		0x0e
 
 #define GTPU_IE_MAX_SIZ			256
-#define SRH_TLV_5GS_CONTAINER		0x0a	/* tentative */
+#define SRH_TLV_USER_PLANE_CONTAINER	0x0a	/* tentative */
 
 /* *INDENT-OFF* */
 typedef struct
@@ -157,6 +157,17 @@ typedef struct
 #define GTPU_V1_VER   (1<<5)
 
 #define GTPU_PT_GTP   (1<<4)
+
+/* *INDENT-OFF* */
+typedef struct
+{
+  u8 type;
+  u8 length;
+  u8 value[0];
+} __attribute__ ((packed)) user_plane_sub_tlv_t;
+/* *INDENT-ON* */
+
+#define USER_PLANE_SUB_TLV_IE	0x01
 
 typedef struct srv6_end_gtp6_param_s
 {
