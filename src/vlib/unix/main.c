@@ -180,7 +180,11 @@ unix_signal_handler (int signum, siginfo_t * si, ucontext_t * uc)
       /* have to remove SIGABRT to avoid recursive - os_exit calling abort() */
       unsetup_signal_handlers (SIGABRT);
 
-      os_exit (1);
+      /* os_exit(1) causes core generation, do not do this for SIGINT */
+      if (signum == SIGINT)
+	os_exit (0);
+      else
+	os_exit (1);
     }
   else
     clib_warning ("%s", syslog_msg);
@@ -372,6 +376,7 @@ VLIB_REGISTER_NODE (startup_config_node,static) = {
     .function = startup_config_process,
     .type = VLIB_NODE_TYPE_PROCESS,
     .name = "startup-config-process",
+    .process_log2_n_stack_bytes = 18,
 };
 /* *INDENT-ON* */
 
