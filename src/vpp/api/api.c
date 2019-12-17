@@ -143,22 +143,19 @@ shmem_cli_output (uword arg, u8 * buffer, uword buffer_bytes)
   u8 **shmem_vecp = (u8 **) arg;
   u8 *shmem_vec;
   void *oldheap;
-  api_main_t *am = vlibapi_get_main ();
   u32 offset;
 
   shmem_vec = *shmem_vecp;
 
   offset = vec_len (shmem_vec);
 
-  pthread_mutex_lock (&am->vlib_rp->mutex);
-  oldheap = svm_push_data_heap (am->vlib_rp);
+  oldheap = vl_msg_push_heap ();
 
   vec_validate (shmem_vec, offset + buffer_bytes - 1);
 
   clib_memcpy (shmem_vec + offset, buffer, buffer_bytes);
 
-  svm_pop_heap (oldheap);
-  pthread_mutex_unlock (&am->vlib_rp->mutex);
+  vl_msg_pop_heap (oldheap);
 
   *shmem_vecp = shmem_vec;
 }
@@ -170,7 +167,6 @@ vl_api_cli_t_handler (vl_api_cli_t * mp)
   vl_api_cli_reply_t *rp;
   vl_api_registration_t *reg;
   vlib_main_t *vm = vlib_get_main ();
-  api_main_t *am = vlibapi_get_main ();
   unformat_input_t input;
   u8 *shmem_vec = 0;
   void *oldheap;
@@ -187,13 +183,9 @@ vl_api_cli_t_handler (vl_api_cli_t * mp)
 
   vlib_cli_input (vm, &input, shmem_cli_output, (uword) & shmem_vec);
 
-  pthread_mutex_lock (&am->vlib_rp->mutex);
-  oldheap = svm_push_data_heap (am->vlib_rp);
-
+  oldheap = vl_msg_push_heap ();
   vec_add1 (shmem_vec, 0);
-
-  svm_pop_heap (oldheap);
-  pthread_mutex_unlock (&am->vlib_rp->mutex);
+  vl_msg_pop_heap (oldheap);
 
   rp->reply_in_shmem = (uword) shmem_vec;
 
@@ -439,15 +431,13 @@ vl_api_get_node_graph_t_handler (vl_api_get_node_graph_t * mp)
 {
   int rv = 0;
   u8 *vector = 0;
-  api_main_t *am = vlibapi_get_main ();
   vlib_main_t *vm = vlib_get_main ();
   void *oldheap;
   vl_api_get_node_graph_reply_t *rmp;
   static vlib_node_t ***node_dups;
   static vlib_main_t **stat_vms;
 
-  pthread_mutex_lock (&am->vlib_rp->mutex);
-  oldheap = svm_push_data_heap (am->vlib_rp);
+  oldheap = vl_msg_push_heap ();
 
   /*
    * Keep the number of memcpy ops to a minimum (e.g. 1).
@@ -462,8 +452,7 @@ vl_api_get_node_graph_t_handler (vl_api_get_node_graph_t * mp)
   vector = vlib_node_serialize (vm, node_dups, vector, 1 /* include nexts */ ,
 				1 /* include stats */ );
 
-  svm_pop_heap (oldheap);
-  pthread_mutex_unlock (&am->vlib_rp->mutex);
+  vl_msg_pop_heap (oldheap);
 
   /* *INDENT-OFF* */
   REPLY_MACRO2(VL_API_GET_NODE_GRAPH_REPLY,
@@ -804,78 +793,6 @@ get_unformat_vnet_sw_interface (void)
 {
   return (void *) &unformat_vnet_sw_interface;
 }
-
-static u8 *
-format_arp_event (u8 * s, va_list * args)
-{
-  vl_api_ip4_arp_event_t *event = va_arg (*args, vl_api_ip4_arp_event_t *);
-
-  s = format (s, "pid %d: ", ntohl (event->pid));
-  s = format (s, "resolution for %U", format_vl_api_ip4_address, event->ip);
-  return s;
-}
-
-static u8 *
-format_nd_event (u8 * s, va_list * args)
-{
-  vl_api_ip6_nd_event_t *event = va_arg (*args, vl_api_ip6_nd_event_t *);
-
-  s = format (s, "pid %d: ", ntohl (event->pid));
-  s = format (s, "resolution for %U", format_vl_api_ip6_address, event->ip);
-  return s;
-}
-
-static clib_error_t *
-show_ip_arp_nd_events_fn (vlib_main_t * vm,
-			  unformat_input_t * input, vlib_cli_command_t * cmd)
-{
-  vpe_api_main_t *am = &vpe_api_main;
-  vl_api_ip4_arp_event_t *arp_event;
-  vl_api_ip6_nd_event_t *nd_event;
-
-  if (pool_elts (am->arp_events) == 0 && pool_elts (am->nd_events) == 0 &&
-      pool_elts (am->wc_ip4_arp_events_registrations) == 0 &&
-      pool_elts (am->wc_ip6_nd_events_registrations) == 0)
-    {
-      vlib_cli_output (vm, "No active arp or nd event registrations");
-      return 0;
-    }
-
-  /* *INDENT-OFF* */
-  pool_foreach (arp_event, am->arp_events,
-  ({
-    vlib_cli_output (vm, "%U", format_arp_event, arp_event);
-  }));
-
-  vpe_client_registration_t *reg;
-  pool_foreach(reg, am->wc_ip4_arp_events_registrations,
-  ({
-    vlib_cli_output (vm, "pid %d: bd mac/ip4 binding events",
-                     ntohl (reg->client_pid));
-  }));
-
-  pool_foreach (nd_event, am->nd_events,
-  ({
-    vlib_cli_output (vm, "%U", format_nd_event, nd_event);
-  }));
-
-  pool_foreach(reg, am->wc_ip6_nd_events_registrations,
-  ({
-    vlib_cli_output (vm, "pid %d: bd mac/ip6 binding events",
-                     ntohl (reg->client_pid));
-  }));
-  /* *INDENT-ON* */
-
-  return 0;
-}
-
-/* *INDENT-OFF* */
-VLIB_CLI_COMMAND (show_ip_arp_nd_events, static) = {
-  .path = "show arp-nd-event registrations",
-  .function = show_ip_arp_nd_events_fn,
-  .short_help = "Show ip4 arp and ip6 nd event registrations",
-};
-/* *INDENT-ON* */
 
 #define vl_msg_name_crc_list
 #include <vpp/api/vpe_all_api_h.h>

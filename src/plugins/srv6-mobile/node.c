@@ -129,10 +129,6 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP6_D_DI_PACKETS, "srv6 End.M.GTP6.D.DI packets") \
   _(M_GTP6_D_DI_BAD_PACKETS, "srv6 End.M.GTP6.D.DI bad packets")
 
-#define foreach_srv6_end_v6_dt_error \
-  _(M_GTP6_DT_PACKETS, "srv6 End.M.GTP6.DT packets") \
-  _(M_GTP6_DT_BAD_PACKETS, "srv6 End.M.GTP6.DT bad packets")
-
 typedef enum
 {
 #define _(sym,str) SRV6_END_ERROR_##sym,
@@ -172,14 +168,6 @@ typedef enum
 #undef _
     SRV6_END_N_V6_D_DI_ERROR,
 } srv6_end_error_v6_d_di_t;
-
-typedef enum
-{
-#define _(sym,str) SRV6_END_ERROR_##sym,
-  foreach_srv6_end_v6_dt_error
-#undef _
-    SRV6_END_N_V6_DT_ERROR,
-} srv6_end_error_v6_dt_t;
 
 static char *srv6_end_error_v4_strings[] = {
 #define _(sym,string) string,
@@ -473,10 +461,14 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 					  sizeof (ip6_address_t) *
 					  (ip6srv0->sr.last_entry + 1));
 
-		      if (tlv->type == SRH_TLV_5GS_CONTAINER)
-			{
-			  ie_size = tlv->length;
-			  clib_memcpy_fast (ie_buf, tlv->value, ie_size);
+		      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
+		        {
+			  user_plane_sub_tlv_t *sub_tlv;
+			  
+			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+
+		          ie_size = sub_tlv->length;
+		          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
 			  hdrlen += ie_size;
 			}
@@ -947,8 +939,8 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		}
 
 	      if (ie_size)
-		{
-		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+	        {
+		  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -1124,13 +1116,17 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      if (PREDICT_FALSE (ie_size))
 		{
 		  ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
-		  tlv =
-		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
-		  tlv->type = SRH_TLV_5GS_CONTAINER;
-		  tlv->length = ie_size;
-		  clib_memset (tlv->value, 0, tlv_siz);
-		  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+		  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+		  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+		  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
+		  sub_tlv->length = ie_size;
+		  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}
@@ -1342,8 +1338,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
 		       || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
-		{
-		  hdrlen = sizeof (gtpu_exthdr_t);
+	        {
+		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
@@ -1367,10 +1363,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 					  sizeof (ip6_address_t) *
 					  (ip6srv0->sr.last_entry + 1));
 
-		      if (tlv->type == SRH_TLV_5GS_CONTAINER)
-			{
-			  ie_size = tlv->length;
-			  clib_memcpy_fast (ie_buf, tlv->value, ie_size);
+                      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
+                        {
+			  user_plane_sub_tlv_t *sub_tlv;
+
+			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+
+                          ie_size = sub_tlv->length;
+                          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
 			  hdrlen += ie_size;
 			}
@@ -1792,8 +1792,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		}
 
 	      if (ie_size)
-		{
-		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+                {
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -1967,16 +1967,20 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    }
 		}
 
-	      if (PREDICT_FALSE (ie_size))
-		{
-		  ip6_sr_tlv_t *tlv;
+	      if (PREDICT_FALSE(ie_size))
+                {
+                  ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
-		  tlv =
-		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
-		  tlv->type = SRH_TLV_5GS_CONTAINER;
-		  tlv->length = ie_size;
-		  clib_memset (tlv->value, 0, tlv_siz);
-		  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+                  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
+                  sub_tlv->length = ie_size;
+                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}
@@ -2281,8 +2285,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      hdr_len += sizeof (ip6_address_t) * 2;
 
 	      if (ie_size)
-		{
-		  tlv_siz = sizeof (ip6_sr_tlv_t) + ie_size;
+                {
+                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) + ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -2369,16 +2373,19 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  ip6srv->sr.segments[0] = dst0;
 		}
 
-	      if (PREDICT_FALSE (ie_size))
-		{
-		  ip6_sr_tlv_t *tlv;
+	      if (PREDICT_FALSE(ie_size))
+                {
+                  ip6_sr_tlv_t *tlv;
+		  user_plane_sub_tlv_t *sub_tlv;
 
-		  tlv =
-		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
-		  tlv->type = SRH_TLV_5GS_CONTAINER;
-		  tlv->length = ie_size;
-		  clib_memset (tlv->value, 0, tlv_siz);
-		  clib_memcpy_fast (tlv->value, ie_buf, ie_size);
+                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+                  clib_memset (tlv->value, 0, tlv->length);
+
+		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+                  sub_tlv->length = ie_size;
+                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}

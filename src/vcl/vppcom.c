@@ -1015,10 +1015,6 @@ vppcom_app_exit (void)
   vcl_worker_cleanup (vcl_worker_get_current (), 1 /* notify vpp */ );
   vcl_set_worker_index (~0);
   vcl_elog_stop (vcm);
-  if (vec_len (vcm->workers) == 1)
-    vppcom_disconnect_from_vpp ();
-  else
-    vl_client_send_disconnect (1 /* vpp should cleanup */ );
 }
 
 /*
@@ -1055,7 +1051,6 @@ vppcom_app_create (char *app_name)
   vcl_worker_alloc_and_init ();
 
   /* API hookup and connect to VPP */
-  vppcom_api_hookup ();
   vcl_elog_init (vcm);
   vcm->app_state = STATE_APP_START;
   rv = vppcom_connect_to_vpp (app_name);
@@ -1475,7 +1470,7 @@ vppcom_session_accept (uint32_t listen_session_handle, vppcom_endpt_t * ep,
       e = svm_msg_q_msg_data (wrk->app_event_queue, &msg);
       if (e->event_type != SESSION_CTRL_EVT_ACCEPTED)
 	{
-	  VDBG (0, "discarded event: %u", e->event_type);
+	  vcl_handle_mq_event (wrk, e);
 	  svm_msg_q_free_msg (wrk->app_event_queue, &msg);
 	  continue;
 	}
@@ -3590,11 +3585,21 @@ vppcom_session_worker (vcl_session_handle_t session_handle)
 int
 vppcom_worker_register (void)
 {
+  vcl_worker_t *wrk;
+  u8 *wrk_name = 0;
+  int rv;
+
   if (!vcl_worker_alloc_and_init ())
     return VPPCOM_EEXIST;
 
-  if (vcl_worker_set_bapi ())
-    return VPPCOM_EEXIST;
+  wrk = vcl_worker_get_current ();
+  wrk_name = format (0, "%s-wrk-%u", vcm->app_name, wrk->wrk_index);
+
+  rv = vppcom_connect_to_vpp ((char *) wrk_name);
+  vec_free (wrk_name);
+
+  if (rv)
+    return VPPCOM_EFAULT;
 
   if (vcl_worker_register_with_vpp ())
     return VPPCOM_EEXIST;
