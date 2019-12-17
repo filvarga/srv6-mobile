@@ -129,10 +129,6 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP6_D_DI_PACKETS, "srv6 End.M.GTP6.D.DI packets") \
   _(M_GTP6_D_DI_BAD_PACKETS, "srv6 End.M.GTP6.D.DI bad packets")
 
-#define foreach_srv6_end_v6_dt_error \
-  _(M_GTP6_DT_PACKETS, "srv6 End.M.GTP6.DT packets") \
-  _(M_GTP6_DT_BAD_PACKETS, "srv6 End.M.GTP6.DT bad packets")
-
 typedef enum
 {
 #define _(sym,str) SRV6_END_ERROR_##sym,
@@ -172,14 +168,6 @@ typedef enum
 #undef _
     SRV6_END_N_V6_D_DI_ERROR,
 } srv6_end_error_v6_d_di_t;
-
-typedef enum
-{
-#define _(sym,str) SRV6_END_ERROR_##sym,
-  foreach_srv6_end_v6_dt_error
-#undef _
-    SRV6_END_N_V6_DT_ERROR,
-} srv6_end_error_v6_dt_t;
 
 static char *srv6_end_error_v4_strings[] = {
 #define _(sym,string) string,
@@ -392,8 +380,8 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  qfi = dst0.as_u8[offset + 4];
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      clib_memcpy_fast (&seq, &dst0.as_u8[offset + 5], 2);
 		    }
@@ -417,24 +405,25 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  qfi |= dst0.as_u8[offset + 5] >> (8 - shift);
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      sp = (u8 *)&seq;
+		      sp = (u8 *) & seq;
 		      for (index = 0; index < 2; index++)
-		        {
-		          sp[index] = dst0.as_u8[offset + 5 + index] << shift;
-		          sp[index] = dst0.as_u8[offset + 6 + index] >> (8 - shift);
-		        }
+			{
+			  sp[index] = dst0.as_u8[offset + 5 + index] << shift;
+			  sp[index] =
+			    dst0.as_u8[offset + 6 + index] >> (8 - shift);
+			}
 		    }
 		  else
 		    {
 		      for (index = 0; index < 4; index++)
-		        {
-		          *teid8p = dst0.as_u8[offset + 5 + index] << shift;
-		          *teid8p |=
+			{
+			  *teid8p = dst0.as_u8[offset + 5 + index] << shift;
+			  *teid8p |=
 			    dst0.as_u8[offset + 6 + index] >> (8 - shift);
-		          teid8p++;
+			  teid8p++;
 			}
 		    }
 		}
@@ -445,8 +434,8 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		    || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		    || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		       || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		{
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -547,9 +536,9 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY
-	       || gtpu_type == GTPU_TYPE_ECHO_REQUEST
-	       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
-	        {
+		  || gtpu_type == GTPU_TYPE_ECHO_REQUEST
+		  || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		{
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
@@ -753,7 +742,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		  hdr_len += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr->gtpu.ext->seq;
-		  seqp = (u8 *)&seq;
+		  seqp = (u8 *) & seq;
 
 		  if (hdr->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -802,8 +791,8 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		    }
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      clib_memcpy_fast (&seg.as_u8[offset + 5], seqp, 2);
 		    }
@@ -837,21 +826,24 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		    }
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      for (index = 0; index < 2; index++)
 			{
-			  seg.as_u8[offset + 5 + index] |= seqp[index] >> shift;
-			  seg.as_u8[offset + 6 + index] |= seqp[index] << (8 - shift);
+			  seg.as_u8[offset + 5 + index] |=
+			    seqp[index] >> shift;
+			  seg.as_u8[offset + 6 + index] |=
+			    seqp[index] << (8 - shift);
 			}
 		    }
 		  else
-	            {
+		    {
 		      for (index = 0; index < 4; index++)
-		        {
-		          seg.as_u8[offset + index + 5] |= teidp[index] >> shift;
-		          seg.as_u8[offset + index + 6] |=
+			{
+			  seg.as_u8[offset + index + 5] |=
+			    teidp[index] >> shift;
+			  seg.as_u8[offset + index + 6] |=
 			    teidp[index] << (8 - shift);
 			}
 		    }
@@ -954,10 +946,10 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		  clib_memcpy_fast (ip6srv, sl->rewrite,
 				    vec_len (sl->rewrite));
 
-		  if (vec_len(sl->segments) > 1)
-	 	    {
+		  if (vec_len (sl->segments) > 1)
+		    {
 		      ip6srv->sr.tag =
-		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
 		      ip6srv->sr.segments_left += 1;
 		      ip6srv->sr.last_entry += 1;
@@ -966,11 +958,11 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		      ip6srv->sr.segments[0] = seg;
 
 		      clib_memcpy_fast (&ip6srv->sr.segments[1],
-		  		        (u8 *) (sl->rewrite +
-					        sizeof (ip6_header_t) +
-					        sizeof (ip6_sr_header_t)),
-				        vec_len (sl->segments) *
-				        sizeof (ip6_address_t));
+					(u8 *) (sl->rewrite +
+						sizeof (ip6_header_t) +
+						sizeof (ip6_sr_header_t)),
+					vec_len (sl->segments) *
+					sizeof (ip6_address_t));
 		    }
 		  else
 		    {
@@ -981,17 +973,19 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		      ip6srv->sr.segments_left = 1;
 		      ip6srv->sr.last_entry = 0;
 
-		      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + sizeof(ip6_address_t)) / 8) - 1;
+		      ip6srv->sr.length =
+			((sizeof (ip6_sr_header_t) +
+			  sizeof (ip6_address_t)) / 8) - 1;
 		      ip6srv->sr.flags = 0;
 
 		      ip6srv->sr.tag =
-		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
 		      ip6srv->sr.segments[0] = seg;
-		      if (vec_len(sl->segments))
+		      if (vec_len (sl->segments))
 			{
 			  ip6srv->sr.segments[1] = sl->segments[0];
-			  ip6srv->sr.length += sizeof(ip6_address_t) / 8;
+			  ip6srv->sr.length += sizeof (ip6_address_t) / 8;
 			  ip6srv->sr.last_entry++;
 			}
 		    }
@@ -1285,8 +1279,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      if (PREDICT_TRUE (shift == 0))
 		{
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      clib_memcpy_fast (&seq, &dst0.as_u8[offset], 2);
 		    }
@@ -1302,23 +1296,25 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		  u8 *sp;
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      sp = (u8 *)&seq;
+		      sp = (u8 *) & seq;
 		      for (index = 0; index < 2; index++)
-		        {
-		          sp[index] = dst0.as_u8[offset + index] << shift;
-		          sp[index] = dst0.as_u8[offset + index + 1] >> (8 - shift);
-		        }
+			{
+			  sp[index] = dst0.as_u8[offset + index] << shift;
+			  sp[index] =
+			    dst0.as_u8[offset + index + 1] >> (8 - shift);
+			}
 		    }
 		  else
 		    {
 		      for (index = 0; index < 4; index++)
-		        {
-		          *teid8p = dst0.as_u8[offset + index] << shift;
-		          *teid8p |= dst0.as_u8[offset + index + 1] >> (8 - shift);
-		          teid8p++;
+			{
+			  *teid8p = dst0.as_u8[offset + index] << shift;
+			  *teid8p |=
+			    dst0.as_u8[offset + index + 1] >> (8 - shift);
+			  teid8p++;
 			}
 		    }
 
@@ -1332,8 +1328,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		    sizeof (gtpu_exthdr_t) + sizeof (gtpu_pdu_session_t);
 		}
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-	            || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		    || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		       || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 	        {
 		  hdrlen = sizeof(gtpu_exthdr_t);
 		}
@@ -1429,9 +1425,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-	       || gtpu_type == GTPU_TYPE_ECHO_REPLY
-	       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
-	        {
+		  || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		  || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		{
 		  hdr0->gtpu.ver_flags |= GTPU_SEQ_FLAG;
 		  hdr0->gtpu.ext->seq = seq;
 		  hdr0->gtpu.ext->npdu_num = 0;
@@ -1612,7 +1608,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		  hdrlen += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr0->gtpu.ext->seq;
-		  seqp = (u8 *)&seq;
+		  seqp = (u8 *) & seq;
 
 		  if (hdr0->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -1640,11 +1636,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	      if (PREDICT_TRUE (shift == 0))
 		{
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      if (seqp)
-		        clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+			clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
 		    }
 		  else
 		    {
@@ -1670,26 +1666,27 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		  int idx;
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      if (seqp)
-		        {
-		          for (idx = 0; idx < 2; idx++)
-		            {
-		              seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
-			      seg0.as_u8[offset + idx + 1] |= seqp[idx] << (8 - shift);
+			{
+			  for (idx = 0; idx < 2; idx++)
+			    {
+			      seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			      seg0.as_u8[offset + idx + 1] |=
+				seqp[idx] << (8 - shift);
 			    }
 			}
 		    }
 		  else
 		    {
 		      for (idx = 0; idx < 4; idx++)
-		        {
-		          seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
-		          seg0.as_u8[offset + idx + 1] |=
+			{
+			  seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
+			  seg0.as_u8[offset + idx + 1] |=
 			    teidp[idx] << (8 - shift);
-		        }
+			}
 		    }
 
 		  if (qfip)
@@ -1800,7 +1797,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      ip6srv->ip.src_address = src0;
 
 		      ip6srv->sr.tag =
-		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
 		      ip6srv->sr.segments_left += 1;
 		      ip6srv->sr.last_entry += 1;
@@ -1809,33 +1806,35 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      ip6srv->sr.segments[0] = seg0;
 
 		      clib_memcpy_fast (&ip6srv->sr.segments[1],
-				        (u8 *) (sl->rewrite +
-				 	        sizeof (ip6_header_t) +
-					        sizeof (ip6_sr_header_t)),
-				        vec_len (sl->segments) *
-				        sizeof (ip6_address_t));
+					(u8 *) (sl->rewrite +
+						sizeof (ip6_header_t) +
+						sizeof (ip6_sr_header_t)),
+					vec_len (sl->segments) *
+					sizeof (ip6_address_t));
 		    }
 		  else
 		    {
 		      ip6srv->ip.src_address = src0;
 		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
 
-                      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
-                      ip6srv->sr.segments_left = 1;
-                      ip6srv->sr.last_entry = 0;
-                      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + sizeof(ip6_address_t)) / 8) - 1;
-                      ip6srv->sr.flags = 0;
+		      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+		      ip6srv->sr.segments_left = 1;
+		      ip6srv->sr.last_entry = 0;
+		      ip6srv->sr.length =
+			((sizeof (ip6_sr_header_t) +
+			  sizeof (ip6_address_t)) / 8) - 1;
+		      ip6srv->sr.flags = 0;
 
-                      ip6srv->sr.tag =
-                        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+		      ip6srv->sr.tag =
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
-                      ip6srv->sr.segments[0] = seg0;
+		      ip6srv->sr.segments[0] = seg0;
 
-		      if (vec_len(sl->segments))
+		      if (vec_len (sl->segments))
 			{
 			  ip6srv->sr.segments[1] = sl->segments[0];
 			  ip6srv->sr.last_entry++;
-			  ip6srv->sr.length += sizeof(ip6_address_t) / 8;
+			  ip6srv->sr.length += sizeof (ip6_address_t) / 8;
 			}
 		    }
 
@@ -2112,7 +2111,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  hdrlen += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr0->gtpu.ext->seq;
-		  seqp = (u8 *)&seq;
+		  seqp = (u8 *) & seq;
 
 		  if (hdr0->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -2138,11 +2137,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      if (PREDICT_TRUE (shift == 0))
 		{
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      if (seqp)
-		        clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+			clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
 		    }
 		  else
 		    {
@@ -2168,26 +2167,27 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  int idx;
 
 		  if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
-		   || gtpu_type == GTPU_TYPE_ECHO_REPLY
-		   || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
+		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
+		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
 		      if (seqp)
-		        {
-		          for (idx = 0; idx < 2; idx++)
-		            {
-		              seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
-			      seg0.as_u8[offset + idx + 1] |= seqp[idx] << (8 - shift);
+			{
+			  for (idx = 0; idx < 2; idx++)
+			    {
+			      seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			      seg0.as_u8[offset + idx + 1] |=
+				seqp[idx] << (8 - shift);
 			    }
 			}
 		    }
 		  else
 		    {
 		      for (idx = 0; idx < 4; idx++)
-		        {
-		          seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
-		          seg0.as_u8[offset + idx + 1] |=
+			{
+			  seg0.as_u8[offset + idx] |= teidp[idx] >> shift;
+			  seg0.as_u8[offset + idx + 1] |=
 			    teidp[idx] << (8 - shift);
-		        }
+			}
 		    }
 
 		  if (qfip)
@@ -2284,50 +2284,52 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  clib_memcpy_fast (ip6srv, sl->rewrite,
 				    vec_len (sl->rewrite));
 
-		  if (vec_len(sl->segments) > 1)
+		  if (vec_len (sl->segments) > 1)
 		    {
 		      ip6srv->ip.src_address = src0;
 
 		      ip6srv->sr.tag =
-		        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
 		      ip6srv->sr.segments_left += 2;
 		      ip6srv->sr.last_entry += 2;
 
-	              ip6srv->sr.length += ((sizeof (ip6_address_t) * 2) / 8);
+		      ip6srv->sr.length += ((sizeof (ip6_address_t) * 2) / 8);
 
-	              ip6srv->sr.segments[0] = dst0;
-	              ip6srv->sr.segments[1] = seg0;
-		      
+		      ip6srv->sr.segments[0] = dst0;
+		      ip6srv->sr.segments[1] = seg0;
+
 		      clib_memcpy_fast (&ip6srv->sr.segments[2],
-				        (u8 *) (sl->rewrite +
-					        sizeof (ip6_header_t) +
-					        sizeof (ip6_sr_header_t)),
-				        vec_len (sl->segments) *
-				        sizeof (ip6_address_t));
+					(u8 *) (sl->rewrite +
+						sizeof (ip6_header_t) +
+						sizeof (ip6_sr_header_t)),
+					vec_len (sl->segments) *
+					sizeof (ip6_address_t));
 		    }
 		  else
 		    {
 		      ip6srv->ip.src_address = src0;
 		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
 
-                      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
-                      ip6srv->sr.segments_left = 2;
-                      ip6srv->sr.last_entry = 1;
-                      ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + 2 * sizeof(ip6_address_t)) / 8) - 1;
-                      ip6srv->sr.flags = 0;
+		      ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
+		      ip6srv->sr.segments_left = 2;
+		      ip6srv->sr.last_entry = 1;
+		      ip6srv->sr.length =
+			((sizeof (ip6_sr_header_t) +
+			  2 * sizeof (ip6_address_t)) / 8) - 1;
+		      ip6srv->sr.flags = 0;
 
-                      ip6srv->sr.tag =
-                        clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
+		      ip6srv->sr.tag =
+			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
-	              ip6srv->sr.segments[0] = dst0;
-	              ip6srv->sr.segments[1] = seg0;
+		      ip6srv->sr.segments[0] = dst0;
+		      ip6srv->sr.segments[1] = seg0;
 
-		      if (vec_len(sl->segments))
+		      if (vec_len (sl->segments))
 			{
 			  ip6srv->sr.segments[2] = sl->segments[0];
 			  ip6srv->sr.last_entry++;
-			  ip6srv->sr.length += sizeof(ip6_address_t) / 8;
+			  ip6srv->sr.length += sizeof (ip6_address_t) / 8;
 			}
 		    }
 		}
@@ -2342,13 +2344,15 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  ip6srv->sr.type = ROUTING_HEADER_TYPE_SR;
 		  ip6srv->sr.segments_left = 1;
 		  ip6srv->sr.last_entry = 0;
-	          ip6srv->sr.length = ((sizeof(ip6_sr_header_t) + sizeof (ip6_address_t)) / 8) - 1;
+		  ip6srv->sr.length =
+		    ((sizeof (ip6_sr_header_t) +
+		      sizeof (ip6_address_t)) / 8) - 1;
 		  ip6srv->sr.flags = 0;
 
 		  ip6srv->sr.tag =
 		    clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
 
-	          ip6srv->sr.segments[0] = dst0;
+		  ip6srv->sr.segments[0] = dst0;
 		}
 
 	      if (PREDICT_FALSE(ie_size))

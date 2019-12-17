@@ -2208,7 +2208,6 @@ class Program(object):
                 "running" if self.networks.get(name) else "missing"))
 
     def build_image(self):
-        # TODO: optimize build process for speed and image size
         print("VPP Path (build): {}".format(self.vpp_path))
         self.containers.build(self.path, self.vpp_path)
 
@@ -2327,8 +2326,10 @@ def main(op=None, prefix=None, verbose=None,
         image = "srv6m-release-image"
     elif image == 'debug':
         image = "srv6m-image"
+    else
+        image = "srv6m-image"
 
-    print("Verified image: {}".format(image))
+    print("Target image: {}".format(image))
 
     program = Program(image, prefix)
 
