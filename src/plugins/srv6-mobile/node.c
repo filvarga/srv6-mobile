@@ -129,6 +129,10 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP6_D_DI_PACKETS, "srv6 End.M.GTP6.D.DI packets") \
   _(M_GTP6_D_DI_BAD_PACKETS, "srv6 End.M.GTP6.D.DI bad packets")
 
+#define foreach_srv6_end_v6_dt_error \
+  _(M_GTP6_DT_PACKETS, "srv6 End.M.GTP6.DT packets") \
+  _(M_GTP6_DT_BAD_PACKETS, "srv6 End.M.GTP6.DT bad packets")
+
 typedef enum
 {
 #define _(sym,str) SRV6_END_ERROR_##sym,
@@ -168,6 +172,15 @@ typedef enum
 #undef _
     SRV6_END_N_V6_D_DI_ERROR,
 } srv6_end_error_v6_d_di_t;
+
+typedef enum
+{
+#define _(sym,str) SRV6_END_ERROR_##sym,
+  foreach_srv6_end_v6_dt_error
+#undef _
+    SRV6_END_N_V6_DT_ERROR,
+} srv6_end_error_v6_dt_t;
+
 
 static char *srv6_end_error_v4_strings[] = {
 #define _(sym,string) string,
