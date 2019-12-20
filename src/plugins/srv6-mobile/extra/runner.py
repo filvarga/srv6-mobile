@@ -2326,7 +2326,7 @@ def main(op=None, prefix=None, verbose=None,
         image = "srv6m-release-image"
     elif image == 'debug':
         image = "srv6m-image"
-    else
+    else:
         image = "srv6m-image"
 
     print("Target image: {}".format(image))
