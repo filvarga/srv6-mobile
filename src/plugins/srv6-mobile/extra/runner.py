@@ -845,6 +845,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -915,6 +916,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid prefix D2:1111:bbbb::/48 behavior end usid 16")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -985,6 +987,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1055,6 +1058,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1122,6 +1126,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1189,6 +1194,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1258,6 +1264,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1327,6 +1334,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec(
             "sr localsid prefix D4::/32 "
             "behavior end.m.gtp4.e v4src_position 64")
@@ -1402,6 +1410,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1477,6 +1486,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1553,6 +1563,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1626,6 +1637,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1699,6 +1711,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1774,6 +1787,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1849,6 +1863,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.m.gtp6.e")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -1925,6 +1940,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt4 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2000,6 +2016,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt4 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2076,6 +2093,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt6 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2151,6 +2169,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt6 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
