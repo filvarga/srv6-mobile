@@ -110,7 +110,6 @@ VNET Ethernet
 I:	ethernet
 M:	Dave Barach <dave@barachs.net>
 M:	Damjan Marion <damarion@cisco.com>
-M:	Neale Ranns <nranns@cisco.com>
 F:	src/vnet/ethernet/
 
 VNET Feature Arcs
@@ -137,6 +136,11 @@ I:	ip6
 M:	Neale Ranns <nranns@cisco.com>
 M:	Jon Loeliger <jdl@netgate.com>
 F:	src/vnet/ip/
+
+VNET IP Neighbors
+I:	ip-neighbor
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/vnet/ip-neighbor
 
 VNET QoS
 I:	qos
@@ -176,6 +180,11 @@ VNET COP
 I:	cop
 M:	Dave Barach <dave@barachs.net>
 F:	src/vnet/cop/
+
+VNET NHRP
+I:	nhrp
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/vnet/nhrp/
 
 Crypto IA32 Plugin
 I:	crypto-ia32
@@ -292,6 +301,18 @@ M:	Dave Barach <dave@barachs.net>
 M:	Neale Ranns <nranns@cisco.com>
 F:	src/plugins/dhcp/
 
+Plugin - ARP
+I:	arp
+M:	Dave Barach <dave@barachs.net>
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/plugins/arp/
+
+Plugin - IP6 Neighbor Discovery
+I:	ip6-nd
+M:	Dave Barach <dave@barachs.net>
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/plugins/ip6-nd/
+
 VNET GENEVE
 I:	geneve
 M:	N/A
@@ -404,6 +425,11 @@ Plugin - Marvell MUSDK device driver
 I:	marvell
 M:	Damjan Marion <damarion@cisco.com>
 F:	src/plugins/marvell/
+
+Plugin - performance counter
+I:	perfmon
+M:	Dave Barach <dave@barachs.net>
+F:	src/plugins/perfmon/
 
 Plugin - PPPoE
 I:	pppoe

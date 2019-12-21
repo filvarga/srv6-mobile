@@ -98,7 +98,7 @@ adj_proto_to_46 (fib_protocol_t proto)
  * Get a pointer to an adjacency object from its index
  */
 static inline adj_index_t
-adj_get_index (ip_adjacency_t *adj)
+adj_get_index (const ip_adjacency_t *adj)
 {
     return (adj - adj_pool);
 }
@@ -136,6 +136,7 @@ extern int adj_bfd_is_up (adj_index_t ai);
  * Adj delegates
  */ 
 extern void adj_delegate_adj_deleted(ip_adjacency_t *adj);
+extern void adj_delegate_adj_created(ip_adjacency_t *adj);
 extern u8* adj_delegate_format(u8* s, ip_adjacency_t *adj);
 
 #endif

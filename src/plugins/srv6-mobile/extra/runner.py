@@ -135,7 +135,7 @@ class Container(object):
         self.vppctl_exec("set int mac address pg0 {}".format(local_mac))
         self.vppctl_exec("set int ip addr pg0 {}".format(local_ip))
         self.vppctl_exec(
-            "set ip6 neighbor pg0 {} {}".format(remote_ip, remote_mac))
+            "set ip neighbor pg0 {} {}".format(remote_ip, remote_mac))
         self.vppctl_exec("set int state pg0 up")
 
     def pg_create_interface4(self, local_ip, remote_ip, local_mac, remote_mac):
@@ -145,7 +145,7 @@ class Container(object):
         self.vppctl_exec("create packet-generator interface pg0")
         self.vppctl_exec("set int mac address pg0 {}".format(local_mac))
         self.vppctl_exec("set int ip addr pg0 {}".format(local_ip))
-        self.vppctl_exec("set ip arp pg0 {} {}".format(remote_ip, remote_mac))
+        self.vppctl_exec("set ip neighbor pg0 {} {}".format(remote_ip, remote_mac))
         self.vppctl_exec("set int state pg0 up")
 
     def pg_create_interface6(self, local_ip, remote_ip, local_mac, remote_mac):
@@ -1925,6 +1925,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt4 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2000,6 +2001,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt4 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2076,6 +2078,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt6 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2151,6 +2154,7 @@ class Program(object):
 
         c3.vppctl_exec("sr localsid address D3:: behavior end")
 
+        c4.vppctl_exec("set ip neighbor pg0 B::2 aa:bb:cc:dd:ee:22")
         c4.vppctl_exec("sr localsid prefix D4::/64 behavior end.dt6 2")
 
         c2.set_ipv6_route("eth2", "A2::2", "D3::/128")
@@ -2208,7 +2212,6 @@ class Program(object):
                 "running" if self.networks.get(name) else "missing"))
 
     def build_image(self):
-        # TODO: optimize build process for speed and image size
         print("VPP Path (build): {}".format(self.vpp_path))
         self.containers.build(self.path, self.vpp_path)
 
@@ -2327,8 +2330,10 @@ def main(op=None, prefix=None, verbose=None,
         image = "srv6m-release-image"
     elif image == 'debug':
         image = "srv6m-image"
+    else:
+        image = "srv6m-image"
 
-    print("Verified image: {}".format(image))
+    print("Target image: {}".format(image))
 
     program = Program(image, prefix)
 

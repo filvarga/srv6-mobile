@@ -221,12 +221,12 @@ adj_nbr_add_or_lock (fib_protocol_t nh_proto,
 		     u32 sw_if_index)
 {
     adj_index_t adj_index;
-    ip_adjacency_t *adj;
 
     adj_index = adj_nbr_find(nh_proto, link_type, nh_addr, sw_if_index);
 
     if (ADJ_INDEX_INVALID == adj_index)
     {
+        ip_adjacency_t *adj;
 	vnet_main_t *vnm;
 
 	vnm = vnet_get_main();
@@ -256,6 +256,7 @@ adj_nbr_add_or_lock (fib_protocol_t nh_proto,
 	adj_lock(adj_index);
     }
 
+    adj_delegate_adj_created(adj_get(adj_index));
     return (adj_index);
 }
 
@@ -283,6 +284,8 @@ adj_nbr_add_or_lock_w_rewrite (fib_protocol_t nh_proto,
     adj_nbr_update_rewrite(adj_index,
 			   ADJ_NBR_REWRITE_FLAG_COMPLETE,
 			   rewrite);
+
+    adj_delegate_adj_created(adj_get(adj_index));
 
     return (adj_index);
 }
@@ -461,6 +464,7 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
     vlib_worker_thread_barrier_sync(vm);
 
     adj->lookup_next_index = adj_next_index;
+    adj->ia_node_index = this_node;
 
     if (NULL != rewrite)
     {
@@ -518,12 +522,13 @@ typedef struct adj_db_count_ctx_t_ {
     u64 count;
 } adj_db_count_ctx_t;
 
-static void
+static int
 adj_db_count (BVT(clib_bihash_kv) * kvp,
 	      void *arg)
 {
     adj_db_count_ctx_t * ctx = arg;
     ctx->count++;
+    return (BIHASH_WALK_CONTINUE);
 }
 
 u32
@@ -560,14 +565,16 @@ typedef struct adj_walk_ctx_t_
     void *awc_ctx;
 } adj_walk_ctx_t;
 
-static void
+static int
 adj_nbr_walk_cb (BVT(clib_bihash_kv) * kvp,
 		 void *arg)
 {
     adj_walk_ctx_t *ctx = arg;
 
     // FIXME: can't stop early...
-    ctx->awc_cb(kvp->value, ctx->awc_ctx);
+    if (ADJ_WALK_RC_STOP == ctx->awc_cb(kvp->value, ctx->awc_ctx))
+        return (BIHASH_WALK_STOP);
+    return (BIHASH_WALK_CONTINUE);
 }
 
 void
@@ -660,15 +667,17 @@ adj_nbr_walk_nh (u32 sw_if_index,
     if (!ADJ_NBR_ITF_OK(adj_nh_proto, sw_if_index))
 	return;
 
-    vnet_link_t linkt;
-    adj_index_t ai;
-
-    FOR_EACH_VNET_LINK(linkt)
+    switch (adj_nh_proto)
     {
-        ai = adj_nbr_find (FIB_PROTOCOL_IP4, linkt, nh, sw_if_index);
-
-        if (INDEX_INVALID != ai)
-            cb(ai, ctx);
+    case FIB_PROTOCOL_IP4:
+        adj_nbr_walk_nh4(sw_if_index, &nh->ip4, cb, ctx);
+        break; 
+    case FIB_PROTOCOL_IP6:
+        adj_nbr_walk_nh6(sw_if_index, &nh->ip6, cb, ctx);
+        break;
+    case FIB_PROTOCOL_MPLS:
+        ASSERT(0);
+        break;
     }
 }
 
