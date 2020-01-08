@@ -65,10 +65,8 @@ const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
 
 static u8 fn_name[] = "SRv6-T.M.GTP4.DT-plugin";
 static u8 keyword_str[] = "t.m.gtp4.dt";
-static u8 def_str[] =
-  "Transit function with DT for IPv4/GTP tunnel";
-static u8 param_str[] =
-  "fib-index <index> [local-fib-table <index>]";
+static u8 def_str[] = "Transit function with DT for IPv4/GTP tunnel";
+static u8 param_str[] = "fib-index <index> [local-fib-table <index>]";
 
 static u8 *
 clb_format_srv6_t_m_gtp4_dt (u8 * s, va_list * args)
@@ -81,10 +79,10 @@ clb_format_srv6_t_m_gtp4_dt (u8 * s, va_list * args)
     s = format (s, ", Type GTP4.DT4 fib-table %u\n", ls_mem->fib4_index);
   else if (ls_mem->type == SRV6_GTP4_DT6)
     s = format (s, ", Type GTP4.DT6, fib-table %u, local-fib-table %u\n",
-                ls_mem->fib6_index, ls_mem->local_fib_index);
+		ls_mem->fib6_index, ls_mem->local_fib_index);
   else if (ls_mem->type == SRV6_GTP4_DT46)
     s = format (s, ", Type GTP4.DT46, fib-table %u, local-fib-table %u\n",
-                ls_mem->fib6_index, ls_mem->local_fib_index);
+		ls_mem->fib6_index, ls_mem->local_fib_index);
   else
     s = format (s, "\n");
 
@@ -104,12 +102,12 @@ clb_unformat_srv6_t_m_gtp4_dt (unformat_input_t * input, va_list * args)
       type = SRV6_GTP4_DT4;
     }
   else if (unformat (input, "t.m.gtp4.dt6 fib-table %u local-fib-table %u",
-                     &fib_index, &local_fib_index))
+		     &fib_index, &local_fib_index))
     {
       type = SRV6_GTP4_DT6;
     }
   else if (unformat (input, "t.m.gtp4.dt46 fib-table %u local-fib-table %u",
-                     &fib_index, &local_fib_index))
+		     &fib_index, &local_fib_index))
     {
       type = SRV6_GTP4_DT46;
     }
