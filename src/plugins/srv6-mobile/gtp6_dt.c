@@ -147,7 +147,6 @@ static clib_error_t *
 srv6_end_m_gtp6_dt_init (vlib_main_t * vm)
 {
   srv6_end_main_v6_dt_t *sm = &srv6_end_main_v6_dt;
-  ip6_header_t *ip6;
   dpo_type_t dpo_type;
   vlib_node_t *node;
   int rc;
@@ -160,10 +159,6 @@ srv6_end_m_gtp6_dt_init (vlib_main_t * vm)
 
   node = vlib_get_node_by_name (vm, (u8 *) "error-drop");
   sm->error_node_index = node->index;
-
-  ip6 = &sm->cache_hdr;
-
-  clib_memset_u8 (ip6, 0, sizeof (ip6_header_t));
 
   dpo_type = dpo_register_new_type (&dpo_vft, dpo_nodes);
 
