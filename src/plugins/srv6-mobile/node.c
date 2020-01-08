@@ -133,6 +133,10 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP6_DT_PACKETS, "srv6 End.M.GTP6.DT packets") \
   _(M_GTP6_DT_BAD_PACKETS, "srv6 End.M.GTP6.DT bad packets")
 
+#define foreach_srv6_end_v4_dt_error \
+  _(M_GTP4_DT_PACKETS, "srv6 T.M.GTP4.DT packets") \
+  _(M_GTP4_DT_BAD_PACKETS, "srv6 T.M.GTP4.DT bad packets")
+
 typedef enum
 {
 #define _(sym,str) SRV6_END_ERROR_##sym,
@@ -181,6 +185,13 @@ typedef enum
     SRV6_END_N_V6_DT_ERROR,
 } srv6_end_error_v6_dt_t;
 
+typedef enum
+{
+#define _(sym,str) SRV6_T_ERROR_##sym,
+  foreach_srv6_end_v4_dt_error
+#undef _
+    SRV6_END_N_V4_DT_ERROR,
+} srv6_end_error_v4_dt_t;
 
 static char *srv6_end_error_v4_strings[] = {
 #define _(sym,string) string,
@@ -215,6 +226,12 @@ static char *srv6_end_error_v6_d_di_strings[] = {
 static char *srv6_end_error_v6_dt_strings[] = {
 #define _(sym,string) string,
   foreach_srv6_end_v6_dt_error
+#undef _
+};
+
+static char *srv6_end_error_v4_dt_strings[] = {
+#define _(sym,string) string,
+  foreach_srv6_end_v4_dt_error
 #undef _
 };
 
@@ -1189,29 +1206,31 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) = {
   .name = "srv6-end-m-gtp4-e",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v4_strings),.error_strings =
     srv6_end_error_v4_strings,.n_next_nodes =
-    SRV6_END_M_GTP4_E_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP4_E_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",}
-,};
+    SRV6_END_M_GTP4_E_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP4_E_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP4_E_NEXT_LOOKUP] =
+					    "ip4-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_t_m_gtp4_d) =
-{
+VLIB_REGISTER_NODE (srv6_t_m_gtp4_d) = {
   .name = "srv6-t-m-gtp4-d",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_t_error_v4_d_strings),.error_strings =
     srv6_t_error_v4_d_strings,.n_next_nodes =
-    SRV6_T_M_GTP4_D_N_NEXT,.next_nodes =
-  {
-  [SRV6_T_M_GTP4_D_NEXT_DROP] = "error-drop",
-      [SRV6_T_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_T_M_GTP4_D_N_NEXT,.next_nodes = {
+					  [SRV6_T_M_GTP4_D_NEXT_DROP] =
+					  "error-drop",
+					  [SRV6_T_M_GTP4_D_NEXT_LOOKUP] =
+					  "ip6-lookup",}
+  ,
+};
 
 // Function for SRv6 GTP6.E function
 VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
@@ -2945,67 +2964,72 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) = {
   .name = "srv6-end-m-gtp6-e",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_e_strings),.error_strings =
     srv6_end_error_v6_e_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_E_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_E_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_E_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_E_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP6_E_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP6_E_NEXT_LOOKUP] =
+					    "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_d) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_d) = {
   .name = "srv6-end-m-gtp6-d",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_d_strings),.error_strings =
     srv6_end_error_v6_d_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_D_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_D_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_D_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_D_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP6_D_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP6_D_NEXT_LOOKUP] =
+					    "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_d_di) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_d_di) = {
   .name = "srv6-end-m-gtp6-d-di",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_d_di_strings),.error_strings =
     srv6_end_error_v6_d_di_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_D_DI_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_D_DI_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_D_DI_N_NEXT,.next_nodes = {
+					       [SRV6_END_M_GTP6_D_DI_NEXT_DROP] = "error-drop",
+					       [SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP] = "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_dt) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_dt) = {
   .name = "srv6-end-m-gtp6-dt",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_dt_strings),.error_strings =
     srv6_end_error_v6_dt_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_DT_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_DT_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_DT_NEXT_LOOKUP4] = "ip4-lookup",
-      [SRV6_END_M_GTP6_DT_NEXT_LOOKUP6] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_DT_N_NEXT,.next_nodes = {
+					     [SRV6_END_M_GTP6_DT_NEXT_DROP] =
+					     "error-drop",
+					     [SRV6_END_M_GTP6_DT_NEXT_LOOKUP4]
+					     = "ip4-lookup",
+					     [SRV6_END_M_GTP6_DT_NEXT_LOOKUP6]
+					     = "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_t_m_gtp4_dt) =
-{
+VLIB_REGISTER_NODE (srv6_t_m_gtp4_dt) = {
   .name = "srv6-t-m-gtp4-dt",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_t_error_v4_dt_strings),.error_strings =
     srv6_t_error_v4_dt_strings,.n_next_nodes =
-    SRV6_T_M_GTP4_DT_N_NEXT,.next_nodes =
-  {
-  [SRV6_T_M_GTP4_DT_NEXT_DROP] = "error-drop",
-      [SRV6_T_M_GTP4_DT_NEXT_LOOKUP4] = "ip4-lookup",
-      [SRV6_T_M_GTP4_DT_NEXT_LOOKUP6] = "ip6-lookup",}
-,};
+    SRV6_T_M_GTP4_DT_N_NEXT,.next_nodes = {
+					   [SRV6_T_M_GTP4_DT_NEXT_DROP] =
+					   "error-drop",
+					   [SRV6_T_M_GTP4_DT_NEXT_LOOKUP4] =
+					   "ip4-lookup",
+					   [SRV6_T_M_GTP4_DT_NEXT_LOOKUP6] =
+					   "ip6-lookup",}
+  ,
+};
 
 /*
 * fd.io coding-style-patch-verification: ON
