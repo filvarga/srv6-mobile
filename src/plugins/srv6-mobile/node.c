@@ -2936,10 +2936,10 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, sm->end_m_gtp6_dt_node_index,
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_dt_node_index,
 			       SRV6_T_ERROR_M_GTP4_DT_BAD_PACKETS, bad_n);
 
-  vlib_node_increment_counter (vm, sm->end_m_gtp6_dt_node_index,
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_dt_node_index,
 			       SRV6_T_ERROR_M_GTP4_DT_PACKETS, good_n);
 
   return frame->n_vectors;

@@ -42,6 +42,11 @@
 #define SRV6_GTP6_DT6		2
 #define SRV6_GTP6_DT46		3
 
+#define SRV6_GTP4_UNKNOW	0
+#define SRV6_GTP4_DT4		1
+#define SRV6_GTP4_DT6		2
+#define SRV6_GTP4_DT46		3
+
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define BITALIGN2(A,B)          A; B
 #define BITALIGN3(A,B,C)        A; B; C
