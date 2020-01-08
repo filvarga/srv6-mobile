@@ -229,9 +229,9 @@ static char *srv6_end_error_v6_dt_strings[] = {
 #undef _
 };
 
-static char *srv6_end_error_v4_dt_strings[] = {
+static char *srv6_t_error_v4_dt_strings[] = {
 #define _(sym,string) string,
-  foreach_srv6_end_v4_dt_error
+  foreach_srv6_t_v4_dt_error
 #undef _
 };
 
