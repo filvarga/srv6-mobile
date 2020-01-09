@@ -578,7 +578,9 @@ static void *vl_api_tap_create_v2_t_print
   if (mp->host_mtu_set)
     s = format (s, "host-mtu-size %u ", (mp->host_mtu_size));
   if ((mp->tap_flags) & 0x1)
-    s = format (s, "gso-enabled");
+    s = format (s, "gso-enabled ");
+  if ((mp->tap_flags) & 0x2)
+    s = format (s, "csum-offload-enabled");
   FINISH;
 }
 
@@ -620,7 +622,9 @@ __clib_unused
   if (mp->features)
     s = format (s, "features 0x%llx ", clib_net_to_host_u64 (mp->features));
   if (mp->gso_enabled)
-    s = format (s, "gso-enabled");
+    s = format (s, "gso-enabled ");
+  if (mp->checksum_offload_enabled)
+    s = format (s, "checksum_offload_enabled");
   FINISH;
 }
 

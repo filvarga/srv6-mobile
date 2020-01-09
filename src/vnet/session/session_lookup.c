@@ -654,13 +654,13 @@ session_lookup_listener4_i (session_table_t * st, ip4_address_t * lcl,
 
 session_t *
 session_lookup_listener4 (u32 fib_index, ip4_address_t * lcl, u16 lcl_port,
-			  u8 proto)
+			  u8 proto, u8 use_wildcard)
 {
   session_table_t *st;
   st = session_table_get_for_fib_index (FIB_PROTOCOL_IP4, fib_index);
   if (!st)
     return 0;
-  return session_lookup_listener4_i (st, lcl, lcl_port, proto, 0);
+  return session_lookup_listener4_i (st, lcl, lcl_port, proto, use_wildcard);
 }
 
 static session_t *
@@ -697,13 +697,13 @@ session_lookup_listener6_i (session_table_t * st, ip6_address_t * lcl,
 
 session_t *
 session_lookup_listener6 (u32 fib_index, ip6_address_t * lcl, u16 lcl_port,
-			  u8 proto)
+			  u8 proto, u8 use_wildcard)
 {
   session_table_t *st;
   st = session_table_get_for_fib_index (FIB_PROTOCOL_IP6, fib_index);
   if (!st)
     return 0;
-  return session_lookup_listener6_i (st, lcl, lcl_port, proto, 1);
+  return session_lookup_listener6_i (st, lcl, lcl_port, proto, use_wildcard);
 }
 
 /**
@@ -1317,7 +1317,7 @@ session_lookup_set_tables_appns (app_namespace_t * app_ns)
   for (fp = 0; fp < ARRAY_LEN (fib_index_to_table_index); fp++)
     {
       fib_index = app_namespace_get_fib_index (app_ns, fp);
-      st = session_table_get_for_fib_index (fp, fib_index);
+      st = session_table_get_or_alloc (fp, fib_index);
       if (st)
 	st->appns_index = app_namespace_index (app_ns);
     }
