@@ -133,6 +133,10 @@ format_srv6_end_rewrite_trace6 (u8 * s, va_list * args)
   _(M_GTP6_DT_PACKETS, "srv6 End.M.GTP6.DT packets") \
   _(M_GTP6_DT_BAD_PACKETS, "srv6 End.M.GTP6.DT bad packets")
 
+#define foreach_srv6_t_v4_dt_error \
+  _(M_GTP4_DT_PACKETS, "srv6 T.M.GTP4.DT packets") \
+  _(M_GTP4_DT_BAD_PACKETS, "srv6 T.M.GTP4.DT bad packets")
+
 typedef enum
 {
 #define _(sym,str) SRV6_END_ERROR_##sym,
@@ -181,6 +185,13 @@ typedef enum
     SRV6_END_N_V6_DT_ERROR,
 } srv6_end_error_v6_dt_t;
 
+typedef enum
+{
+#define _(sym,str) SRV6_T_ERROR_##sym,
+  foreach_srv6_t_v4_dt_error
+#undef _
+    SRV6_T_N_V4_DT_ERROR,
+} srv6_t_error_v4_dt_t;
 
 static char *srv6_end_error_v4_strings[] = {
 #define _(sym,string) string,
@@ -215,6 +226,12 @@ static char *srv6_end_error_v6_d_di_strings[] = {
 static char *srv6_end_error_v6_dt_strings[] = {
 #define _(sym,string) string,
   foreach_srv6_end_v6_dt_error
+#undef _
+};
+
+static char *srv6_t_error_v4_dt_strings[] = {
+#define _(sym,string) string,
+  foreach_srv6_t_v4_dt_error
 #undef _
 };
 
@@ -260,6 +277,14 @@ typedef enum
   SRV6_END_M_GTP6_DT_NEXT_LOOKUP6,
   SRV6_END_M_GTP6_DT_N_NEXT,
 } srv6_end_m_gtp6_dt_next_t;
+
+typedef enum
+{
+  SRV6_T_M_GTP4_DT_NEXT_DROP,
+  SRV6_T_M_GTP4_DT_NEXT_LOOKUP4,
+  SRV6_T_M_GTP4_DT_NEXT_LOOKUP6,
+  SRV6_T_M_GTP4_DT_N_NEXT,
+} srv6_t_m_gtp4_dt_next_t;
 
 static inline u16
 hash_uword_to_u16 (uword * key)
@@ -475,13 +500,13 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 					  (ip6srv0->sr.last_entry + 1));
 
 		      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
-		        {
+			{
 			  user_plane_sub_tlv_t *sub_tlv;
-			  
-			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
 
-		          ie_size = sub_tlv->length;
-		          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
+			  sub_tlv = (user_plane_sub_tlv_t *) tlv->value;
+
+			  ie_size = sub_tlv->length;
+			  clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
 			  hdrlen += ie_size;
 			}
@@ -952,8 +977,10 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		}
 
 	      if (ie_size)
-	        {
-		  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
+		{
+		  tlv_siz =
+		    sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) +
+		    ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -1131,12 +1158,13 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		  ip6_sr_tlv_t *tlv;
 		  user_plane_sub_tlv_t *sub_tlv;
 
-		  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
+		  tlv =
+		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
 		  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
-		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
+		  tlv->length = tlv_siz - sizeof (ip6_sr_tlv_t);
 		  clib_memset (tlv->value, 0, tlv->length);
 
-		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv = (user_plane_sub_tlv_t *) tlv->value;
 		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
 		  sub_tlv->length = ie_size;
 		  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
@@ -1178,29 +1206,31 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp4_e) = {
   .name = "srv6-end-m-gtp4-e",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v4_strings),.error_strings =
     srv6_end_error_v4_strings,.n_next_nodes =
-    SRV6_END_M_GTP4_E_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP4_E_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP4_E_NEXT_LOOKUP] = "ip4-lookup",}
-,};
+    SRV6_END_M_GTP4_E_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP4_E_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP4_E_NEXT_LOOKUP] =
+					    "ip4-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_t_m_gtp4_d) =
-{
+VLIB_REGISTER_NODE (srv6_t_m_gtp4_d) = {
   .name = "srv6-t-m-gtp4-d",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_t_error_v4_d_strings),.error_strings =
     srv6_t_error_v4_d_strings,.n_next_nodes =
-    SRV6_T_M_GTP4_D_N_NEXT,.next_nodes =
-  {
-  [SRV6_T_M_GTP4_D_NEXT_DROP] = "error-drop",
-      [SRV6_T_M_GTP4_D_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_T_M_GTP4_D_N_NEXT,.next_nodes = {
+					  [SRV6_T_M_GTP4_D_NEXT_DROP] =
+					  "error-drop",
+					  [SRV6_T_M_GTP4_D_NEXT_LOOKUP] =
+					  "ip6-lookup",}
+  ,
+};
 
 // Function for SRv6 GTP6.E function
 VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
@@ -1351,8 +1381,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      else if (gtpu_type == GTPU_TYPE_ECHO_REQUEST
 		       || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		       || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
-	        {
-		  hdrlen = sizeof(gtpu_exthdr_t);
+		{
+		  hdrlen = sizeof (gtpu_exthdr_t);
 		}
 
 	      if (gtpu_type == GTPU_TYPE_ECHO_REPLY)
@@ -1376,14 +1406,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 					  sizeof (ip6_address_t) *
 					  (ip6srv0->sr.last_entry + 1));
 
-                      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
-                        {
+		      if (tlv->type == SRH_TLV_USER_PLANE_CONTAINER)
+			{
 			  user_plane_sub_tlv_t *sub_tlv;
 
-			  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+			  sub_tlv = (user_plane_sub_tlv_t *) tlv->value;
 
-                          ie_size = sub_tlv->length;
-                          clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
+			  ie_size = sub_tlv->length;
+			  clib_memcpy_fast (ie_buf, sub_tlv->value, ie_size);
 
 			  hdrlen += ie_size;
 			}
@@ -1805,8 +1835,10 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		}
 
 	      if (ie_size)
-                {
-                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof(user_plane_sub_tlv_t) + ie_size;
+		{
+		  tlv_siz =
+		    sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) +
+		    ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -1980,20 +2012,21 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    }
 		}
 
-	      if (PREDICT_FALSE(ie_size))
-                {
-                  ip6_sr_tlv_t *tlv;
+	      if (PREDICT_FALSE (ie_size))
+		{
+		  ip6_sr_tlv_t *tlv;
 		  user_plane_sub_tlv_t *sub_tlv;
 
-                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
-                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
-		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
-                  clib_memset (tlv->value, 0, tlv->length);
+		  tlv =
+		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
+		  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof (ip6_sr_tlv_t);
+		  clib_memset (tlv->value, 0, tlv->length);
 
-		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
+		  sub_tlv = (user_plane_sub_tlv_t *) tlv->value;
 		  sub_tlv->type = USER_PLANE_SUB_TLV_IE;
-                  sub_tlv->length = ie_size;
-                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
+		  sub_tlv->length = ie_size;
+		  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}
@@ -2298,8 +2331,10 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      hdr_len += sizeof (ip6_address_t) * 2;
 
 	      if (ie_size)
-                {
-                  tlv_siz = sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) + ie_size;
+		{
+		  tlv_siz =
+		    sizeof (ip6_sr_tlv_t) + sizeof (user_plane_sub_tlv_t) +
+		    ie_size;
 
 		  tlv_siz = (tlv_siz & ~0x07) + (tlv_siz & 0x07 ? 0x08 : 0x0);
 		  hdr_len += tlv_siz;
@@ -2386,19 +2421,20 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  ip6srv->sr.segments[0] = dst0;
 		}
 
-	      if (PREDICT_FALSE(ie_size))
-                {
-                  ip6_sr_tlv_t *tlv;
+	      if (PREDICT_FALSE (ie_size))
+		{
+		  ip6_sr_tlv_t *tlv;
 		  user_plane_sub_tlv_t *sub_tlv;
 
-                  tlv = (ip6_sr_tlv_t *)((u8 *)ip6srv + (hdr_len - tlv_siz));
-                  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
-		  tlv->length = tlv_siz - sizeof(ip6_sr_tlv_t);
-                  clib_memset (tlv->value, 0, tlv->length);
+		  tlv =
+		    (ip6_sr_tlv_t *) ((u8 *) ip6srv + (hdr_len - tlv_siz));
+		  tlv->type = SRH_TLV_USER_PLANE_CONTAINER;
+		  tlv->length = tlv_siz - sizeof (ip6_sr_tlv_t);
+		  clib_memset (tlv->value, 0, tlv->length);
 
-		  sub_tlv = (user_plane_sub_tlv_t *)tlv->value;
-                  sub_tlv->length = ie_size;
-                  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
+		  sub_tlv = (user_plane_sub_tlv_t *) tlv->value;
+		  sub_tlv->length = ie_size;
+		  clib_memcpy_fast (sub_tlv->value, ie_buf, ie_size);
 
 		  ip6srv->sr.length += tlv_siz / 8;
 		}
@@ -2600,6 +2636,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 		  if ((ip4->ip_version_and_header_length & 0xf0) != 0x40)
 		    {
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
+		      bad_n++;
 		      goto DONE;
 		    }
 
@@ -2615,6 +2652,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 		      != 6)
 		    {
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
+		      bad_n++;
 		      goto DONE;
 		    }
 
@@ -2666,11 +2704,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 		  else
 		    {
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
+		      bad_n++;
+		      goto DONE;
 		    }
 		}
 	      else
 		{
 		  next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
+		  bad_n++;
 		  goto DONE;
 		}
 
@@ -2712,54 +2753,288 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) =
+// Function for SRv6 GTP4.DT function
+VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
+				 vlib_node_runtime_t * node,
+				 vlib_frame_t * frame)
 {
+  srv6_t_main_v4_dt_t *sm = &srv6_t_main_v4_dt;
+  ip6_sr_main_t *sm2 = &sr_main;
+  u32 n_left_from, next_index, *from, *to_next;
+
+  u32 good_n = 0, bad_n = 0;
+
+  from = vlib_frame_vector_args (frame);
+  n_left_from = frame->n_vectors;
+  next_index = node->cached_next_index;
+
+  while (n_left_from > 0)
+    {
+      u32 n_left_to_next;
+
+      vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
+
+      while (n_left_from > 0 && n_left_to_next > 0)
+	{
+	  u32 bi0;
+	  vlib_buffer_t *b0;
+	  srv6_t_gtp4_dt_param_t *ls_param;
+	  ip6_sr_sl_t *ls0;
+
+	  ip4_gtpu_header_t *hdr0 = NULL;
+	  ip4_header_t *ip4 = NULL;
+	  ip6_header_t *ip6 = NULL;
+	  ip6_address_t src, dst;
+	  u32 teid;
+	  u32 hdrlen;
+	  u32 len0;
+
+	  u32 next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+
+	  bi0 = from[0];
+	  to_next[0] = bi0;
+	  from += 1;
+	  to_next += 1;
+	  n_left_from -= 1;
+	  n_left_to_next -= 1;
+
+	  b0 = vlib_get_buffer (vm, bi0);
+	  ls0 =
+	    pool_elt_at_index (sm2->sid_lists,
+			       vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
+
+	  ls_param = (srv6_t_gtp4_dt_param_t *) ls0->plugin_mem;
+
+	  hdr0 = vlib_buffer_get_current (b0);
+
+	  hdrlen = sizeof (ip4_gtpu_header_t);
+
+	  len0 = vlib_buffer_length_in_chain (vm, b0);
+
+	  if ((hdr0->ip4.protocol != IP_PROTOCOL_UDP)
+	      || (hdr0->udp.dst_port !=
+		  clib_host_to_net_u16 (SRV6_GTP_UDP_DST_PORT))
+	      || (len0 < sizeof (ip4_gtpu_header_t)))
+	    {
+	      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+
+	      bad_n++;
+	    }
+	  else
+	    {
+	      clib_memcpy_fast (src.as_u8, hdr0->ip4.src_address.as_u8,
+				sizeof (ip4_address_t));
+	      clib_memcpy_fast (dst.as_u8, hdr0->ip4.dst_address.as_u8,
+				sizeof (ip4_address_t));
+
+	      teid = hdr0->gtpu.teid;
+
+	      if (hdr0->gtpu.ver_flags & GTPU_EXTHDR_FLAG)
+		{
+		  hdrlen += sizeof (gtpu_exthdr_t);
+		  if (hdr0->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
+		    {
+		      gtpu_pdu_session_t *sess;
+
+		      sess =
+			(gtpu_pdu_session_t *) (((char *) hdr0) +
+						sizeof (ip6_gtpu_header_t) +
+						sizeof (gtpu_exthdr_t));
+
+		      hdrlen += sizeof (gtpu_pdu_session_t);
+		      if (sess->u.val & GTPU_PDU_SESSION_P_BIT_MASK)
+			{
+			  hdrlen += sizeof (gtpu_paging_policy_t);
+			}
+		    }
+		}
+
+	      if (ls_param->type == SRV6_GTP4_DT4)
+		{
+		  vlib_buffer_advance (b0, (word) hdrlen);
+		  ip4 = vlib_buffer_get_current (b0);
+		  if ((ip4->ip_version_and_header_length & 0xf0) != 0x40)
+		    {
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
+		      goto DONE;
+		    }
+
+		  next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP4;
+		  vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+		    ls_param->fib4_index;
+		}
+	      else if (ls_param->type == SRV6_GTP4_DT6)
+		{
+		  ip6 = (ip6_header_t *) ((u8 *) hdr0 + hdrlen);
+		  if ((clib_net_to_host_u32
+		       (ip6->ip_version_traffic_class_and_flow_label) >> 28)
+		      != 6)
+		    {
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
+		      goto DONE;
+		    }
+
+		  next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP6;
+		  if ((ip6->dst_address.as_u8[0] == 0xff)
+		      && ((ip6->dst_address.as_u8[1] & 0xc0) == 0x80))
+		    {
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP4;
+		      vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+			ls_param->local_fib_index;
+		    }
+		  else
+		    {
+		      vlib_buffer_advance (b0, (word) hdrlen);
+		      vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+			ls_param->fib6_index;
+		    }
+		}
+	      else if (ls_param->type == SRV6_GTP4_DT46)
+		{
+		  ip6 = (ip6_header_t *) ((u8 *) hdr0 + hdrlen);
+		  if ((clib_net_to_host_u32
+		       (ip6->ip_version_traffic_class_and_flow_label) >> 28)
+		      == 6)
+		    {
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP6;
+		      if ((ip6->dst_address.as_u8[0] == 0xff)
+			  && ((ip6->dst_address.as_u8[1] & 0xc0) == 0x80))
+			{
+		          next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP4;
+			  vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+			    ls_param->local_fib_index;
+			}
+		      else
+			{
+			  vlib_buffer_advance (b0, (word) hdrlen);
+			  vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+			    ls_param->fib6_index;
+			}
+		    }
+		  else
+		    if ((clib_net_to_host_u32
+			 (ip6->ip_version_traffic_class_and_flow_label) >> 28)
+			== 4)
+		    {
+		      vlib_buffer_advance (b0, (word) hdrlen);
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_LOOKUP4;
+		      vnet_buffer (b0)->sw_if_index[VLIB_TX] =
+			ls_param->fib4_index;
+		    }
+		  else
+		    {
+		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
+		      goto DONE;
+		    }
+		}
+	      else
+		{
+		  next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	          bad_n++;
+		  goto DONE;
+		}
+
+	      good_n++;
+
+	      if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
+		  PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED))
+		{
+		  srv6_end_rewrite_trace_t *tr =
+		    vlib_add_trace (vm, node, b0, sizeof (*tr));
+		  clib_memcpy (tr->src.as_u8, src.as_u8,
+			       sizeof (ip6_address_t));
+		  clib_memcpy (tr->dst.as_u8, dst.as_u8,
+			       sizeof (ip6_address_t));
+		  tr->teid = teid;
+		}
+	    }
+
+	DONE:
+	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
+					   n_left_to_next, bi0, next0);
+	}
+
+      vlib_put_next_frame (vm, node, next_index, n_left_to_next);
+    }
+
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_dt_node_index,
+			       SRV6_T_ERROR_M_GTP4_DT_BAD_PACKETS, bad_n);
+
+  vlib_node_increment_counter (vm, sm->t_m_gtp4_dt_node_index,
+			       SRV6_T_ERROR_M_GTP4_DT_PACKETS, good_n);
+
+  return frame->n_vectors;
+}
+
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_e) = {
   .name = "srv6-end-m-gtp6-e",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_e_strings),.error_strings =
     srv6_end_error_v6_e_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_E_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_E_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_E_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_E_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP6_E_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP6_E_NEXT_LOOKUP] =
+					    "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_d) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_d) = {
   .name = "srv6-end-m-gtp6-d",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_d_strings),.error_strings =
     srv6_end_error_v6_d_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_D_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_D_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_D_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_D_N_NEXT,.next_nodes = {
+					    [SRV6_END_M_GTP6_D_NEXT_DROP] =
+					    "error-drop",
+					    [SRV6_END_M_GTP6_D_NEXT_LOOKUP] =
+					    "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_d_di) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_d_di) = {
   .name = "srv6-end-m-gtp6-d-di",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_d_di_strings),.error_strings =
     srv6_end_error_v6_d_di_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_D_DI_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_D_DI_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_D_DI_N_NEXT,.next_nodes = {
+					       [SRV6_END_M_GTP6_D_DI_NEXT_DROP] = "error-drop",
+					       [SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP] = "ip6-lookup",}
+  ,
+};
 
-VLIB_REGISTER_NODE (srv6_end_m_gtp6_dt) =
-{
+VLIB_REGISTER_NODE (srv6_end_m_gtp6_dt) = {
   .name = "srv6-end-m-gtp6-dt",.vector_size = sizeof (u32),.format_trace =
     format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
     ARRAY_LEN (srv6_end_error_v6_dt_strings),.error_strings =
     srv6_end_error_v6_dt_strings,.n_next_nodes =
-    SRV6_END_M_GTP6_DT_N_NEXT,.next_nodes =
-  {
-  [SRV6_END_M_GTP6_DT_NEXT_DROP] = "error-drop",
-      [SRV6_END_M_GTP6_DT_NEXT_LOOKUP4] = "ip4-lookup",
-      [SRV6_END_M_GTP6_DT_NEXT_LOOKUP6] = "ip6-lookup",}
-,};
+    SRV6_END_M_GTP6_DT_N_NEXT,.next_nodes = {
+					     [SRV6_END_M_GTP6_DT_NEXT_DROP] =
+					     "error-drop",
+					     [SRV6_END_M_GTP6_DT_NEXT_LOOKUP4]
+					     = "ip4-lookup",
+					     [SRV6_END_M_GTP6_DT_NEXT_LOOKUP6]
+					     = "ip6-lookup",}
+  ,
+};
+
+VLIB_REGISTER_NODE (srv6_t_m_gtp4_dt) = {
+  .name = "srv6-t-m-gtp4-dt",.vector_size = sizeof (u32),.format_trace =
+    format_srv6_end_rewrite_trace6,.type = VLIB_NODE_TYPE_INTERNAL,.n_errors =
+    ARRAY_LEN (srv6_t_error_v4_dt_strings),.error_strings =
+    srv6_t_error_v4_dt_strings,.n_next_nodes =
+    SRV6_T_M_GTP4_DT_N_NEXT,.next_nodes = {
+					   [SRV6_T_M_GTP4_DT_NEXT_DROP] =
+					   "error-drop",
+					   [SRV6_T_M_GTP4_DT_NEXT_LOOKUP4] =
+					   "ip4-lookup",
+					   [SRV6_T_M_GTP4_DT_NEXT_LOOKUP6] =
+					   "ip6-lookup",}
+  ,
+};
 
 /*
 * fd.io coding-style-patch-verification: ON

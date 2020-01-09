@@ -6,7 +6,7 @@ import ipaddress
 import yaml
 from pprint import pprint
 import re
-from jsonschema import validate
+from jsonschema import validate, exceptions
 import argparse
 from subprocess import run, PIPE
 
@@ -17,9 +17,9 @@ schema = {
     "properties": {
         "name": {"type": "string"},
         "description": {"type": "string"},
-        "maintainer": {"type": "string"},
+        "maintainer": {"$ref": "#/definitions/maintainers"},
         "state": {"type": "string",
-                  "enum": ["production", "experimental"]},
+                  "enum": ["production", "experimental", "development"]},
         "features": {"$ref": "#/definitions/features"},
         "missing": {"$ref": "#/definitions/features"},
         "properties": {"type": "array",
@@ -30,6 +30,14 @@ schema = {
     },
     "additionalProperties": False,
     "definitions": {
+        "maintainers": {
+            "anyof": [{
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                },
+                {"type": "string"}],
+        },
         "featureobject": {
             "type": "object",
             "patternProperties": {
@@ -86,8 +94,13 @@ def output_features(indent, fl):
 def output_markdown(features):
     for k, v in features.items():
         print('# {}'.format(v['name']))
-        print('Maintainer: {}  '.format(v['maintainer']))
-        print('State: {}\n'.format(v['state']))
+        if type(v['maintainer']) is list:
+            print('Maintainers: ' +
+                  ', '.join('{}'.format(m) for m in
+                            v['maintainer']) + '  ')
+        else:
+            print('Maintainer: {}  '.format(v['maintainer']))
+        print('State: {}  \n'.format(v['state']))
         print('{}\n'.format(v['description']))
         output_features(0, v['features'])
         if 'missing' in v:
@@ -125,7 +138,12 @@ def main():
         # Load configuration file
         with open(featurefile) as f:
             cfg = yaml.load(f, Loader=yaml.SafeLoader)
-        validate(instance=cfg, schema=schema)
+        try:
+            validate(instance=cfg, schema=schema)
+        except exceptions.ValidationError:
+            print('File does not validate: {}'.format(featurefile),
+                  file=sys.stderr)
+            raise
         features[featurefile] = cfg
 
     if args.markdown:

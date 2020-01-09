@@ -1,0 +1,8 @@
+---
+name: Bidirectional Forwarding Detection (BFD)
+maintainer: Klement Sekera <ksekera@cisco.com>
+features:
+  - BFD protocol implementation
+description: "Bidirectional Forwarding Detection implementation"
+state: production
+properties: [API, CLI, STATS, MULTITHREAD]

@@ -381,6 +381,7 @@ class VppTestCase(unittest.TestCase):
                            "prefix", cls.shm_prefix, "}", "cpu", "{",
                            "main-core", str(cpu_core_number),
                            cls.worker_config, "}",
+                           "physmem", "{", "max-size", "32m", "}",
                            "statseg", "{", "socket-name", cls.stats_sock, "}",
                            "socksvr", "{", "socket-name", cls.api_sock, "}",
                            "plugins",
@@ -461,19 +462,6 @@ class VppTestCase(unittest.TestCase):
             raise
 
         cls.wait_for_enter()
-
-    @classmethod
-    def wait_for_stats_socket(cls):
-        deadline = time.time() + 300
-        ok = False
-        while time.time() < deadline or \
-                cls.debug_gdb or cls.debug_gdbserver:
-            if os.path.exists(cls.stats_sock):
-                ok = True
-                break
-            cls.sleep(0.8)
-        if not ok:
-            cls.logger.critical("Couldn't stat : {}".format(cls.stats_sock))
 
     @classmethod
     def wait_for_coredump(cls):
@@ -560,7 +548,6 @@ class VppTestCase(unittest.TestCase):
             else:
                 hook = hookmodule.PollHook(cls)
             cls.vapi.register_hook(hook)
-            cls.wait_for_stats_socket()
             cls.statistics = VPPStats(socketname=cls.stats_sock)
             try:
                 hook.poll_vpp()
@@ -588,19 +575,27 @@ class VppTestCase(unittest.TestCase):
             raise
 
     @classmethod
+    def _debug_quit(cls):
+        if (cls.debug_gdbserver or cls.debug_gdb):
+            try:
+                cls.vpp.poll()
+
+                if cls.vpp.returncode is None:
+                    print()
+                    print(double_line_delim)
+                    print("VPP or GDB server is still running")
+                    print(single_line_delim)
+                    input("When done debugging, press ENTER to kill the "
+                          "process and finish running the testcase...")
+            except AttributeError:
+                pass
+
+    @classmethod
     def quit(cls):
         """
         Disconnect vpp-api, kill vpp and cleanup shared memory files
         """
-        if (cls.debug_gdbserver or cls.debug_gdb) and hasattr(cls, 'vpp'):
-            cls.vpp.poll()
-            if cls.vpp.returncode is None:
-                print()
-                print(double_line_delim)
-                print("VPP or GDB server is still running")
-                print(single_line_delim)
-                input("When done debugging, press ENTER to kill the "
-                      "process and finish running the testcase...")
+        cls._debug_quit()
 
         # first signal that we want to stop the pump thread, then wake it up
         if hasattr(cls, 'pump_thread_stop_flag'):
@@ -611,7 +606,7 @@ class VppTestCase(unittest.TestCase):
             cls.logger.debug("Waiting for pump thread to stop")
             cls.pump_thread.join()
         if hasattr(cls, 'vpp_stderr_reader_thread'):
-            cls.logger.debug("Waiting for stdderr pump to stop")
+            cls.logger.debug("Waiting for stderr pump to stop")
             cls.vpp_stderr_reader_thread.join()
 
         if hasattr(cls, 'vpp'):
@@ -1139,9 +1134,9 @@ class VppTestCase(unittest.TestCase):
                 "Finished sleep (%s) - slept %es (wanted %es)",
                 remark, after - before, timeout)
 
-    def pg_send(self, intf, pkts):
+    def pg_send(self, intf, pkts, worker=None):
         self.vapi.cli("clear trace")
-        intf.add_stream(pkts)
+        intf.add_stream(pkts, worker=worker)
         self.pg_enable_capture(self.pg_interfaces)
         self.pg_start()
 
@@ -1154,10 +1149,10 @@ class VppTestCase(unittest.TestCase):
             i.assert_nothing_captured(remark=remark)
             timeout = 0.1
 
-    def send_and_expect(self, intf, pkts, output, n_rx=None):
+    def send_and_expect(self, intf, pkts, output, n_rx=None, worker=None):
         if not n_rx:
             n_rx = len(pkts)
-        self.pg_send(intf, pkts)
+        self.pg_send(intf, pkts, worker=worker)
         rx = output.get_capture(n_rx)
         return rx
 
