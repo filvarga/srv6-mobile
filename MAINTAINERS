@@ -213,6 +213,8 @@ F:	src/vnet/lldp/
 
 VNET LISP
 I:	lisp
+Y:	src/vnet/lisp-cp/FEATURE.yaml
+Y:	src/vnet/lisp-gpe/FEATURE.yaml
 M:	Florin Coras <fcoras@cisco.com>
 F:	src/vnet/lisp-cp/
 F:	src/vnet/lisp-gpe/
@@ -247,16 +249,19 @@ F:	src/vnet/bier/
 
 VNET Session Layer
 I:	session
+Y:	src/vnet/session/FEATURE.yaml
 M:	Florin Coras <fcoras@cisco.com>
 F:	src/vnet/session
 
 VNET TCP
 I:	tcp
+Y:	src/vnet/tcp/FEATURE.yaml
 M:	Florin Coras <fcoras@cisco.com>
 F:	src/vnet/tcp
 
 VNET UDP
 I:	udp
+Y:	src/vnet/udp/FEATURE.yaml
 M:	Florin Coras <fcoras@cisco.com>
 F:	src/vnet/udp
 
@@ -289,6 +294,7 @@ M:	Ping Yu <ping.yu@intel.com>
 F:	src/vnet/tls
 F:	src/plugins/tlsopenssl
 F:	src/plugins/tlsmbedtls
+F:	src/plugins/tlspicotls
 
 VNET SYSLOG
 I:	syslog
@@ -496,6 +502,12 @@ I:	mdata
 M:	Dave Barach <dave@barachs.net>
 F:	src/plugins/mdata/
 
+Plugin - Unit Tests
+I:	unittest
+M:	Dave Barach <dave@barachs.net>
+M:	Florin Coras <fcoras@cisco.com
+F:	src/plugins/unittest/
+
 Test Infrastructure
 I:	tests
 M:	Klement Sekera <ksekera@cisco.com>
@@ -573,6 +585,7 @@ F:	extras/libmemif
 
 VPP Comms Library
 I:	vcl
+Y:	src/vnet/vcl/FEATURE.yaml
 M:	Florin Coras <fcoras@cisco.com>
 F:	src/vcl
 

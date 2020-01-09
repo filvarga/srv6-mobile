@@ -24,10 +24,13 @@
 #include <vnet/ipsec/ipsec_io.h>
 #include <vnet/ipsec/ipsec_tun.h>
 
+#include <vnet/gre/gre.h>
+
 #define foreach_esp_decrypt_next                \
 _(DROP, "error-drop")                           \
 _(IP4_INPUT, "ip4-input-no-checksum")           \
 _(IP6_INPUT, "ip6-input")                       \
+_(L2_INPUT, "l2-input")                         \
 _(HANDOFF, "handoff")
 
 #define _(v, s) ESP_DECRYPT_NEXT_##v,
@@ -50,6 +53,7 @@ typedef enum
  _(OVERSIZED_HEADER, "buffer with oversized header (dropped)")  \
  _(NO_TAIL_SPACE, "no enough buffer tail space (dropped)")      \
  _(TUN_NO_PROTO, "no tunnel protocol")                          \
+ _(UNSUP_PAYLOAD, "unsupported payload")                        \
 
 
 typedef enum
@@ -308,9 +312,10 @@ esp_decrypt_inline (vlib_main_t * vm,
       b += 1;
     }
 
-  vlib_increment_combined_counter (&ipsec_sa_counters, thread_index,
-				   current_sa_index, current_sa_pkts,
-				   current_sa_bytes);
+  if (PREDICT_TRUE (~0 != current_sa_index))
+    vlib_increment_combined_counter (&ipsec_sa_counters, thread_index,
+				     current_sa_index, current_sa_pkts,
+				     current_sa_bytes);
 
   if ((n = vec_len (ptd->integ_ops)))
     {
@@ -487,23 +492,67 @@ esp_decrypt_inline (vlib_main_t * vm,
 	    }
 	  else
 	    {
-	      next[0] = ESP_DECRYPT_NEXT_DROP;
-	      b[0]->error = node->errors[ESP_DECRYPT_ERROR_DECRYPTION_FAILED];
-	      goto trace;
+	      if (is_tun && f->next_header == IP_PROTOCOL_GRE)
+		{
+		  gre_header_t *gre;
+
+		  b[0]->current_data = pd->current_data + adv;
+		  b[0]->current_length = pd->current_length - adv - tail;
+
+		  gre = vlib_buffer_get_current (b[0]);
+
+		  vlib_buffer_advance (b[0], sizeof (*gre));
+
+		  switch (clib_net_to_host_u16 (gre->protocol))
+		    {
+		    case GRE_PROTOCOL_teb:
+		      next[0] = ESP_DECRYPT_NEXT_L2_INPUT;
+		      break;
+		    case GRE_PROTOCOL_ip4:
+		      next[0] = ESP_DECRYPT_NEXT_IP4_INPUT;
+		      break;
+		    case GRE_PROTOCOL_ip6:
+		      next[0] = ESP_DECRYPT_NEXT_IP6_INPUT;
+		      break;
+		    default:
+		      b[0]->error =
+			node->errors[ESP_DECRYPT_ERROR_UNSUP_PAYLOAD];
+		      next[0] = ESP_DECRYPT_NEXT_DROP;
+		      break;
+		    }
+		}
+	      else
+		{
+		  next[0] = ESP_DECRYPT_NEXT_DROP;
+		  b[0]->error = node->errors[ESP_DECRYPT_ERROR_UNSUP_PAYLOAD];
+		  goto trace;
+		}
 	    }
 	  if (is_tun)
 	    {
 	      if (ipsec_sa_is_set_IS_PROTECT (sa0))
 		{
 		  /*
-		   * Check that the reveal IP header matches that
-		   * of the tunnel we are protecting
+		   * There are two encap possibilities
+		   * 1) the tunnel and ths SA are prodiving encap, i.e. it's
+		   *   MAC | SA-IP | TUN-IP | ESP | PAYLOAD
+		   * implying the SA is in tunnel mode (on a tunnel interface)
+		   * 2) only the tunnel provides encap
+		   *   MAC | TUN-IP | ESP | PAYLOAD
+		   * implying the SA is in transport mode.
+		   *
+		   * For 2) we need only strip the tunnel encap and we're good.
+		   *  since the tunnel and crypto ecnap (int the tun=protect
+		   * object) are the same and we verified above that these match
+		   * for 1) we need to strip the SA-IP outer headers, to
+		   * reveal the tunnel IP and then check that this matches
+		   * the configured tunnel.
 		   */
 		  const ipsec_tun_protect_t *itp;
 
-		  itp =
-		    ipsec_tun_protect_get (vnet_buffer (b[0])->
-					   ipsec.protect_index);
+		  itp = ipsec_tun_protect_get
+		    (vnet_buffer (b[0])->ipsec.protect_index);
+
 		  if (PREDICT_TRUE (f->next_header == IP_PROTOCOL_IP_IN_IP))
 		    {
 		      const ip4_header_t *ip4;
@@ -614,6 +663,7 @@ VLIB_REGISTER_NODE (esp4_decrypt_node) = {
     [ESP_DECRYPT_NEXT_DROP] = "ip4-drop",
     [ESP_DECRYPT_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
     [ESP_DECRYPT_NEXT_IP6_INPUT] = "ip6-input",
+    [ESP_DECRYPT_NEXT_L2_INPUT] = "l2-input",
     [ESP_DECRYPT_NEXT_HANDOFF] = "esp4-decrypt-handoff",
   },
 };
@@ -632,6 +682,7 @@ VLIB_REGISTER_NODE (esp6_decrypt_node) = {
     [ESP_DECRYPT_NEXT_DROP] = "ip6-drop",
     [ESP_DECRYPT_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
     [ESP_DECRYPT_NEXT_IP6_INPUT] = "ip6-input",
+    [ESP_DECRYPT_NEXT_L2_INPUT] = "l2-input",
     [ESP_DECRYPT_NEXT_HANDOFF]=  "esp6-decrypt-handoff",
   },
 };
@@ -648,7 +699,8 @@ VLIB_REGISTER_NODE (esp4_decrypt_tun_node) = {
     [ESP_DECRYPT_NEXT_DROP] = "ip4-drop",
     [ESP_DECRYPT_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
     [ESP_DECRYPT_NEXT_IP6_INPUT] = "ip6-input",
-    [ESP_DECRYPT_NEXT_HANDOFF] = "esp4-decrypt-handoff",
+    [ESP_DECRYPT_NEXT_L2_INPUT] = "l2-input",
+    [ESP_DECRYPT_NEXT_HANDOFF] = "esp4-decrypt-tun-handoff",
   },
 };
 
@@ -664,7 +716,8 @@ VLIB_REGISTER_NODE (esp6_decrypt_tun_node) = {
     [ESP_DECRYPT_NEXT_DROP] = "ip6-drop",
     [ESP_DECRYPT_NEXT_IP4_INPUT] = "ip4-input-no-checksum",
     [ESP_DECRYPT_NEXT_IP6_INPUT] = "ip6-input",
-    [ESP_DECRYPT_NEXT_HANDOFF]=  "esp6-decrypt-handoff",
+    [ESP_DECRYPT_NEXT_L2_INPUT] = "l2-input",
+    [ESP_DECRYPT_NEXT_HANDOFF]=  "esp6-decrypt-tun-handoff",
   },
 };
 /* *INDENT-ON* */

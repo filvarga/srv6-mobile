@@ -245,11 +245,6 @@ echo_update_count_on_session_close (echo_main_t * em, echo_session_t * s)
 	    echo_format_session, s, s->bytes_sent,
 	    s->bytes_sent + s->bytes_to_send);
 
-  ASSERT (em->stats.tx_total + s->bytes_sent <= em->stats.tx_expected);
-  ASSERT (em->stats.rx_total + s->bytes_received <= em->stats.rx_expected);
-  clib_atomic_fetch_add (&em->stats.tx_total, s->bytes_sent);
-  clib_atomic_fetch_add (&em->stats.rx_total, s->bytes_received);
-
   if (PREDICT_FALSE
       ((em->stats.rx_total == em->stats.rx_expected)
        && (em->stats.tx_total == em->stats.tx_expected)))
@@ -318,6 +313,7 @@ recv_data_chunk (echo_main_t * em, echo_session_t * s, u8 * rx_buf)
 
   s->bytes_received += n_read;
   s->bytes_to_receive -= n_read;
+  clib_atomic_fetch_add (&em->stats.rx_total, n_read);
   return n_read;
 }
 
@@ -326,6 +322,8 @@ send_data_chunk (echo_session_t * s, u8 * tx_buf, int offset, int len)
 {
   int n_sent;
   int bytes_this_chunk = clib_min (s->bytes_to_send, len - offset);
+  echo_main_t *em = &echo_main;
+
   if (!bytes_this_chunk)
     return 0;
   n_sent = app_send ((app_session_t *) s, tx_buf + offset,
@@ -334,6 +332,7 @@ send_data_chunk (echo_session_t * s, u8 * tx_buf, int offset, int len)
     return 0;
   s->bytes_to_send -= n_sent;
   s->bytes_sent += n_sent;
+  clib_atomic_fetch_add (&em->stats.tx_total, n_sent);
   return n_sent;
 }
 
@@ -499,6 +498,8 @@ session_unlisten_handler (session_unlisten_reply_msg_t * mp)
   echo_main_t *em = &echo_main;
 
   ls = echo_get_session_from_handle (em, mp->handle);
+  if (!ls)
+    return;
   em->proto_cb_vft->cleanup_cb (ls, 0 /* parent_died */ );
   ls->session_state = ECHO_SESSION_STATE_CLOSED;
   if (--em->listen_session_cnt == 0)
@@ -532,6 +533,21 @@ session_bound_handler (session_bound_msg_t * mp)
     em->proto_cb_vft->bound_uri_cb (mp, listen_session);
 }
 
+static int
+echo_segment_is_not_mapped (u64 segment_handle)
+{
+  echo_main_t *em = &echo_main;
+  uword *segment_present;
+  ECHO_LOG (3, "Check if segment mapped 0x%lx...", segment_handle);
+  clib_spinlock_lock (&em->segment_handles_lock);
+  segment_present = hash_get (em->shared_segment_handles, segment_handle);
+  clib_spinlock_unlock (&em->segment_handles_lock);
+  if (segment_present != 0)
+    return 0;
+  ECHO_LOG (2, "Segment not mapped (0x%lx)", segment_handle);
+  return -1;
+}
+
 static void
 session_accepted_handler (session_accepted_msg_t * mp)
 {
@@ -547,7 +563,7 @@ session_accepted_handler (session_accepted_msg_t * mp)
 		 "Unknown listener handle 0x%lx", mp->listener_handle);
       return;
     }
-  if (wait_for_segment_allocation (mp->segment_handle))
+  if (echo_segment_is_not_mapped (mp->segment_handle))
     {
       ECHO_FAIL (ECHO_FAIL_ACCEPTED_WAIT_FOR_SEG_ALLOC,
 		 "accepted wait_for_segment_allocation errored");
@@ -616,7 +632,7 @@ session_connected_handler (session_connected_msg_t * mp)
     }
 
   session = echo_session_new (em);
-  if (wait_for_segment_allocation (mp->segment_handle))
+  if (echo_segment_is_not_mapped (mp->segment_handle))
     {
       ECHO_FAIL (ECHO_FAIL_CONNECTED_WAIT_FOR_SEG_ALLOC,
 		 "connected wait_for_segment_allocation errored");
@@ -710,6 +726,66 @@ session_reset_handler (session_reset_msg_t * mp)
 }
 
 static void
+add_segment_handler (session_app_add_segment_msg_t * mp)
+{
+  fifo_segment_main_t *sm = &echo_main.segment_main;
+  fifo_segment_create_args_t _a, *a = &_a;
+  echo_main_t *em = &echo_main;
+  int *fds = 0, i;
+  char *seg_name = (char *) mp->segment_name;
+  u64 segment_handle = mp->segment_handle;
+
+  if (mp->fd_flags & SESSION_FD_F_MEMFD_SEGMENT)
+    {
+      vec_validate (fds, 1);
+      if (vl_socket_client_recv_fd_msg (fds, 1, 5))
+	{
+	  ECHO_FAIL (ECHO_FAIL_VL_API_RECV_FD_MSG,
+		     "vl_socket_client_recv_fd_msg failed");
+	  goto failed;
+	}
+
+      if (echo_ssvm_segment_attach (seg_name, SSVM_SEGMENT_MEMFD, fds[0]))
+	{
+	  ECHO_FAIL (ECHO_FAIL_VL_API_SVM_FIFO_SEG_ATTACH,
+		     "svm_fifo_segment_attach ('%s') "
+		     "failed on SSVM_SEGMENT_MEMFD", seg_name);
+	  goto failed;
+	}
+      vec_free (fds);
+    }
+  else
+    {
+      clib_memset (a, 0, sizeof (*a));
+      a->segment_name = seg_name;
+      a->segment_size = mp->segment_size;
+      /* Attach to the segment vpp created */
+      if (fifo_segment_attach (sm, a))
+	{
+	  ECHO_FAIL (ECHO_FAIL_VL_API_FIFO_SEG_ATTACH,
+		     "fifo_segment_attach ('%s') failed", seg_name);
+	  goto failed;
+	}
+    }
+  echo_segment_handle_add_del (em, segment_handle, 1 /* add */ );
+  ECHO_LOG (2, "Mapped segment 0x%lx", segment_handle);
+  return;
+
+failed:
+  for (i = 0; i < vec_len (fds); i++)
+    close (fds[i]);
+  vec_free (fds);
+}
+
+static void
+del_segment_handler (session_app_del_segment_msg_t * mp)
+{
+  echo_main_t *em = &echo_main;
+  echo_segment_handle_add_del (em, mp->segment_handle, 0 /* add */ );
+  ECHO_LOG (2, "Unmaped segment 0x%lx", mp->segment_handle);
+}
+
+static void
 handle_mq_event (session_event_t * e)
 {
   switch (e->event_type)
@@ -728,6 +804,12 @@ handle_mq_event (session_event_t * e)
     case SESSION_CTRL_EVT_UNLISTEN_REPLY:
       return session_unlisten_handler ((session_unlisten_reply_msg_t *)
 				       e->data);
+    case SESSION_CTRL_EVT_APP_ADD_SEGMENT:
+      add_segment_handler ((session_app_add_segment_msg_t *) e->data);
+      break;
+    case SESSION_CTRL_EVT_APP_DEL_SEGMENT:
+      del_segment_handler ((session_app_del_segment_msg_t *) e->data);
+      break;
     case SESSION_IO_EVT_RX:
       break;
     default:
@@ -758,6 +840,34 @@ echo_process_rpcs (echo_main_t * em)
     }
 }
 
+static inline void
+echo_print_periodic_stats (echo_main_t * em)
+{
+  f64 delta, now = clib_time_now (&em->clib_time);
+  echo_stats_t _st, *st = &_st;
+  echo_stats_t *lst = &em->last_stat_sampling;
+  delta = now - em->last_stat_sampling_ts;
+  if (delta < em->periodic_stats_delta)
+    return;
+
+  clib_memcpy_fast (st, &em->stats, sizeof (*st));
+  if (st->rx_total - lst->rx_total)
+    clib_warning ("RX: %U", echo_format_bytes_per_sec,
+		  (st->rx_total - lst->rx_total) / delta);
+  if (st->tx_total - lst->tx_total)
+    clib_warning ("TX: %U", echo_format_bytes_per_sec,
+		  (st->tx_total - lst->tx_total) / delta);
+  if (st->connected_count.q - lst->connected_count.q)
+    clib_warning ("conn: %d/s",
+		  st->connected_count.q - lst->connected_count.q);
+  if (st->accepted_count.q - lst->accepted_count.q)
+    clib_warning ("accept: %d/s",
+		  st->accepted_count.q - lst->accepted_count.q);
+
+  clib_memcpy_fast (lst, st, sizeof (*st));
+  em->last_stat_sampling_ts = now;
+}
+
 static void *
 echo_mq_thread_fn (void *arg)
 {
@@ -781,6 +891,9 @@ echo_mq_thread_fn (void *arg)
 
   while (em->state < STATE_DETACHED && !em->time_to_stop)
     {
+      if (em->periodic_stats_delta)
+	echo_print_periodic_stats (em);
+
       svm_msg_q_lock (mq);
       if (svm_msg_q_is_empty (mq) && svm_msg_q_timedwait (mq, 1))
 	{
@@ -918,6 +1031,7 @@ print_usage_and_exit (void)
 	   "  rx-results-diff     Rx results different to pass test\n"
 	   "  tx-results-diff     Tx results different to pass test\n"
 	   "  json                Output global stats in json\n"
+	   "  stats N             Output stats evry N secs\n"
 	   "  log=N               Set the log level to [0: no output, 1:errors, 2:log]\n"
 	   "  crypto [engine]     Set the crypto engine [openssl, vpp, picotls, mbedtls]\n"
 	   "\n"
@@ -1052,6 +1166,8 @@ echo_process_opts (int argc, char **argv)
 	em->tx_results_diff = 1;
       else if (unformat (a, "json"))
 	em->output_json = 1;
+      else if (unformat (a, "stats %d", &em->periodic_stats_delta))
+	;
       else if (unformat (a, "wait-for-gdb"))
 	em->wait_for_gdb = 1;
       else if (unformat (a, "log=%d", &em->log_lvl))
