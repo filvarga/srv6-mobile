@@ -2780,7 +2780,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 	  u32 bi0;
 	  vlib_buffer_t *b0;
 	  srv6_t_gtp4_dt_param_t *ls_param;
-	  ip6_sr_localsid_t *ls0;
+	  ip6_sr_sl_t *ls0;
 
 	  ip4_gtpu_header_t *hdr0 = NULL;
 	  ip4_header_t *ip4 = NULL;
@@ -2801,7 +2801,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 
 	  b0 = vlib_get_buffer (vm, bi0);
 	  ls0 =
-	    pool_elt_at_index (sm2->localsids,
+	    pool_elt_at_index (sm2->sid_lists,
 			       vnet_buffer (b0)->ip.adj_index[VLIB_TX]);
 
 	  ls_param = (srv6_t_gtp4_dt_param_t *) ls0->plugin_mem;
