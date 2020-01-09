@@ -135,5 +135,5 @@ sr localsid prefix SID-PREFIX behavior end.m.gtp6.e
 For example, the below command configures the SID prefix 2001:db8::/64 with `end.m.gtp6.e` behavior for translating the receiving SRv6 packets to GTP-U packets encapsulated with UDP/IPv6 header. While the last SID indicates GTP-U dst IPv6 address, 32-bits GTP-U TEID and 6-bits QFI are extracted from the active SID in the receiving packets.
 
 ```
-sr localsid prefix D4::/64 behavior end.m.gtp6.e
+sr localsid prefix 2001:db8::/64 behavior end.m.gtp6.e
 ```
