@@ -17,6 +17,7 @@
 
 #include <vnet/vnet.h>
 #include <vnet/adj/adj.h>
+#include <vnet/fib/fib_table.h>
 #include <vnet/plugin/plugin.h>
 #include <vpp/app/version.h>
 #include <srv6-mobile/mobile.h>
@@ -59,8 +60,8 @@ const static char *const srv6_t_m_gtp4_dt_v6_nodes[] = {
 };
 
 const static char *const *const dpo_nodes[DPO_PROTO_NUM] = {
-  [DPO_PROTO_IP6] = srv6_t_m_gtp4_d_v6_nodes,
-  [DPO_PROTO_IP4] = srv6_t_m_gtp4_d_nodes,
+  [DPO_PROTO_IP6] = srv6_t_m_gtp4_dt_v6_nodes,
+  [DPO_PROTO_IP4] = srv6_t_m_gtp4_dt_nodes,
 };
 
 static u8 fn_name[] = "SRv6-T.M.GTP4.DT-plugin";
@@ -139,9 +140,9 @@ clb_creation_srv6_t_m_gtp4_dt (ip6_sr_policy_t * sr_policy)
 static int
 clb_removal_srv6_t_m_gtp4_dt (ip6_sr_policy_t * sr_policy)
 {
-  srv6_end_gtp4_dt_param_t *ls_mem;
+  srv6_t_gtp4_dt_param_t *ls_mem;
 
-  ls_mem = (srv6_end_gtp4_dt_param_t *) sr_policy->plugin_mem;
+  ls_mem = (srv6_t_gtp4_dt_param_t *) sr_policy->plugin_mem;
 
   clib_mem_free (ls_mem);
 
@@ -149,7 +150,7 @@ clb_removal_srv6_t_m_gtp4_dt (ip6_sr_policy_t * sr_policy)
 }
 
 static clib_error_t *
-srv6_t_m_gtp4_d_init (vlib_main_t * vm)
+srv6_t_m_gtp4_dt_init (vlib_main_t * vm)
 {
   srv6_t_main_v4_dt_t *sm = &srv6_t_main_v4_dt;
   dpo_type_t dpo_type;
@@ -160,7 +161,7 @@ srv6_t_m_gtp4_d_init (vlib_main_t * vm)
   sm->vnet_main = vnet_get_main ();
 
   node = vlib_get_node_by_name (vm, (u8 *) "srv6-t-m-gtp4-dt");
-  sm->t_m_gtp4_d_node_index = node->index;
+  sm->t_m_gtp4_dt_node_index = node->index;
 
   node = vlib_get_node_by_name (vm, (u8 *) "error-drop");
   sm->error_node_index = node->index;
@@ -180,14 +181,14 @@ srv6_t_m_gtp4_d_init (vlib_main_t * vm)
 }
 
 /* *INDENT-OFF* */
-VNET_FEATURE_INIT (srv6_t_m_gtp4_d, static) =
+VNET_FEATURE_INIT (srv6_t_m_gtp4_dt, static) =
 {
   .arc_name = "ip4-unicast",
-  .node_name = "srv6-t-m-gtp4-d",
+  .node_name = "srv6-t-m-gtp4-dt",
   .runs_before = 0,
 };
 
-VLIB_INIT_FUNCTION (srv6_t_m_gtp4_d_init);
+VLIB_INIT_FUNCTION (srv6_t_m_gtp4_dt_init);
 /* *INDENT-ON* */
 
 /*
