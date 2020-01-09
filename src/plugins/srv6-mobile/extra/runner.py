@@ -155,7 +155,7 @@ class Container(object):
         self.vppctl_exec("create packet-generator interface pg0")
         self.vppctl_exec("set int mac address pg0 {}".format(local_mac))
         self.vppctl_exec("set int ip6 addr pg0 {}".format(local_ip))
-        self.vppctl_exec("set ip6 arp pg0 {} {}".format(remote_ip, remote_mac))
+        self.vppctl_exec("set ip neighbor pg0 {} {}".format(remote_ip, remote_mac))
         self.vppctl_exec("set int state pg0 up")
 
     def pg_create_interface4_name(self, ifname, local_ip, remote_ip, local_mac, remote_mac):
@@ -175,7 +175,7 @@ class Container(object):
         self.vppctl_exec("create packet-generator interface {}".format(ifname))
         self.vppctl_exec("set int mac address {} {}".format(ifname, local_mac))
         self.vppctl_exec("set int ip6 addr {} {}".format(ifname, local_ip))
-        self.vppctl_exec("set ip6 arp {} {} {}".format(ifname, remote_ip, remote_mac))
+        self.vppctl_exec("set ip neighbor {} {} {}".format(ifname, remote_ip, remote_mac))
         self.vppctl_exec("set int state {} up".format(ifname))
 
     def pg_enable(self):
