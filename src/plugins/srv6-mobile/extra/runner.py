@@ -2250,7 +2250,7 @@ class Program(object):
         print("Sleeping")
         time.sleep(5)
 
-        print("Receiving packet on {}:".format(c4.name))
+        print("Receiving packet on {}:".format(c1.name))
         for p in c1.pg_read_packets():
             p.show2()
 
