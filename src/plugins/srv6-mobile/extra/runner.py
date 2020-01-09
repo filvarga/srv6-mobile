@@ -2193,6 +2193,67 @@ class Program(object):
         for p in c4.pg_read_packets():
             p.show2()
 
+    def test_gtp6_dt(self):
+        # TESTS:
+        # trace add af-packet-input 10
+        # pg interface on c1 172.20.0.1
+        # pg interface on c4 B::1/120
+
+        self.start_containers()
+
+        print("Deleting the old containers...")
+        time.sleep(30)
+        print("Starting the new containers...")
+
+        c1 = self.containers.get(self.get_name(self.instance_names[0]))
+
+        c1.pg_create_interface(
+            local_ip="C::1/120",
+            remote_ip="C::2",
+            local_mac="aa:bb:cc:dd:ee:01",
+            remote_mac="aa:bb:cc:dd:ee:02")
+        c1.pg_create_interface4(
+            local_ip="1.0.0.2/30",
+            remote_ip="1.0.0.1",
+            local_mac="aa:bb:cc:dd:ee:11",
+            remote_mac="aa:bb:cc:dd:ee:22")
+
+        c1.vppctl_exec("set sr encaps source addr A1::1")
+
+        c1.vppctl_exec(
+            "sr localsid prefix D::/64 behavior end.m.gtp6.dt46 fib-index 2 local-fib-index 2")
+
+        c1.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
+        c1.set_ip_pgroute("pg0", "1.0.0.1", "172.200.0.1/32")
+
+        print("Waiting...")
+        time.sleep(30)
+
+        p = (Ether(src="aa:bb:cc:dd:ee:02", dst="aa:bb:cc:dd:ee:01") /
+             IPv6(src="C::2", dst="D::2") /
+             UDP(sport=2152, dport=2152) /
+             GTP_U_Header(gtp_type="g_pdu", teid=200) /
+             IP(src="172.100.0.1", dst="172.200.0.1") /
+             ICMP())
+
+        print("Sending packet on {}:".format(c1.name))
+        p.show2()
+
+        c1.enable_trace(10)
+
+        c1.pg_start_capture()
+
+        c1.pg_create_stream(p)
+        c1.pg_enable()
+
+        # timeout (sleep) if needed
+        print("Sleeping")
+        time.sleep(5)
+
+        print("Receiving packet on {}:".format(c4.name))
+        for p in c1.pg_read_packets():
+            p.show2()
+
     def status_containers(self):
 
         print("Instances:")
