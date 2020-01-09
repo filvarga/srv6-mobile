@@ -2952,12 +2952,6 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 	    }
 
 	DONE:
-	  vlib_increment_combined_counter
-	    (((next0 ==
-	       SRV6_T_M_GTP4_DT_NEXT_DROP) ? &(sm2->sr_ls_invalid_counters)
-	      : &(sm2->sr_ls_valid_counters)), thread_index,
-	     ls0 - sm2->localsids, 1, vlib_buffer_length_in_chain (vm, b0));
-
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
 					   n_left_to_next, bi0, next0);
 	}
