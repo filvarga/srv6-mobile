@@ -284,7 +284,7 @@ typedef enum
   SRV6_T_M_GTP4_DT_NEXT_LOOKUP4,
   SRV6_T_M_GTP4_DT_NEXT_LOOKUP6,
   SRV6_T_M_GTP4_DT_N_NEXT,
-} srv6_t_m_gtp6_dt_next_t;
+} srv6_t_m_gtp4_dt_next_t;
 
 static inline u16
 hash_uword_to_u16 (uword * key)
