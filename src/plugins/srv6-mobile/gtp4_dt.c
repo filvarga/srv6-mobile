@@ -77,12 +77,12 @@ clb_format_srv6_t_m_gtp4_dt (u8 * s, va_list * args)
   s = format (s, "SRv6 Transit gtp4.dt\n\t");
 
   if (ls_mem->type == SRV6_GTP4_DT4)
-    s = format (s, ", Type GTP4.DT4 fib-table %u\n", ls_mem->fib4_index);
+    s = format (s, " Type GTP4.DT4 fib-table %u\n", ls_mem->fib4_index);
   else if (ls_mem->type == SRV6_GTP4_DT6)
-    s = format (s, ", Type GTP4.DT6, fib-table %u, local-fib-table %u\n",
+    s = format (s, " Type GTP4.DT6, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else if (ls_mem->type == SRV6_GTP4_DT46)
-    s = format (s, ", Type GTP4.DT46, fib-table %u, local-fib-table %u\n",
+    s = format (s, " Type GTP4.DT46, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else
     s = format (s, "\n");
