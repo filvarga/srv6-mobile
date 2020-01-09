@@ -24,8 +24,7 @@ class TestVlib(VppTestCase):
     def tearDown(self):
         super(TestVlib, self).tearDown()
 
-    # @unittest.skipUnless(running_extended_tests, "part of extended tests")
-
+    @unittest.skipUnless(running_extended_tests, "part of extended tests")
     def test_vlib_main_unittest(self):
         """ Vlib main.c Code Coverage Test """
 
@@ -170,8 +169,8 @@ class TestVlib(VppTestCase):
         """ Vlib format.c Code Coverage Test """
 
         cmds = ["loopback create",
-                "classify filter pcap mask l2 proto ipv6 match l2 proto 86dd",
-                "classify filter del",
+                "classify filter pcap mask l2 proto match l2 proto 0x86dd",
+                "classify filter pcap del",
                 "test format-vlib",
                 ]
 

@@ -71,12 +71,12 @@ clb_format_srv6_end_m_gtp6_dt (u8 * s, va_list * args)
   s = format (s, "SRv6 End gtp6.dt\n\t");
 
   if (ls_mem->type == SRV6_GTP6_DT4)
-    s = format (s, ", Type GTP6.DT4 fib-table %u\n", ls_mem->fib4_index);
+    s = format (s, " Type GTP6.DT4 fib-table %u\n", ls_mem->fib4_index);
   else if (ls_mem->type == SRV6_GTP6_DT6)
-    s = format (s, ", Type GTP6.DT6, fib-table %u, local-fib-table %u\n",
+    s = format (s, " Type GTP6.DT6, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else if (ls_mem->type == SRV6_GTP6_DT46)
-    s = format (s, ", Type GTP6.DT46, fib-table %u, local-fib-table %u\n",
+    s = format (s, " Type GTP6.DT46, fib-table %u, local-fib-table %u\n",
 		ls_mem->fib6_index, ls_mem->local_fib_index);
   else
     s = format (s, "\n");
@@ -147,7 +147,6 @@ static clib_error_t *
 srv6_end_m_gtp6_dt_init (vlib_main_t * vm)
 {
   srv6_end_main_v6_dt_t *sm = &srv6_end_main_v6_dt;
-  ip6_header_t *ip6;
   dpo_type_t dpo_type;
   vlib_node_t *node;
   int rc;
@@ -160,10 +159,6 @@ srv6_end_m_gtp6_dt_init (vlib_main_t * vm)
 
   node = vlib_get_node_by_name (vm, (u8 *) "error-drop");
   sm->error_node_index = node->index;
-
-  ip6 = &sm->cache_hdr;
-
-  clib_memset_u8 (ip6, 0, sizeof (ip6_header_t));
 
   dpo_type = dpo_register_new_type (&dpo_vft, dpo_nodes);
 
