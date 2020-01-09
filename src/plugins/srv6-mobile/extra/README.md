@@ -39,12 +39,12 @@ To play with SRv6 Mobile User Plane on VPP, you need to install following packag
 
 ```
 $ git clone https://github.com/filvarga/srv6-mobile.git
-$ cd ./srv6-mobile/extras/ietf105
+$ cd ./srv6-mobile/src/plugins/srv6-mobile/extra
 $ ./runner.py infra build
 
 $ docker images
 REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
-ietf105-image       latest              577e786b7ec6        2 days ago          5.57GB
+srv6m-image         latest              577e786b7ec6        2 days ago          8GB
 ubuntu              18.04               4c108a37151f        4 weeks ago         64.2MB
 
 ```
@@ -69,10 +69,10 @@ You can check the instantiated docker instances with "docker ps".
 ```
 $ docker ps
 CONTAINER ID        IMAGE               COMMAND                  CREATED              STATUS              PORTS               NAMES
-44cb98994500        ietf105-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-4
-6d65fff8aee9        ietf105-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-3
-ad123b516b24        ietf105-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-2
-5efed405b96a        ietf105-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-1
+44cb98994500        srv6m-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-4
+6d65fff8aee9        srv6m-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-3
+ad123b516b24        srv6m-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-2
+5efed405b96a        srv6m-image       "/bin/sh -c 'vpp -c …"   About a minute ago   Up About a minute                       hck-vpp-1
 
 ```
 
@@ -108,14 +108,21 @@ VPP1 is configured with "T.M.GTP4.D", and VPP4 is configured with "End.M.GTP4.E"
 To start this case with IPv4 payload over GTP-U, you can run:
 
 ```
-$ ./runner.py test tmap
+$ ./runner.py test gtp4
 ```
 
 If you want to use IPv6 payload instead of IPv4, you can run:
 
 ```
-$ ./runner.py test tmap_ipv6
+$ ./runner.py test gtp4_ipv6
 ```
+
+If you use the latest scapy codes from the master branch, you can test the functions with GTP-U packet in 5G format:
+
+```
+$ ./runner.py test gtp4_5g
+```
+
 
 
 #### GTP-U over UDP/IPv6 case
@@ -175,4 +182,5 @@ $ ./runner.py test gtp6_ipv6
 ```
 
 ## More information
-TBD
+
+- @subpage runner_doc.md
