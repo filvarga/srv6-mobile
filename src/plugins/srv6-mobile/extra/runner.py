@@ -2251,7 +2251,7 @@ class Program(object):
         c1.vppctl_exec("set sr encaps source addr A1::1")
 
         c1.vppctl_exec(
-            "sr localsid prefix D::/64 behavior end.m.gtp6.dt46 fib-table 2 local-fib-table 2")
+            "sr localsid prefix D::/64 behavior end.m.gtp6.dt46 fib-table 0 local-fib-table 0")
 
         c1.vppctl_exec("set ip neighbor pg1 1.0.0.1 aa:bb:cc:dd:ee:22")
         c1.set_ip_pgroute("pg1", "1.0.0.1", "172.200.0.1/32")
