@@ -2703,8 +2703,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_dt) (vlib_main_t * vm,
 		    }
 		  else
 		    {
-		      bad_n = 4;
 		      next0 = SRV6_END_M_GTP6_DT_NEXT_DROP;
+		      bad_n = 4;
+		      goto DONE;
 		    }
 		}
 	      else
@@ -2856,6 +2857,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 		  if ((ip4->ip_version_and_header_length & 0xf0) != 0x40)
 		    {
 		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
 		      goto DONE;
 		    }
 
@@ -2871,6 +2873,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 		      != 6)
 		    {
 		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
 		      goto DONE;
 		    }
 
@@ -2922,11 +2925,14 @@ VLIB_NODE_FN (srv6_t_m_gtp4_dt) (vlib_main_t * vm,
 		  else
 		    {
 		      next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	              bad_n++;
+		      goto DONE;
 		    }
 		}
 	      else
 		{
 		  next0 = SRV6_T_M_GTP4_DT_NEXT_DROP;
+	          bad_n++;
 		  goto DONE;
 		}
 
