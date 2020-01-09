@@ -2371,7 +2371,8 @@ def get_args():
             "gtp6",
             "gtp6_5g",
             "gtp6_ipv6",
-            "gtp6_ipv6_5g"])
+            "gtp6_ipv6_5g",
+            "gtp6_dt"])
 
     args = parser.parse_args()
     if not hasattr(args, "op") or not args.op:
@@ -2463,6 +2464,8 @@ def main(op=None, prefix=None, verbose=None,
             program.test_gtp6_ipv6()
         elif op == 'gtp6_ipv6_5g':
             program.test_gtp6_ipv6_5g()
+        elif op == 'gtp6_dt':
+            program.test_gtp6_dt()
 
     except Exception:
         program.logger.exception("")
