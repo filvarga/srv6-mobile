@@ -158,6 +158,26 @@ class Container(object):
         self.vppctl_exec("set ip6 arp pg0 {} {}".format(remote_ip, remote_mac))
         self.vppctl_exec("set int state pg0 up")
 
+    def pg_create_interface4_name(self, ifname, local_ip, remote_ip, local_mac, remote_mac):
+        # remote_ip can't have subnet mask
+
+        time.sleep(2)
+        self.vppctl_exec("create packet-generator interface {}".format(ifname))
+        self.vppctl_exec("set int mac address {} {}".format(ifname, local_mac))
+        self.vppctl_exec("set int ip addr {} {}".format(ifname, local_ip))
+        self.vppctl_exec("set ip neighbor {} {} {}".format(ifname, remote_ip, remote_mac))
+        self.vppctl_exec("set int state {} up".format(ifname))
+
+    def pg_create_interface6_name(self, ifname, local_ip, remote_ip, local_mac, remote_mac):
+        # remote_ip can't have subnet mask
+
+        time.sleep(2)
+        self.vppctl_exec("create packet-generator interface {}".format(ifname))
+        self.vppctl_exec("set int mac address {} {}".format(ifname, local_mac))
+        self.vppctl_exec("set int ip6 addr {} {}".format(ifname, local_ip))
+        self.vppctl_exec("set ip6 arp {} {} {}".format(ifname, remote_ip, remote_mac))
+        self.vppctl_exec("set int state {} up".format(ifname))
+
     def pg_enable(self):
         # start packet generator
         self.vppctl_exec("packet-generator enable")
@@ -175,6 +195,13 @@ class Container(object):
         self.vppctl_exec(
             "packet-generator capture pg0 pcap {}".format(
                 self.pg_output_file_in))
+
+    def pg_start_capture_name(self, ifname):
+        if exists(self.pg_output_file):
+            remove(self.pg_output_file)
+        self.vppctl_exec(
+            "packet-generator capture {} pcap {}".format(
+                ifname, self.pg_output_file_in))
 
     def pg_read_packets(self):
         return rdpcap(self.pg_output_file)
@@ -2207,12 +2234,15 @@ class Program(object):
 
         c1 = self.containers.get(self.get_name(self.instance_names[0]))
 
-        c1.pg_create_interface(
+        c1.pg_create_interface6_name(
+            ifname="pg0",
             local_ip="C::1/120",
             remote_ip="C::2",
             local_mac="aa:bb:cc:dd:ee:01",
             remote_mac="aa:bb:cc:dd:ee:02")
-        c1.pg_create_interface4(
+
+        c1.pg_create_interface4_name(
+            ifname="pg1",
             local_ip="1.0.0.2/30",
             remote_ip="1.0.0.1",
             local_mac="aa:bb:cc:dd:ee:11",
@@ -2223,8 +2253,8 @@ class Program(object):
         c1.vppctl_exec(
             "sr localsid prefix D::/64 behavior end.m.gtp6.dt46 fib-index 2 local-fib-index 2")
 
-        c1.vppctl_exec("set ip neighbor pg0 1.0.0.1 aa:bb:cc:dd:ee:22")
-        c1.set_ip_pgroute("pg0", "1.0.0.1", "172.200.0.1/32")
+        c1.vppctl_exec("set ip neighbor pg1 1.0.0.1 aa:bb:cc:dd:ee:22")
+        c1.set_ip_pgroute("pg1", "1.0.0.1", "172.200.0.1/32")
 
         print("Waiting...")
         time.sleep(30)
@@ -2241,7 +2271,7 @@ class Program(object):
 
         c1.enable_trace(10)
 
-        c1.pg_start_capture()
+        c1.pg_start_capture_name(ifname="pg1")
 
         c1.pg_create_stream(p)
         c1.pg_enable()
