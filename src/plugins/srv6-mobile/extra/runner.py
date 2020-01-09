@@ -154,7 +154,7 @@ class Container(object):
         time.sleep(2)
         self.vppctl_exec("create packet-generator interface pg0")
         self.vppctl_exec("set int mac address pg0 {}".format(local_mac))
-        self.vppctl_exec("set int ip6 addr pg0 {}".format(local_ip))
+        self.vppctl_exec("set int ip addr pg0 {}".format(local_ip))
         self.vppctl_exec("set ip neighbor pg0 {} {}".format(remote_ip, remote_mac))
         self.vppctl_exec("set int state pg0 up")
 
