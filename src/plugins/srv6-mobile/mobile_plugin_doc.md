@@ -45,10 +45,10 @@ A T.M.GTP4.D function is associated with the following mandatory parameters:
 The following command instantiates a new T.M.GTP4.D function.
 
 ```
-sr policy add bsid SID behavior t.m.gtp4.d DST-PREFIX v6src_prefix SRC-PREFIX nhtype ipv4
+sr policy add bsid SID behavior t.m.gtp4.d DST-PREFIX v6src_prefix SRC-PREFIX [nhtype {ipv4|ipv6|non-ip}]
 ```
 
-For example, the below command configures the SID 2001:db8::1 with `t.m.gtp4.d` behavior for translating receiving GTP-U over IPv4 packets to SRv6 packets.
+For example, the below command configures the SID 2001:db8::1 with `t.m.gtp4.d` behavior for translating receiving GTP-U over IPv4 packets to SRv6 packets with next-header type is IPv4.
 
 ```
 sr policy add bsid 2001:db8::1 behavior t.m.gtp4.d D1::/32 v6src_prefix A1::/64 nhtype ipv4
@@ -80,7 +80,7 @@ An End.M.GTP6.D segment is associated with the following mandatory parameters:
 The following command instantiates a new End.M.GTP6.D function.
 
 ```
-sr localsid prefix SID-PREFIX behavior end.m.gtp6.d DST-PREFIX
+sr localsid prefix SID-PREFIX behavior end.m.gtp6.d DST-PREFIX [nhtype {ipv4|ipv6|non-ip}]
 ```
 For example, the below command configures the SID prefix 2001:db8::/64 with `end.m.gtp6.d` behavior for translating receiving GTP-U over IPv6 packets which have IPv6 destination addresses within 2001:db8::/64 to SRv6 packets. The dst IPv6 address of the outgoing packets consists of D4::/64 followed by QFI and TEID.
 
