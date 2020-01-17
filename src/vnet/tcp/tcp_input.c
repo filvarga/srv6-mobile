@@ -990,7 +990,7 @@ tcp_rcv_sacks (tcp_connection_t * tc, u32 ack)
   sb->last_bytes_delivered = 0;
   sb->rxt_sacked = 0;
 
-  if (!tcp_opts_sack (&tc->rcv_opts)
+  if (!tcp_opts_sack (&tc->rcv_opts) && !sb->sacked_bytes
       && sb->head == TCP_INVALID_SACK_HOLE_INDEX)
     return;
 
@@ -1461,7 +1461,7 @@ tcp_cc_handle_event (tcp_connection_t * tc, tcp_rate_sample_t * rs,
 	  tc->rcv_dupacks += 1;
 	  TCP_EVT (TCP_EVT_DUPACK_RCVD, tc, 1);
 	}
-      tc->rxt_delivered = clib_max (tc->rxt_delivered + tc->bytes_acked,
+      tc->rxt_delivered = clib_min (tc->rxt_delivered + tc->bytes_acked,
 				    tc->snd_rxt_bytes);
       if (is_dack)
 	tc->prr_delivered += clib_min (tc->snd_mss,
@@ -2438,11 +2438,15 @@ tcp_check_tx_offload (tcp_connection_t * tc, int is_ipv4)
     }
 
   lb = load_balance_get (lb_idx);
+  if (PREDICT_FALSE (lb->lb_n_buckets > 1))
+    return;
   dpo = load_balance_get_bucket_i (lb, 0);
 
-  sw_if_idx = dpo->dpoi_index;
-  hw_if = vnet_get_sup_hw_interface (vnm, sw_if_idx);
+  sw_if_idx = dpo_get_urpf (dpo);
+  if (PREDICT_FALSE (sw_if_idx == ~0))
+    return;
 
+  hw_if = vnet_get_sup_hw_interface (vnm, sw_if_idx);
   if (hw_if->flags & VNET_HW_INTERFACE_FLAG_SUPPORTS_GSO)
     tc->cfg_flags |= TCP_CFG_F_TSO;
 }
@@ -3217,6 +3221,18 @@ tcp46_listen_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
       n_left_from -= 1;
 
       b0 = vlib_get_buffer (vm, bi0);
+
+      if (is_ip4)
+	{
+	  ip40 = vlib_buffer_get_current (b0);
+	  th0 = tcp_buffer_hdr (b0);
+	}
+      else
+	{
+	  ip60 = vlib_buffer_get_current (b0);
+	  th0 = tcp_buffer_hdr (b0);
+	}
+
       lc0 = tcp_listener_get (vnet_buffer (b0)->tcp.connection_index);
       if (PREDICT_FALSE (lc0 == 0))
 	{
@@ -3230,17 +3246,6 @@ tcp46_listen_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  lc0 = tcp_lookup_listener (b0, tc0->c_fib_index, is_ip4);
 	  /* clean up the old session */
 	  tcp_connection_del (tc0);
-	}
-
-      if (is_ip4)
-	{
-	  ip40 = vlib_buffer_get_current (b0);
-	  th0 = tcp_buffer_hdr (b0);
-	}
-      else
-	{
-	  ip60 = vlib_buffer_get_current (b0);
-	  th0 = tcp_buffer_hdr (b0);
 	}
 
       /* Create child session. For syn-flood protection use filter */
