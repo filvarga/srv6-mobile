@@ -734,7 +734,6 @@ list(APPEND VNET_SOURCES
   ipip/sixrd.c
   ipip/ipip_api.c
   ipip/ipip_cli.c
-  ipip/ipip_types_api.c
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
@@ -743,12 +742,27 @@ list(APPEND VNET_MULTIARCH_SOURCES
 
 list(APPEND VNET_HEADERS
   ipip/ipip.h
-  ipip/ipip_types_api.h
 )
 
 list(APPEND VNET_API_FILES
-  ipip/ipip_types.api
   ipip/ipip.api
+)
+
+##############################################################################
+# Tunnel infra
+##############################################################################
+list(APPEND VNET_SOURCES
+  tunnel/tunnel.c
+  tunnel/tunnel_types_api.c
+)
+
+list(APPEND VNET_API_FILES
+  tunnel/tunnel_types.api
+)
+
+list(APPEND VNET_HEADERS
+  tunnel/tunnel.h
+  tunnel/tunnel_dp.h
 )
 
 ##############################################################################
@@ -1076,7 +1090,6 @@ list(APPEND VNET_HEADERS
 list(APPEND VNET_MULTIARCH_SOURCES
   devices/virtio/vhost_user_input.c
   devices/virtio/vhost_user_output.c
-  devices/netmap/node.c
   devices/virtio/node.c
   devices/af_packet/node.c
   devices/virtio/device.c
@@ -1188,7 +1201,6 @@ list(APPEND VNET_SOURCES
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
-  devices/netmap/device.c
   devices/af_packet/device.c
 )
 
@@ -1197,24 +1209,6 @@ list(APPEND VNET_HEADERS
 )
 
 list(APPEND VNET_API_FILES devices/af_packet/af_packet.api)
-
-##############################################################################
-# NETMAP interface
-##############################################################################
-
-list(APPEND VNET_SOURCES
-  devices/netmap/netmap.c
-  devices/netmap/device.c
-  devices/netmap/node.c
-  devices/netmap/cli.c
-  devices/netmap/netmap_api.c
-)
-
-list(APPEND VNET_HEADERS
-  devices/netmap/netmap.h
-)
-
-list(APPEND VNET_API_FILES devices/netmap/netmap.api)
 
 ##############################################################################
 # Driver feature graph arc support
@@ -1584,6 +1578,15 @@ add_vpp_library(vnet
   API_FILES ${VNET_API_FILES}
   LINK_LIBRARIES vppinfra svm vlib ${OPENSSL_LIBRARIES}
   DEPENDS vpp_version_h api_headers
+)
+
+##############################################################################
+# vpp api test client library
+##############################################################################
+
+add_vpp_library (vatclient
+  SOURCES ip/ip_types_api.c
+  DEPENDS api_headers
 )
 
 ##############################################################################

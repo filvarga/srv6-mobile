@@ -780,7 +780,7 @@ end_srh_processing (vlib_node_runtime_t * node,
 {
   ip6_address_t *new_dst0;
 
-  if (PREDICT_TRUE (sr0->type == ROUTING_HEADER_TYPE_SR))
+  if (PREDICT_TRUE (sr0 && sr0->type == ROUTING_HEADER_TYPE_SR))
     {
       if (ls0->behavior == SR_BEHAVIOR_END
        && ls0->usid_index
