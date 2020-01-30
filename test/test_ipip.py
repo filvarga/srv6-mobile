@@ -8,6 +8,7 @@ from framework import VppTestCase, VppTestRunner
 from vpp_ip import DpoProto
 from vpp_ip_route import VppIpRoute, VppRoutePath, VppIpTable, FibPathProto
 from vpp_ipip_tun_interface import VppIpIpTunInterface
+from vpp_nhrp import VppNhrp
 from vpp_papi import VppEnum
 from socket import AF_INET, AF_INET6, inet_pton
 from util import reassemble4
@@ -116,7 +117,7 @@ class TestIPIP(VppTestCase):
 
         self.pg1.generate_remote_hosts(5)
         self.pg1.configure_ipv4_neighbors()
-        e = VppEnum.vl_api_ipip_tunnel_flags_t
+        e = VppEnum.vl_api_tunnel_encap_decap_flags_t
         d = VppEnum.vl_api_ip_dscp_t
         self.p_ether = Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac)
         self.p_payload = UDP(sport=1234, dport=1234) / Raw(b'X' * 100)
@@ -133,15 +134,17 @@ class TestIPIP(VppTestCase):
             self.pg0,
             self.pg0.local_ip4,
             self.pg1.remote_hosts[0].ip4,
-            flags=e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DSCP).add_vpp_config()
+            flags=e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DSCP)
+        tun_dscp.add_vpp_config()
         # IPv4 transport that copies the DCSP and ECN from the payload
         tun_dscp_ecn = VppIpIpTunInterface(
             self,
             self.pg0,
             self.pg0.local_ip4,
             self.pg1.remote_hosts[1].ip4,
-            flags=(e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DSCP |
-                   e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_ECN)).add_vpp_config()
+            flags=(e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DSCP |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_ECN))
+        tun_dscp_ecn.add_vpp_config()
         # IPv4 transport that copies the ECN from the payload and sets the
         # DF bit on encap. copies the ECN on decap
         tun_ecn = VppIpIpTunInterface(
@@ -149,9 +152,10 @@ class TestIPIP(VppTestCase):
             self.pg0,
             self.pg0.local_ip4,
             self.pg1.remote_hosts[2].ip4,
-            flags=(e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_ECN |
-                   e.IPIP_TUNNEL_API_FLAG_ENCAP_SET_DF |
-                   e.IPIP_TUNNEL_API_FLAG_DECAP_COPY_ECN)).add_vpp_config()
+            flags=(e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_ECN |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_SET_DF |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_DECAP_COPY_ECN))
+        tun_ecn.add_vpp_config()
         # IPv4 transport that sets a fixed DSCP in the encap and copies
         # the DF bit
         tun = VppIpIpTunInterface(
@@ -160,7 +164,8 @@ class TestIPIP(VppTestCase):
             self.pg0.local_ip4,
             self.pg1.remote_hosts[3].ip4,
             dscp=d.IP_API_DSCP_AF11,
-            flags=e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DF).add_vpp_config()
+            flags=e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DF)
+        tun.add_vpp_config()
 
         # array of all the tunnels
         tuns = [tun_dscp, tun_dscp_ecn, tun_ecn, tun]
@@ -467,6 +472,116 @@ class TestIPIP(VppTestCase):
     def payload(self, len):
         return 'x' * len
 
+    def test_mipip4(self):
+        """ p2mp IPv4 tunnel Tests """
+
+        for itf in self.pg_interfaces:
+            #
+            # one underlay nh for each overlay/tunnel peer
+            #
+            itf.generate_remote_hosts(4)
+            itf.configure_ipv4_neighbors()
+
+            #
+            # Create an p2mo IPIP tunnel.
+            #  - set it admin up
+            #  - assign an IP Addres
+            #  - Add a route via the tunnel
+            #
+            ipip_if = VppIpIpTunInterface(self, itf,
+                                          itf.local_ip4,
+                                          "0.0.0.0",
+                                          mode=(VppEnum.vl_api_tunnel_mode_t.
+                                                TUNNEL_API_MODE_MP))
+            ipip_if.add_vpp_config()
+            ipip_if.admin_up()
+            ipip_if.config_ip4()
+            ipip_if.generate_remote_hosts(4)
+
+            self.logger.info(self.vapi.cli("sh adj"))
+            self.logger.info(self.vapi.cli("sh ip fib"))
+
+            #
+            # ensure we don't match to the tunnel if the source address
+            # is all zeros
+            #
+            # tx = self.create_tunnel_stream_4o4(self.pg0,
+            #                                    "0.0.0.0",
+            #                                    itf.local_ip4,
+            #                                    self.pg0.local_ip4,
+            #                                    self.pg0.remote_ip4)
+            # self.send_and_assert_no_replies(self.pg0, tx)
+
+            #
+            # for-each peer
+            #
+            for ii in range(1, 4):
+                route_addr = "4.4.4.%d" % ii
+
+                #
+                # route traffic via the peer
+                #
+                route_via_tun = VppIpRoute(
+                    self, route_addr, 32,
+                    [VppRoutePath(ipip_if._remote_hosts[ii].ip4,
+                                  ipip_if.sw_if_index)])
+                route_via_tun.add_vpp_config()
+
+                #
+                # Add a NHRP entry resolves the peer
+                #
+                nhrp = VppNhrp(self, ipip_if,
+                               ipip_if._remote_hosts[ii].ip4,
+                               itf._remote_hosts[ii].ip4)
+                nhrp.add_vpp_config()
+                self.logger.info(self.vapi.cli("sh adj nbr ipip0 %s" %
+                                               ipip_if._remote_hosts[ii].ip4))
+
+                #
+                # Send a packet stream that is routed into the tunnel
+                #  - packets are IPIP encapped
+                #
+                inner = (IP(dst=route_addr, src="5.5.5.5") /
+                         UDP(sport=1234, dport=1234) /
+                         Raw(b'0x44' * 100))
+                tx_e = [(Ether(dst=self.pg0.local_mac,
+                               src=self.pg0.remote_mac) /
+                         inner) for x in range(63)]
+
+                rxs = self.send_and_expect(self.pg0, tx_e, itf)
+
+                for rx in rxs:
+                    self.assertEqual(rx[IP].src, itf.local_ip4)
+                    self.assertEqual(rx[IP].dst, itf._remote_hosts[ii].ip4)
+
+                tx_i = [(Ether(dst=self.pg0.local_mac,
+                               src=self.pg0.remote_mac) /
+                         IP(src=itf._remote_hosts[ii].ip4,
+                            dst=itf.local_ip4) /
+                         IP(src=self.pg0.local_ip4, dst=self.pg0.remote_ip4) /
+                         UDP(sport=1234, dport=1234) /
+                         Raw(b'0x44' * 100)) for x in range(63)]
+
+                self.logger.info(self.vapi.cli("sh ipip tunnel-hash"))
+                rx = self.send_and_expect(self.pg0, tx_i, self.pg0)
+
+                #
+                # delete and re-add the NHRP
+                #
+                nhrp.remove_vpp_config()
+                self.send_and_assert_no_replies(self.pg0, tx_e)
+                self.send_and_assert_no_replies(self.pg0, tx_i)
+
+                nhrp.add_vpp_config()
+                rx = self.send_and_expect(self.pg0, tx_e, itf)
+                for rx in rxs:
+                    self.assertEqual(rx[IP].src, itf.local_ip4)
+                    self.assertEqual(rx[IP].dst, itf._remote_hosts[ii].ip4)
+                rx = self.send_and_expect(self.pg0, tx_i, self.pg0)
+
+            ipip_if.admin_down()
+            ipip_if.unconfig_ip4()
+
 
 class TestIPIP6(VppTestCase):
     """ IPIP6 Test Case """
@@ -657,7 +772,7 @@ class TestIPIP6(VppTestCase):
 
         self.pg1.generate_remote_hosts(5)
         self.pg1.configure_ipv6_neighbors()
-        e = VppEnum.vl_api_ipip_tunnel_flags_t
+        e = VppEnum.vl_api_tunnel_encap_decap_flags_t
         d = VppEnum.vl_api_ip_dscp_t
         self.p_ether = Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac)
         self.p_payload = UDP(sport=1234, dport=1234) / Raw(b'X' * 100)
@@ -674,15 +789,17 @@ class TestIPIP6(VppTestCase):
             self.pg0,
             self.pg0.local_ip6,
             self.pg1.remote_hosts[0].ip6,
-            flags=e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DSCP).add_vpp_config()
+            flags=e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DSCP)
+        tun_dscp.add_vpp_config()
         # IPv4 transport that copies the DCSP and ECN from the payload
         tun_dscp_ecn = VppIpIpTunInterface(
             self,
             self.pg0,
             self.pg0.local_ip6,
             self.pg1.remote_hosts[1].ip6,
-            flags=(e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DSCP |
-                   e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_ECN)).add_vpp_config()
+            flags=(e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DSCP |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_ECN))
+        tun_dscp_ecn.add_vpp_config()
         # IPv4 transport that copies the ECN from the payload and sets the
         # DF bit on encap. copies the ECN on decap
         tun_ecn = VppIpIpTunInterface(
@@ -690,9 +807,10 @@ class TestIPIP6(VppTestCase):
             self.pg0,
             self.pg0.local_ip6,
             self.pg1.remote_hosts[2].ip6,
-            flags=(e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_ECN |
-                   e.IPIP_TUNNEL_API_FLAG_ENCAP_SET_DF |
-                   e.IPIP_TUNNEL_API_FLAG_DECAP_COPY_ECN)).add_vpp_config()
+            flags=(e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_ECN |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_SET_DF |
+                   e.TUNNEL_API_ENCAP_DECAP_FLAG_DECAP_COPY_ECN))
+        tun_ecn.add_vpp_config()
         # IPv4 transport that sets a fixed DSCP in the encap and copies
         # the DF bit
         tun = VppIpIpTunInterface(
@@ -701,7 +819,8 @@ class TestIPIP6(VppTestCase):
             self.pg0.local_ip6,
             self.pg1.remote_hosts[3].ip6,
             dscp=d.IP_API_DSCP_AF11,
-            flags=e.IPIP_TUNNEL_API_FLAG_ENCAP_COPY_DF).add_vpp_config()
+            flags=e.TUNNEL_API_ENCAP_DECAP_FLAG_ENCAP_COPY_DF)
+        tun.add_vpp_config()
 
         # array of all the tunnels
         tuns = [tun_dscp, tun_dscp_ecn, tun_ecn, tun]
