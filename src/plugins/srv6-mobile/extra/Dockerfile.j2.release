@@ -15,6 +15,7 @@ RUN set -eux; \
     net-tools \
     iproute2 \
     tcpdump \
+    python2.7 \
     python3-cffi \
     netcat; \
     rm -rf /var/lib/apt/lists/*; \

@@ -28,7 +28,7 @@
 #include <nat/nat.h>
 #include <nat/nat_ipfix_logging.h>
 #include <nat/nat_inlines.h>
-#include <nat/nat44_inlines.h>
+#include <nat/nat44/inlines.h>
 #include <nat/nat_syslog.h>
 #include <nat/nat_ha.h>
 
@@ -267,7 +267,7 @@ slow_path (snat_main_t * sm, vlib_buffer_t * b0,
   nat44_session_try_cleanup (&ip0->src_address, rx_fib_index0, thread_index,
 			     now);
 
-  if (PREDICT_FALSE (maximum_sessions_exceeded (sm, thread_index)))
+  if (PREDICT_FALSE (nat44_maximum_sessions_exceeded (sm, thread_index)))
     {
       b0->error = node->errors[SNAT_IN2OUT_ERROR_MAX_SESSIONS_EXCEEDED];
       nat_ipfix_logging_max_sessions (thread_index, sm->max_translations);
@@ -1043,11 +1043,11 @@ snat_in2out_node_fn_inline (vlib_main_t * vm,
 		       * be able to use dhcp client on the outside interface
 		       */
 		      if (PREDICT_FALSE
-			  ((b0->flags & VNET_BUFFER_F_LOCALLY_ORIGINATED)
-			   && proto0 == SNAT_PROTOCOL_UDP
+			  (proto0 == SNAT_PROTOCOL_UDP
 			   && (vnet_buffer (b0)->ip.reass.l4_dst_port ==
 			       clib_host_to_net_u16
-			       (UDP_DST_PORT_dhcp_to_server))))
+			       (UDP_DST_PORT_dhcp_to_server))
+			   && ip0->dst_address.as_u32 == 0xffffffff))
 			goto trace00;
 		    }
 		  else
@@ -1251,11 +1251,11 @@ snat_in2out_node_fn_inline (vlib_main_t * vm,
 		       * be able to use dhcp client on the outside interface
 		       */
 		      if (PREDICT_FALSE
-			  ((b1->flags & VNET_BUFFER_F_LOCALLY_ORIGINATED)
-			   && proto1 == SNAT_PROTOCOL_UDP
+			  (proto1 == SNAT_PROTOCOL_UDP
 			   && (vnet_buffer (b1)->ip.reass.l4_dst_port ==
 			       clib_host_to_net_u16
-			       (UDP_DST_PORT_dhcp_to_server))))
+			       (UDP_DST_PORT_dhcp_to_server))
+			   && ip1->dst_address.as_u32 == 0xffffffff))
 			goto trace01;
 		    }
 		  else
@@ -1492,11 +1492,11 @@ snat_in2out_node_fn_inline (vlib_main_t * vm,
 		       * be able to use dhcp client on the outside interface
 		       */
 		      if (PREDICT_FALSE
-			  ((b0->flags & VNET_BUFFER_F_LOCALLY_ORIGINATED)
-			   && proto0 == SNAT_PROTOCOL_UDP
+			  (proto0 == SNAT_PROTOCOL_UDP
 			   && (vnet_buffer (b0)->ip.reass.l4_dst_port ==
 			       clib_host_to_net_u16
-			       (UDP_DST_PORT_dhcp_to_server))))
+			       (UDP_DST_PORT_dhcp_to_server))
+			   && ip0->dst_address.as_u32 == 0xffffffff))
 			goto trace0;
 		    }
 		  else
