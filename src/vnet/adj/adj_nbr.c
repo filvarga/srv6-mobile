@@ -347,7 +347,7 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
 				 u8 *rewrite)
 {
     ip_adjacency_t *walk_adj;
-    adj_index_t walk_ai;
+    adj_index_t walk_ai, ai;
     vlib_main_t * vm;
     u32 old_next;
     int do_walk;
@@ -355,7 +355,7 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
     vm = vlib_get_main();
     old_next = adj->lookup_next_index;
 
-    walk_ai = adj_get_index(adj);
+    ai = walk_ai = adj_get_index(adj);
     if (VNET_LINK_MPLS == adj->ia_link)
     {
         /*
@@ -399,7 +399,7 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
      * DPO, this adj will no longer be in use and its lock count will drop to 0.
      * We don't want it to be deleted as part of this endeavour.
      */
-    adj_lock(adj_get_index(adj));
+    adj_lock(ai);
     adj_lock(walk_ai);
 
     /*
@@ -511,10 +511,11 @@ adj_nbr_update_rewrite_internal (ip_adjacency_t *adj,
      */
     if (do_walk)
     {
+        walk_adj = adj_get(walk_ai);
         walk_adj->ia_flags &= ~ADJ_FLAG_SYNC_WALK_ACTIVE;
     }
 
-    adj_unlock(adj_get_index(adj));
+    adj_unlock(ai);
     adj_unlock(walk_ai);
 }
 
@@ -906,15 +907,19 @@ adj_nbr_show (vlib_main_t * vm,
 	      vlib_cli_command_t * cmd)
 {
     adj_index_t ai = ADJ_INDEX_INVALID;
+    ip46_address_t nh = ip46_address_initializer;
     u32 sw_if_index = ~0;
 
     while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
-	if (unformat (input, "%d", &ai))
+	if (unformat (input, "%U",
+                      unformat_vnet_sw_interface, vnet_get_main(),
+                      &sw_if_index))
 	    ;
 	else if (unformat (input, "%U",
-			   unformat_vnet_sw_interface, vnet_get_main(),
-			   &sw_if_index))
+			   unformat_ip46_address, &nh, IP46_TYPE_ANY))
+	    ;
+	else if (unformat (input, "%d", &ai))
 	    ;
 	else
 	    break;
@@ -931,12 +936,24 @@ adj_nbr_show (vlib_main_t * vm,
     {
 	fib_protocol_t proto;
 
-	for (proto = FIB_PROTOCOL_IP4; proto <= FIB_PROTOCOL_IP6; proto++)
-	{
-	    adj_nbr_walk(sw_if_index, proto,
-			 adj_nbr_show_one,
-			 vm);
-	}
+        if (ip46_address_is_zero(&nh))
+        {
+            for (proto = FIB_PROTOCOL_IP4; proto <= FIB_PROTOCOL_IP6; proto++)
+            {
+                adj_nbr_walk(sw_if_index, proto,
+                             adj_nbr_show_one,
+                             vm);
+            }
+        }
+        else
+        {
+            proto = (ip46_address_is_ip4(&nh) ?
+                     FIB_PROTOCOL_IP4 :
+                     FIB_PROTOCOL_IP6);
+            adj_nbr_walk_nh(sw_if_index, proto, &nh,
+                            adj_nbr_show_one,
+                            vm);
+        }
     }
     else
     {

@@ -25,6 +25,7 @@
 
 #include <vnet/gre/gre.h>
 #include <vnet/fib/fib_table.h>
+#include <vnet/tunnel/tunnel_types_api.h>
 #include <vnet/ip/ip_types_api.h>
 
 #include <vnet/vnet_msg_enum.h>
@@ -83,45 +84,12 @@ gre_tunnel_type_encode (gre_tunnel_type_t in)
   return (out);
 }
 
-static int
-gre_tunnel_mode_decode (vl_api_gre_tunnel_mode_t in, gre_tunnel_mode_t * out)
-{
-  switch (in)
-    {
-#define _(n, v)                                           \
-      case GRE_API_TUNNEL_MODE_##n:                       \
-        *out = GRE_TUNNEL_MODE_##n;                       \
-        return (0);
-      foreach_gre_tunnel_mode
-#undef _
-    }
-
-  return (VNET_API_ERROR_INVALID_VALUE_2);
-}
-
-static vl_api_gre_tunnel_mode_t
-gre_tunnel_mode_encode (gre_tunnel_mode_t in)
-{
-  vl_api_gre_tunnel_mode_t out = GRE_API_TUNNEL_MODE_P2P;
-
-  switch (in)
-    {
-#define _(n, v)                                           \
-      case GRE_TUNNEL_MODE_##n:                           \
-        out = GRE_API_TUNNEL_MODE_##n;                    \
-        break;
-      foreach_gre_tunnel_mode
-#undef _
-    }
-
-  return (out);
-}
-
 static void vl_api_gre_tunnel_add_del_t_handler
   (vl_api_gre_tunnel_add_del_t * mp)
 {
   vnet_gre_tunnel_add_del_args_t _a = { }, *a = &_a;
   vl_api_gre_tunnel_add_del_reply_t *rmp;
+  tunnel_encap_decap_flags_t flags;
   u32 sw_if_index = ~0;
   ip46_type_t itype[2];
   int rv = 0;
@@ -146,7 +114,12 @@ static void vl_api_gre_tunnel_add_del_t_handler
   if (rv)
     goto out;
 
-  rv = gre_tunnel_mode_decode (mp->tunnel.mode, &a->mode);
+  rv = tunnel_mode_decode (mp->tunnel.mode, &a->mode);
+
+  if (rv)
+    goto out;
+
+  rv = tunnel_encap_decap_flags_decode (mp->tunnel.flags, &flags);
 
   if (rv)
     goto out;
@@ -156,6 +129,7 @@ static void vl_api_gre_tunnel_add_del_t_handler
   a->instance = ntohl (mp->tunnel.instance);
   a->session_id = ntohs (mp->tunnel.session_id);
   a->outer_table_id = ntohl (mp->tunnel.outer_table_id);
+  a->flags = flags;
 
   rv = vnet_gre_tunnel_add_del (a, &sw_if_index);
 
@@ -185,7 +159,7 @@ static void send_gre_tunnel_details
 	   (t->outer_fib_index, t->tunnel_dst.fp_proto));
 
   rmp->tunnel.type = gre_tunnel_type_encode (t->type);
-  rmp->tunnel.mode = gre_tunnel_mode_encode (t->mode);
+  rmp->tunnel.mode = tunnel_mode_encode (t->mode);
   rmp->tunnel.instance = htonl (t->user_instance);
   rmp->tunnel.sw_if_index = htonl (t->sw_if_index);
   rmp->tunnel.session_id = htons (t->session_id);

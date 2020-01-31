@@ -86,7 +86,6 @@ F:	src/vnet/classify
 VNET Device Drivers
 I:	devices
 Y:	src/vnet/devices/af_packet/FEATURE.yaml
-Y:	src/vnet/devices/netmap/FEATURE.yaml
 Y:	src/vnet/devices/pipe/FEATURE.yaml
 M:	Damjan Marion <damarion@cisco.com>
 F:	src/vnet/devices/
@@ -186,10 +185,10 @@ I:	nhrp
 M:	Neale Ranns <nranns@cisco.com>
 F:	src/vnet/nhrp/
 
-Crypto IA32 Plugin
-I:	crypto-ia32
+Crypto native Plugin
+I:	crypto-native
 M:	Damjan Marion <damarion@cisco.com>
-F:	src/plugins/crypto_ia32/
+F:	src/plugins/crypto_native/
 
 Crypto openssl Plugin
 I:	crypto-openssl
@@ -286,6 +285,11 @@ I:	ipip
 Y:	src/vnet/ipip/FEATURE.yaml
 M:	Ole Troan <otroan@employees.org>
 F:	src/vnet/ipip/
+
+VNET tunnel
+I:	tunnel
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/vnet/tunnel'
 
 VNET TLS and TLS engine plugins
 I:	tls
@@ -411,11 +415,6 @@ Plugin - Internet Group Management Protocol (IGMP)
 I:	igmp
 M:	Neale Ranns <nranns@cisco.com>
 F:	src/plugins/igmp/
-
-Plugin - ixge device driver
-I:	ixge
-M:	Damjan Marion <damarion@cisco.com>
-F:	src/plugins/ixge/
 
 Plugin - L3 Cross-Connect (L3XC)
 I:	l3xc
@@ -576,6 +575,7 @@ M:	Aloys Augustin <aloaugus@cisco.com>
 M:	Nathan Skrzypczak <nathan.skrzypczak@gmail.com>
 M:	Dave Wallace <dwallacelf@gmail.com>
 M:	Florin Coras <fcoras@cisco.com>
+Y:	src/plugins/quic/FEATURE.yaml
 F:	src/plugins/quic/
 
 libmemif

@@ -375,6 +375,7 @@ vcl_session_alloc (vcl_worker_t * wrk)
 static inline void
 vcl_session_free (vcl_worker_t * wrk, vcl_session_t * s)
 {
+  VDBG (0, "session %u [0x%llx] removed", s->session_index, s->vpp_handle);
   pool_put (wrk->sessions, s);
 }
 
@@ -515,6 +516,14 @@ static inline u8
 vcl_session_is_ct (vcl_session_t * s)
 {
   return (s->ct_tx_fifo != 0);
+}
+
+static inline u8
+vcl_session_is_cl (vcl_session_t * s)
+{
+  if (s->session_type == VPPCOM_PROTO_UDP)
+    return 1;
+  return 0;
 }
 
 static inline u8
