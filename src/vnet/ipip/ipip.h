@@ -22,7 +22,7 @@
 #include <vnet/ip/ip6_packet.h>
 #include <vnet/ip/format.h>
 #include <vnet/ip/ip.h>
-#include <vnet/vnet.h>
+#include <vnet/tunnel/tunnel.h>
 
 extern vnet_hw_interface_class_t ipip_hw_interface_class;
 
@@ -48,43 +48,26 @@ typedef enum
 {
   IPIP_TRANSPORT_IP4,
   IPIP_TRANSPORT_IP6,
-} ipip_transport_t;
+} __clib_packed ipip_transport_t;
+
+typedef enum
+{
+  IPIP_MODE_P2P = 0,
+  IPIP_MODE_P2MP,
+  IPIP_MODE_6RD,
+} __clib_packed ipip_mode_t;
 
 typedef struct
 {
   ip46_address_t src;
   ip46_address_t dst;
-  ipip_transport_t transport;
   u32 fib_index;
-} __attribute__ ((packed)) ipip_tunnel_key_t;
+  ipip_transport_t transport;
+  ipip_mode_t mode;
+  u16 __pad;
+} __clib_packed ipip_tunnel_key_t;
 
-typedef enum
-{
-  IPIP_MODE_P2P = 0,
-  IPIP_MODE_6RD,
-} ipip_mode_t;
-
-/**
- * Keep these idenitical to those in ipip.api
- */
-#define forech_ipip_tunnel_flag                     \
-  _(NONE, "none", 0x0)                              \
-  _(ENCAP_COPY_DF, "encap-copy-df", 0x1)            \
-  _(ENCAP_SET_DF, "encap-set-df", 0x2)              \
-  _(ENCAP_COPY_DSCP, "encap-copy-dscp", 0x4)        \
-  _(ENCAP_COPY_ECN, "encap-copy-ecn", 0x8)          \
-  _(DECAP_COPY_ECN, "decap-copy-ecn", 0x10)
-
-typedef enum ipip_tunnel_flags_t_
-{
-#define _(a,b,c) IPIP_TUNNEL_FLAG_##a = c,
-  forech_ipip_tunnel_flag
-#undef _
-} __clib_packed ipip_tunnel_flags_t;
-
-#define IPIP_TUNNEL_FLAG_MASK (0x1f)
-
-extern u8 *format_ipip_tunnel_flags (u8 * s, va_list * args);
+STATIC_ASSERT_SIZEOF (ipip_tunnel_key_t, 5 * sizeof (u64));
 
 /**
  * @brief A representation of a IPIP tunnel
@@ -96,7 +79,6 @@ typedef struct
 
   ipip_mode_t mode;
   ipip_transport_t transport;
-  ipip_tunnel_key_t *key;
   ip46_address_t tunnel_src;
   ip46_address_t tunnel_dst;
   u32 fib_index;
@@ -104,7 +86,7 @@ typedef struct
   u32 sw_if_index;
   u32 dev_instance;		/* Real device instance in tunnel vector */
   u32 user_instance;		/* Instance name being shown to user */
-  ipip_tunnel_flags_t flags;
+  tunnel_encap_decap_flags_t flags;
   ip_dscp_t dscp;
 
   struct
@@ -166,8 +148,8 @@ sixrd_get_addr_net (const ipip_tunnel_t * t, u64 dal)
 
 int ipip_add_tunnel (ipip_transport_t transport, u32 instance,
 		     ip46_address_t * src, ip46_address_t * dst,
-		     u32 fib_index, ipip_tunnel_flags_t flags,
-		     ip_dscp_t dscp, u32 * sw_if_indexp);
+		     u32 fib_index, tunnel_encap_decap_flags_t flags,
+		     ip_dscp_t dscp, tunnel_mode_t mode, u32 * sw_if_indexp);
 int ipip_del_tunnel (u32 sw_if_index);
 int sixrd_add_tunnel (ip6_address_t * ip6_prefix, u8 ip6_prefix_len,
 		      ip4_address_t * ip4_prefix, u8 ip4_prefix_len,
@@ -175,10 +157,16 @@ int sixrd_add_tunnel (ip6_address_t * ip6_prefix, u8 ip6_prefix_len,
 		      u32 ip4_fib_index, u32 ip6_fib_index,
 		      u32 * sw_if_index);
 int sixrd_del_tunnel (u32 sw_if_index);
-void ipip_tunnel_db_add (ipip_tunnel_t * t, ipip_tunnel_key_t * key);
-void ipip_tunnel_db_remove (ipip_tunnel_t * t);
-ipip_tunnel_t *ipip_tunnel_db_find (ipip_tunnel_key_t * key);
+void ipip_tunnel_db_add (ipip_tunnel_t * t, const ipip_tunnel_key_t * key);
+void ipip_tunnel_db_remove (ipip_tunnel_t * t, const ipip_tunnel_key_t * key);
+ipip_tunnel_t *ipip_tunnel_db_find (const ipip_tunnel_key_t * key);
 ipip_tunnel_t *ipip_tunnel_db_find_by_sw_if_index (u32 sw_if_index);
+void ipip_mk_key (const ipip_tunnel_t * t, ipip_tunnel_key_t * key);
+void ipip_mk_key_i (ipip_transport_t transport,
+		    ipip_mode_t mode,
+		    const ip46_address_t * src,
+		    const ip46_address_t * dst,
+		    u32 fib_index, ipip_tunnel_key_t * key);
 
 #endif
 

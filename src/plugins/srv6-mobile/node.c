@@ -450,7 +450,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		      for (index = 0; index < 2; index++)
 			{
 			  sp[index] = dst0.as_u8[offset + 5 + index] << shift;
-			  sp[index] =
+			  sp[index] |=
 			    dst0.as_u8[offset + 6 + index] >> (8 - shift);
 			}
 		    }
@@ -763,7 +763,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      u8 qfi = 0;
 	      u8 *qfip = NULL;
 	      u16 seq = 0;
-	      u8 *seqp = NULL;
+	      u8 *seqp;
 	      u32 offset, shift, index;
 	      ip6srv_combo_header_t *ip6srv;
 	      gtpu_pdu_session_t *sess = NULL;
@@ -779,6 +779,8 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      teid = hdr->gtpu.teid;
 	      teidp = (u8 *) & teid;
 
+	      seqp = (u8 *) & seq;
+
 	      gtpu_type = hdr->gtpu.type;
 
 	      if (hdr->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
@@ -787,7 +789,6 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		  hdr_len += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr->gtpu.ext->seq;
-		  seqp = (u8 *) & seq;
 
 		  if (hdr->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -1354,7 +1355,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		      for (index = 0; index < 2; index++)
 			{
 			  sp[index] = dst0.as_u8[offset + index] << shift;
-			  sp[index] =
+			  sp[index] |=
 			    dst0.as_u8[offset + index + 1] >> (8 - shift);
 			}
 		    }
@@ -1610,7 +1611,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	  u8 qfi;
 	  u8 *qfip = NULL;
 	  u16 seq = 0;
-	  u8 *seqp = NULL;
+	  u8 *seqp;
 	  u32 offset, shift;
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
@@ -1661,13 +1662,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	      teid = hdr0->gtpu.teid;
 	      teidp = (u8 *) & teid;
 
+	      seqp = (u8 *) & seq;
+
 	      if (hdr0->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
 		{
 		  // Extention header.
 		  hdrlen += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr0->gtpu.ext->seq;
-		  seqp = (u8 *) & seq;
 
 		  if (hdr0->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -1698,8 +1700,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      if (seqp)
-			clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+		      clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
 		    }
 		  else
 		    {
@@ -1728,14 +1729,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      if (seqp)
+		      for (idx = 0; idx < 2; idx++)
 			{
-			  for (idx = 0; idx < 2; idx++)
-			    {
-			      seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
-			      seg0.as_u8[offset + idx + 1] |=
-				seqp[idx] << (8 - shift);
-			    }
+			  seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			  seg0.as_u8[offset + idx + 1] |=
+			    seqp[idx] << (8 - shift);
 			}
 		    }
 		  else
@@ -2116,7 +2114,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	  u8 qfi = 0;
 	  u8 *qfip = NULL;
 	  u16 seq = 0;
-	  u8 *seqp = NULL;
+	  u8 *seqp;
 	  u32 offset, shift;
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
@@ -2168,13 +2166,14 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	      teid = hdr0->gtpu.teid;
 	      teidp = (u8 *) & teid;
 
+	      seqp = (u8 *) & seq;
+
 	      if (hdr0->gtpu.ver_flags & (GTPU_EXTHDR_FLAG | GTPU_SEQ_FLAG))
 		{
 		  // Extention header.
 		  hdrlen += sizeof (gtpu_exthdr_t);
 
 		  seq = hdr0->gtpu.ext->seq;
-		  seqp = (u8 *) & seq;
 
 		  if (hdr0->gtpu.ext->nextexthdr == GTPU_EXTHDR_PDU_SESSION)
 		    {
@@ -2203,8 +2202,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      if (seqp)
-			clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
+		      clib_memcpy_fast (&seg0.as_u8[offset], seqp, 2);
 		    }
 		  else
 		    {
@@ -2233,14 +2231,11 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		      || gtpu_type == GTPU_TYPE_ECHO_REPLY
 		      || gtpu_type == GTPU_TYPE_ERROR_INDICATION)
 		    {
-		      if (seqp)
+		      for (idx = 0; idx < 2; idx++)
 			{
-			  for (idx = 0; idx < 2; idx++)
-			    {
-			      seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
-			      seg0.as_u8[offset + idx + 1] |=
-				seqp[idx] << (8 - shift);
-			    }
+			  seg0.as_u8[offset + idx] |= seqp[idx] >> shift;
+			  seg0.as_u8[offset + idx + 1] |=
+			    seqp[idx] << (8 - shift);
 			}
 		    }
 		  else

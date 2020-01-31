@@ -1488,7 +1488,7 @@ fib_path_copy (fib_node_index_t path_index,
     orig_path = fib_path_get(path_index);
     ASSERT(NULL != orig_path);
 
-    memcpy(path, orig_path, sizeof(*path));
+    clib_memcpy(path, orig_path, sizeof(*path));
 
     FIB_PATH_DBG(path, "create-copy:%d", path_index);
 
@@ -1870,7 +1870,8 @@ fib_path_recursive_loop_detect (fib_node_index_t path_index,
     }
     case FIB_PATH_TYPE_ATTACHED_NEXT_HOP:
     case FIB_PATH_TYPE_ATTACHED:
-	if (adj_recursive_loop_detect(path->fp_dpo.dpoi_index,
+	if (dpo_is_adj(&path->fp_dpo) &&
+            adj_recursive_loop_detect(path->fp_dpo.dpoi_index,
                                       entry_indicies))
 	{
 	    FIB_PATH_DBG(path, "recursive loop formed");
