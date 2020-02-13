@@ -64,8 +64,8 @@ class TestSRv6EndMGTP4E(VppTestCase):
 
         return pkts
 
-    def test_srv6_end(self):
-        """ test_srv6_end """
+    def test_srv6_mobile(self):
+        """ test_srv6_mobile """
         pkts = self.create_packets([("A::1", "B::1"), ("C::1", "D::1")])
 
         self.vapi.cli(
@@ -91,28 +91,86 @@ class TestSRv6EndMGTP4E(VppTestCase):
             self.assertEqual(pkt[GTP_U_Header].teid, 0xbbbbbbbb)
 
 
-class TestSRv6TMTmap(VppTestCase):
-    """ SRv6 T.M.Tmap (GTP-U -> SRv6) """
+class TestSRv6TMGTP4D(VppTestCase):
+    """ SRv6 T.M.GTP4D (GTP-U -> SRv6) """
 
     @classmethod
     def setUpClass(cls):
-        super(TestSRv6TMTmap, cls).setUpClass()
+        super(TestSRv6TMGTP4D, cls).setUpClass()
         try:
             cls.create_pg_interfaces(range(2))
             cls.pg_if_i = cls.pg_interfaces[0]
             cls.pg_if_o = cls.pg_interfaces[1]
 
             cls.pg_if_i.config_ip4()
+            cls.pg_if_i.config_ip6()
+            cls.pg_if_o.config_ip4()
             cls.pg_if_o.config_ip6()
+
+            cls.ip4_dst = "1.1.1.1"
+            cls.ip4_src = "2.2.2.2"
+
+            cls.ip6_dst = cls.pg_if_o.remote_ip6
 
             for pg_if in cls.pg_interfaces:
                 pg_if.admin_up()
                 pg_if.resolve_arp()
+                pg_if.resolve_ndp(timeout=5)
 
         except Exception:
-            super(TestSRv6TMTmap, cls).tearDownClass()
+            super(TestSRv6TMGTP4D, cls).tearDownClass()
             raise
 
+    def create_packets(self, inner):
+
+        ip4_dst = IPv4Address(str(self.ip4_dst))
+
+        ip4_src = IPv4Address(str(self.ip4_src))
+
+        self.logger.info("ip4 dst: {}".format(ip4_dst))
+        self.logger.info("ip4 src: {}".format(ip4_src))
+
+        pkts = list()
+        for d, s in inner:
+            pkt = (Ether() /
+                   IP(dst=str(ip4_dst), src=str(ip4_src)) /
+                   UDP(sport=2152, dport=2152) /
+                   GTP_U_Header(gtp_type="g_pdu", teid=200) /
+                   IPv6(dst=d, src=s) /
+                   UDP(sport=1000, dport=23))
+            self.logger.info(pkt.show2(dump=True))
+            pkts.append(pkt)
+
+        return pkts
+
+    def test_srv6_mobile(self):
+        """ test_srv6_mobile """
+        pkts = self.create_packets([("A::1", "B::1"), ("C::1", "D::1")])
+
+        self.vapi.cli("set sr encaps source addr A1::1")
+        self.vapi.cli("sr policy add bsid D4:: next D2:: next D3::")
+        self.vapi.cli("sr policy add bsid D5:: behavior t.m.gtp4.d D4::/32 v6src_prefix C1::/64 nhtype ipv6")
+        self.vapi.cli("sr steer l3 {}/32 via bsid D5::".format(self.ip4_dst))
+        self.vapi.cli("ip route add D2::/32 via {}".format(self.ip6_dst))
+
+        self.logger.info(self.vapi.cli("show sr steer"))
+        self.logger.info(self.vapi.cli("show sr policies"))
+
+        self.vapi.cli("clear errors")
+
+        self.pg0.add_stream(pkts)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+
+        self.logger.info(self.vapi.cli("show errors"))
+        self.logger.info(self.vapi.cli("show int address"))
+
+        capture = self.pg1.get_capture(len(pkts))
+
+        for pkt in capture:
+            self.logger.info(pkt.show2(dump=True))
+            self.logger.info("GTP4.D Address={}".format(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0])))
+            self.assertEqual(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0]), "d4:0:101:101::c800:0")
 
 class TestSRv6EndMGTP6E(VppTestCase):
     """ SRv6 End.M.GTP6.E """

@@ -133,8 +133,8 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr, u16 prefixlen,
     }
   else
     /* delete; localsid does not exist; complain */
-    if (is_del)
-      return -2;
+  if (is_del)
+    return -2;
 
   if (behavior >= SR_BEHAVIOR_LAST)
     {
@@ -184,9 +184,11 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr, u16 prefixlen,
       if (usid_len)
 	{
 	  int usid_width;
-	  clib_memcpy (&ls->usid_block, localsid_addr, sizeof (ip6_address_t));
+	  clib_memcpy (&ls->usid_block, localsid_addr,
+		       sizeof (ip6_address_t));
 
-	  usid_width = prefixlen != 0 ? prefixlen - usid_len : pref_length - usid_len;
+	  usid_width =
+	    prefixlen != 0 ? prefixlen - usid_len : pref_length - usid_len;
 	  if (usid_width % 8)
 	    {
 	      pool_put (sm->localsids, ls);
@@ -395,7 +397,7 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	  if (!behavior)
 	    {
 	      if (unformat (input, "end"))
-	        behavior = SR_BEHAVIOR_END;
+		behavior = SR_BEHAVIOR_END;
 	      else
 		break;
 	    }
@@ -413,11 +415,10 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
     {
       if (usid_size != 16 && usid_size != 32)
 	return clib_error_return (0,
-			          "Error: Invalid uSID length (16 or 32).");
+				  "Error: Invalid uSID length (16 or 32).");
 
       if (behavior != SR_BEHAVIOR_END)
-	return clib_error_return (0,
-			          "Error: Unsupported behavior for uSID.");
+	return clib_error_return (0, "Error: Unsupported behavior for uSID.");
     }
 
   if (!address_set)
@@ -521,10 +522,11 @@ show_sr_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	{
 	case SR_BEHAVIOR_END:
 	  if (ls->usid_index)
-	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d, length: %d]",
-			    format_ip6_address, &ls->localsid,
-			    format_ip6_address, &ls->usid_block,
-			    ls->usid_index * 8, ls->usid_len * 8);
+	    vlib_cli_output (vm,
+			     "\tAddress: \t%U\n\tBehavior: \tEnd [uSID:\t%U/%d, length: %d]",
+			     format_ip6_address, &ls->localsid,
+			     format_ip6_address, &ls->usid_block,
+			     ls->usid_index * 8, ls->usid_len * 8);
 	  else
 	    vlib_cli_output (vm, "\tAddress: \t%U\n\tBehavior: \tEnd",
 			     format_ip6_address, &ls->localsid);
@@ -783,11 +785,12 @@ end_srh_processing (vlib_node_runtime_t * node,
   if (PREDICT_TRUE (sr0 && sr0->type == ROUTING_HEADER_TYPE_SR))
     {
       if (ls0->behavior == SR_BEHAVIOR_END
-       && ls0->usid_index
-       && ip6_address_is_equal_masked (&ip0->dst_address,
-			               &ls0->usid_block, &ls0->usid_block_mask))
+	  && ls0->usid_index
+	  && ip6_address_is_equal_masked (&ip0->dst_address,
+					  &ls0->usid_block,
+					  &ls0->usid_block_mask))
 	{
-  	  bool next_usid = false;
+	  bool next_usid = false;
 	  u8 index;
 
 	  /* uSID */
@@ -808,8 +811,9 @@ end_srh_processing (vlib_node_runtime_t * node,
 
 	      /* advance next usid */
 	      for (; index < 16 - offset; index++)
-	        {
-		  ip0->dst_address.as_u8[index] = ip0->dst_address.as_u8[index + offset];
+		{
+		  ip0->dst_address.as_u8[index] =
+		    ip0->dst_address.as_u8[index + offset];
 		}
 
 	      for (; index < 16; index++)
