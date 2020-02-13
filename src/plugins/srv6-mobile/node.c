@@ -400,6 +400,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	      u16 ie_size = 0;
 	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 	      void *p;
+	      uword plen;
 
 	      if (ip6srv0->ip.protocol == IPPROTO_IPV6_ROUTE)
 		{
@@ -527,7 +528,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 	      // get length of encapsulated IPv6 packet (the remaining part)
 	      p = vlib_buffer_get_current (b0);
 
-	      len0 = vlib_buffer_length_in_chain (vm, b0);
+	      plen = len0 = vlib_buffer_length_in_chain (vm, b0);
 
 	      len0 += hdrlen;
 
@@ -631,7 +632,7 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		    }
 		}
 
-	      key = hash_memory (p, hdrlen, 0);
+	      key = hash_memory (p, plen < 40 ? plen : 40, 0);
 	      port = hash_uword_to_u16 (&key);
 	      hdr0->udp.src_port = port;
 
@@ -1268,6 +1269,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	  u16 port;
 	  u16 tag;
 	  void *p;
+	  uword plen;
 
 	  u32 next0 = SRV6_END_M_GTP6_E_NEXT_LOOKUP;
 
@@ -1433,7 +1435,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      // get length of encapsulated IPv6 packet (the remaining part)
 	      p = vlib_buffer_get_current (b0);
 
-	      len0 = vlib_buffer_length_in_chain (vm, b0);
+	      plen = len0 = vlib_buffer_length_in_chain (vm, b0);
 
 	      len0 += hdrlen;
 
@@ -1529,7 +1531,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 							       (gtpu_header_t));
 
 	      // UDP source port.
-	      key = hash_memory (p, len0, 0);
+	      key = hash_memory (p, plen < 40 ? plen : 40, 0);
 	      port = hash_uword_to_u16 (&key);
 	      hdr0->udp.src_port = port;
 
