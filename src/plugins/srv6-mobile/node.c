@@ -1421,16 +1421,9 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		    }
 		}
 
-	      if (ip6srv0->ip.protocol == IPPROTO_IPV6_ROUTE)
-		{
-		  vlib_buffer_advance (b0,
-				       (word) sizeof (ip6srv_combo_header_t) +
-				       ip6srv0->sr.length * 8);
-		}
-	      else
-		{
-		  vlib_buffer_advance (b0, (word) sizeof (ip6_header_t));
-		}
+	      vlib_buffer_advance (b0,
+	  		           (word) sizeof (ip6srv_combo_header_t) +
+			           ip6srv0->sr.length * 8);
 
 	      // get length of encapsulated IPv6 packet (the remaining part)
 	      p = vlib_buffer_get_current (b0);
