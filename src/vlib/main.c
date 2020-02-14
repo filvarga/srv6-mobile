@@ -1717,6 +1717,7 @@ vlib_main_or_worker_loop (vlib_main_t * vm, int is_main)
 
   vm->cpu_id = clib_get_current_cpu_id ();
   vm->numa_node = clib_get_current_numa_node ();
+  os_set_numa_index (vm->numa_node);
 
   /* Start all processes. */
   if (is_main)
@@ -2020,8 +2021,6 @@ vlib_main (vlib_main_t * volatile vm, unformat_input_t * input)
   vlib_node_main_t *nm = &vm->node_main;
 
   vm->queue_signal_callback = dummy_queue_signal_callback;
-
-  clib_time_init (&vm->clib_time);
 
   /* Turn on event log. */
   if (!vm->elog_main.event_ring_size)

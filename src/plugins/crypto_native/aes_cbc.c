@@ -18,7 +18,6 @@
 #include <vlib/vlib.h>
 #include <vnet/plugin/plugin.h>
 #include <vnet/crypto/crypto.h>
-#include <x86intrin.h>
 #include <crypto_native/crypto_native.h>
 #include <crypto_native/aes.h>
 
@@ -30,185 +29,190 @@ typedef struct
 {
   u8x16 encrypt_key[15];
 #if __VAES__
-  __m512i decrypt_key[15];
+  u8x64 decrypt_key[15];
 #else
   u8x16 decrypt_key[15];
 #endif
 } aes_cbc_key_data_t;
 
-static_always_inline u8x16 __clib_unused
-xor3 (u8x16 a, u8x16 b, u8x16 c)
-{
-#if __AVX512F__
-  return (u8x16) _mm_ternarylogic_epi32 ((__m128i) a, (__m128i) b,
-					 (__m128i) c, 0x96);
-#endif
-  return a ^ b ^ c;
-}
-
-#if __VAES__
-static_always_inline __m512i
-xor3_x4 (__m512i a, __m512i b, __m512i c)
-{
-  return _mm512_ternarylogic_epi32 (a, b, c, 0x96);
-}
-
-static_always_inline __m512i
-aes_block_load_x4 (u8 * src[], int i)
-{
-  __m512i r = { };
-  r = _mm512_inserti64x2 (r, (__m128i) aes_block_load (src[0] + i), 0);
-  r = _mm512_inserti64x2 (r, (__m128i) aes_block_load (src[1] + i), 1);
-  r = _mm512_inserti64x2 (r, (__m128i) aes_block_load (src[2] + i), 2);
-  r = _mm512_inserti64x2 (r, (__m128i) aes_block_load (src[3] + i), 3);
-  return r;
-}
-
-static_always_inline void
-aes_block_store_x4 (u8 * dst[], int i, __m512i r)
-{
-  aes_block_store (dst[0] + i, (u8x16) _mm512_extracti64x2_epi64 (r, 0));
-  aes_block_store (dst[1] + i, (u8x16) _mm512_extracti64x2_epi64 (r, 1));
-  aes_block_store (dst[2] + i, (u8x16) _mm512_extracti64x2_epi64 (r, 2));
-  aes_block_store (dst[3] + i, (u8x16) _mm512_extracti64x2_epi64 (r, 3));
-}
-#endif
 
 static_always_inline void __clib_unused
-aes_cbc_dec (u8x16 * k, u8 * src, u8 * dst, u8 * iv, int count,
-	     aes_key_size_t rounds)
+aes_cbc_dec (u8x16 * k, u8x16u * src, u8x16u * dst, u8x16u * iv, int count,
+	     int rounds)
 {
-  u8x16 r0, r1, r2, r3, c0, c1, c2, c3, f;
-  int i;
+  u8x16 r[4], c[4], f;
 
-  f = aes_block_load (iv);
-
+  f = iv[0];
   while (count >= 64)
     {
-      _mm_prefetch (src + 128, _MM_HINT_T0);
-      _mm_prefetch (dst + 128, _MM_HINT_T0);
+      clib_prefetch_load (src + 8);
+      clib_prefetch_load (dst + 8);
 
-      c0 = aes_block_load (src);
-      c1 = aes_block_load (src + 16);
-      c2 = aes_block_load (src + 32);
-      c3 = aes_block_load (src + 48);
+      c[0] = r[0] = src[0];
+      c[1] = r[1] = src[1];
+      c[2] = r[2] = src[2];
+      c[3] = r[3] = src[3];
 
-      r0 = c0 ^ k[0];
-      r1 = c1 ^ k[0];
-      r2 = c2 ^ k[0];
-      r3 = c3 ^ k[0];
+#if __x86_64__
+      r[0] ^= k[0];
+      r[1] ^= k[0];
+      r[2] ^= k[0];
+      r[3] ^= k[0];
 
-      for (i = 1; i < rounds; i++)
+      for (int i = 1; i < rounds; i++)
 	{
-	  r0 = aes_dec_round (r0, k[i]);
-	  r1 = aes_dec_round (r1, k[i]);
-	  r2 = aes_dec_round (r2, k[i]);
-	  r3 = aes_dec_round (r3, k[i]);
+	  r[0] = aes_dec_round (r[0], k[i]);
+	  r[1] = aes_dec_round (r[1], k[i]);
+	  r[2] = aes_dec_round (r[2], k[i]);
+	  r[3] = aes_dec_round (r[3], k[i]);
 	}
 
-      r0 = aes_dec_last_round (r0, k[i]);
-      r1 = aes_dec_last_round (r1, k[i]);
-      r2 = aes_dec_last_round (r2, k[i]);
-      r3 = aes_dec_last_round (r3, k[i]);
-
-      aes_block_store (dst, r0 ^ f);
-      aes_block_store (dst + 16, r1 ^ c0);
-      aes_block_store (dst + 32, r2 ^ c1);
-      aes_block_store (dst + 48, r3 ^ c2);
-
-      f = c3;
+      r[0] = aes_dec_last_round (r[0], k[rounds]);
+      r[1] = aes_dec_last_round (r[1], k[rounds]);
+      r[2] = aes_dec_last_round (r[2], k[rounds]);
+      r[3] = aes_dec_last_round (r[3], k[rounds]);
+#else
+      for (int i = 0; i < rounds - 1; i++)
+	{
+	  r[0] = vaesimcq_u8 (vaesdq_u8 (r[0], k[i]));
+	  r[1] = vaesimcq_u8 (vaesdq_u8 (r[1], k[i]));
+	  r[2] = vaesimcq_u8 (vaesdq_u8 (r[2], k[i]));
+	  r[3] = vaesimcq_u8 (vaesdq_u8 (r[3], k[i]));
+	}
+      r[0] = vaesdq_u8 (r[0], k[rounds - 1]) ^ k[rounds];
+      r[1] = vaesdq_u8 (r[1], k[rounds - 1]) ^ k[rounds];
+      r[2] = vaesdq_u8 (r[2], k[rounds - 1]) ^ k[rounds];
+      r[3] = vaesdq_u8 (r[3], k[rounds - 1]) ^ k[rounds];
+#endif
+      dst[0] = r[0] ^ f;
+      dst[1] = r[1] ^ c[0];
+      dst[2] = r[2] ^ c[1];
+      dst[3] = r[3] ^ c[2];
+      f = c[3];
 
       count -= 64;
-      src += 64;
-      dst += 64;
+      src += 4;
+      dst += 4;
     }
 
   while (count > 0)
     {
-      c0 = aes_block_load (src);
-      r0 = c0 ^ k[0];
-      for (i = 1; i < rounds; i++)
-	r0 = aes_dec_round (r0, k[i]);
-      r0 = aes_dec_last_round (r0, k[i]);
-      aes_block_store (dst, r0 ^ f);
-      f = c0;
+      c[0] = r[0] = src[0];
+#if __x86_64__
+      r[0] ^= k[0];
+      for (int i = 1; i < rounds; i++)
+	r[0] = aes_dec_round (r[0], k[i]);
+      r[0] = aes_dec_last_round (r[0], k[rounds]);
+#else
+      c[0] = r[0] = src[0];
+      for (int i = 0; i < rounds - 1; i++)
+	r[0] = vaesimcq_u8 (vaesdq_u8 (r[0], k[i]));
+      r[0] = vaesdq_u8 (r[0], k[rounds - 1]) ^ k[rounds];
+#endif
+      dst[0] = r[0] ^ f;
+      f = c[0];
+
       count -= 16;
-      src += 16;
-      dst += 16;
+      src += 1;
+      dst += 1;
     }
 }
 
+#if __x86_64__
 #ifdef __VAES__
+
+static_always_inline u8x64
+aes_block_load_x4 (u8 * src[], int i)
+{
+  u8x64 r = { };
+  r = u8x64_insert_u8x16 (r, aes_block_load (src[0] + i), 0);
+  r = u8x64_insert_u8x16 (r, aes_block_load (src[1] + i), 1);
+  r = u8x64_insert_u8x16 (r, aes_block_load (src[2] + i), 2);
+  r = u8x64_insert_u8x16 (r, aes_block_load (src[3] + i), 3);
+  return r;
+}
+
 static_always_inline void
-vaes_cbc_dec (__m512i * k, u8 * src, u8 * dst, u8 * iv, int count,
+aes_block_store_x4 (u8 * dst[], int i, u8x64 r)
+{
+  aes_block_store (dst[0] + i, u8x64_extract_u8x16 (r, 0));
+  aes_block_store (dst[1] + i, u8x64_extract_u8x16 (r, 1));
+  aes_block_store (dst[2] + i, u8x64_extract_u8x16 (r, 2));
+  aes_block_store (dst[3] + i, u8x64_extract_u8x16 (r, 3));
+}
+
+static_always_inline u8x64
+aes_cbc_dec_permute (u8x64 a, u8x64 b)
+{
+  __m512i perm = { 6, 7, 8, 9, 10, 11, 12, 13 };
+  return (u8x64) _mm512_permutex2var_epi64 ((__m512i) a, perm, (__m512i) b);
+}
+
+static_always_inline void
+vaes_cbc_dec (u8x64 * k, u8x64u * src, u8x64u * dst, u8x16 * iv, int count,
 	      aes_key_size_t rounds)
 {
-  __m512i permute = { 6, 7, 8, 9, 10, 11, 12, 13 };
-  __m512i r0, r1, r2, r3, c0, c1, c2, c3, f = { };
+  u8x64 f, r[4], c[4] = { };
   __mmask8 m;
   int i, n_blocks = count >> 4;
 
-  f = _mm512_mask_loadu_epi64 (f, 0xc0, (__m512i *) (iv - 48));
+  f = (u8x64) _mm512_mask_loadu_epi64 (_mm512_setzero_si512 (), 0xc0,
+				       (__m512i *) (iv - 3));
 
   while (n_blocks >= 16)
     {
-      c0 = _mm512_loadu_si512 ((__m512i *) src);
-      c1 = _mm512_loadu_si512 ((__m512i *) (src + 64));
-      c2 = _mm512_loadu_si512 ((__m512i *) (src + 128));
-      c3 = _mm512_loadu_si512 ((__m512i *) (src + 192));
+      c[0] = src[0];
+      c[1] = src[1];
+      c[2] = src[2];
+      c[3] = src[3];
 
-      r0 = c0 ^ k[0];
-      r1 = c1 ^ k[0];
-      r2 = c2 ^ k[0];
-      r3 = c3 ^ k[0];
+      r[0] = c[0] ^ k[0];
+      r[1] = c[1] ^ k[0];
+      r[2] = c[2] ^ k[0];
+      r[3] = c[3] ^ k[0];
 
       for (i = 1; i < rounds; i++)
 	{
-	  r0 = _mm512_aesdec_epi128 (r0, k[i]);
-	  r1 = _mm512_aesdec_epi128 (r1, k[i]);
-	  r2 = _mm512_aesdec_epi128 (r2, k[i]);
-	  r3 = _mm512_aesdec_epi128 (r3, k[i]);
+	  r[0] = aes_dec_round_x4 (r[0], k[i]);
+	  r[1] = aes_dec_round_x4 (r[1], k[i]);
+	  r[2] = aes_dec_round_x4 (r[2], k[i]);
+	  r[3] = aes_dec_round_x4 (r[3], k[i]);
 	}
 
-      r0 = _mm512_aesdeclast_epi128 (r0, k[i]);
-      r1 = _mm512_aesdeclast_epi128 (r1, k[i]);
-      r2 = _mm512_aesdeclast_epi128 (r2, k[i]);
-      r3 = _mm512_aesdeclast_epi128 (r3, k[i]);
+      r[0] = aes_dec_last_round_x4 (r[0], k[i]);
+      r[1] = aes_dec_last_round_x4 (r[1], k[i]);
+      r[2] = aes_dec_last_round_x4 (r[2], k[i]);
+      r[3] = aes_dec_last_round_x4 (r[3], k[i]);
 
-      r0 ^= _mm512_permutex2var_epi64 (f, permute, c0);
-      _mm512_storeu_si512 ((__m512i *) dst, r0);
-
-      r1 ^= _mm512_permutex2var_epi64 (c0, permute, c1);
-      _mm512_storeu_si512 ((__m512i *) (dst + 64), r1);
-
-      r2 ^= _mm512_permutex2var_epi64 (c1, permute, c2);
-      _mm512_storeu_si512 ((__m512i *) (dst + 128), r2);
-
-      r3 ^= _mm512_permutex2var_epi64 (c2, permute, c3);
-      _mm512_storeu_si512 ((__m512i *) (dst + 192), r3);
-      f = c3;
+      dst[0] = r[0] ^= aes_cbc_dec_permute (f, c[0]);
+      dst[1] = r[1] ^= aes_cbc_dec_permute (c[0], c[1]);
+      dst[2] = r[2] ^= aes_cbc_dec_permute (c[1], c[2]);
+      dst[4] = r[3] ^= aes_cbc_dec_permute (c[2], c[3]);
+      f = c[3];
 
       n_blocks -= 16;
-      src += 256;
-      dst += 256;
+      src += 4;
+      dst += 4;
     }
 
   while (n_blocks > 0)
     {
       m = (1 << (n_blocks * 2)) - 1;
-      c0 = _mm512_mask_loadu_epi64 (c0, m, (__m512i *) src);
-      f = _mm512_permutex2var_epi64 (f, permute, c0);
-      r0 = c0 ^ k[0];
+      c[0] = (u8x64) _mm512_mask_loadu_epi64 ((__m512i) c[0], m,
+					      (__m512i *) src);
+      f = aes_cbc_dec_permute (f, c[0]);
+      r[0] = c[0] ^ k[0];
       for (i = 1; i < rounds; i++)
-	r0 = _mm512_aesdec_epi128 (r0, k[i]);
-      r0 = _mm512_aesdeclast_epi128 (r0, k[i]);
-      _mm512_mask_storeu_epi64 ((__m512i *) dst, m, r0 ^ f);
-      f = c0;
+	r[0] = aes_dec_round_x4 (r[0], k[i]);
+      r[0] = aes_dec_last_round_x4 (r[0], k[i]);
+      _mm512_mask_storeu_epi64 ((__m512i *) dst, m, (__m512i) (r[0] ^ f));
+      f = c[0];
       n_blocks -= 4;
-      src += 64;
-      dst += 64;
+      src += 1;
+      dst += 1;
     }
 }
+#endif
 #endif
 
 #ifdef __VAES__
@@ -216,16 +220,18 @@ vaes_cbc_dec (__m512i * k, u8 * src, u8 * dst, u8 * iv, int count,
 #define u32xN u32x16
 #define u32xN_min_scalar u32x16_min_scalar
 #define u32xN_is_all_zero u32x16_is_all_zero
+#define u32xN_splat u32x16_splat
 #else
 #define N 4
 #define u32xN u32x4
 #define u32xN_min_scalar u32x4_min_scalar
 #define u32xN_is_all_zero u32x4_is_all_zero
+#define u32xN_splat u32x4_splat
 #endif
 
 static_always_inline u32
-aesni_ops_enc_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
-		       u32 n_ops, aes_key_size_t ks)
+aes_ops_enc_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
+		     u32 n_ops, aes_key_size_t ks)
 {
   crypto_native_main_t *cm = &crypto_native_main;
   crypto_native_per_thread_data_t *ptd =
@@ -238,13 +244,14 @@ aesni_ops_enc_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
   vnet_crypto_key_index_t key_index[N];
   u8 *src[N] = { };
   u8 *dst[N] = { };
-  /* *INDENT-OFF* */
-  union
-  {
-    u8x16 x1[N];
-    __m512i x4[N / 4];
-  } r = { }, k[15] = { };
-  /* *INDENT-ON* */
+#if __VAES__
+  u8x64 r[N / 4] = { };
+  u8x64 k[15][N / 4] = { };
+  u8x16 *kq, *rq = (u8x16 *) r;
+#else
+  u8x16 r[N] = { };
+  u8x16 k[15][N] = { };
+#endif
 
   for (i = 0; i < N; i++)
     key_index[i] = ~0;
@@ -262,14 +269,20 @@ more:
 	  }
 	else
 	  {
+	    u8x16 t;
 	    if (ops[0]->flags & VNET_CRYPTO_OP_FLAG_INIT_IV)
 	      {
-		r.x1[i] = ptd->cbc_iv[i];
-		aes_block_store (ops[0]->iv, r.x1[i]);
-		ptd->cbc_iv[i] = aes_enc_round (r.x1[i], r.x1[i]);
+		t = ptd->cbc_iv[i];
+		*(u8x16u *) ops[0]->iv = t;
+		ptd->cbc_iv[i] = aes_enc_round (t, t);
 	      }
 	    else
-	      r.x1[i] = aes_block_load (ops[0]->iv);
+	      t = aes_block_load (ops[0]->iv);
+#if __VAES__
+	    rq[i] = t;
+#else
+	    r[i] = t;
+#endif
 
 	    src[i] = ops[0]->src;
 	    dst[i] = ops[0]->dst;
@@ -281,7 +294,14 @@ more:
 		key_index[i] = ops[0]->key_index;
 		kd = (aes_cbc_key_data_t *) cm->key_data[key_index[i]];
 		for (j = 0; j < rounds + 1; j++)
-		  k[j].x1[i] = kd->encrypt_key[j];
+		  {
+#if __VAES__
+		    kq = (u8x16 *) k[j];
+		    kq[i] = kd->encrypt_key[j];
+#else
+		    k[j][i] = kd->encrypt_key[j];
+#endif
+		  }
 	      }
 	    ops[0]->status = VNET_CRYPTO_OP_STATUS_COMPLETED;
 	    n_left--;
@@ -296,58 +316,81 @@ more:
   for (i = 0; i < count; i += 16)
     {
 #ifdef __VAES__
-      r.x4[0] = xor3_x4 (r.x4[0], aes_block_load_x4 (src, i), k[0].x4[0]);
-      r.x4[1] = xor3_x4 (r.x4[1], aes_block_load_x4 (src, i), k[0].x4[1]);
-      r.x4[2] = xor3_x4 (r.x4[2], aes_block_load_x4 (src, i), k[0].x4[2]);
-      r.x4[3] = xor3_x4 (r.x4[3], aes_block_load_x4 (src, i), k[0].x4[3]);
+      r[0] = u8x64_xor3 (r[0], aes_block_load_x4 (src, i), k[0][0]);
+      r[1] = u8x64_xor3 (r[1], aes_block_load_x4 (src, i), k[0][1]);
+      r[2] = u8x64_xor3 (r[2], aes_block_load_x4 (src, i), k[0][2]);
+      r[3] = u8x64_xor3 (r[3], aes_block_load_x4 (src, i), k[0][3]);
 
       for (j = 1; j < rounds; j++)
 	{
-	  r.x4[0] = _mm512_aesenc_epi128 (r.x4[0], k[j].x4[0]);
-	  r.x4[1] = _mm512_aesenc_epi128 (r.x4[1], k[j].x4[1]);
-	  r.x4[2] = _mm512_aesenc_epi128 (r.x4[2], k[j].x4[2]);
-	  r.x4[3] = _mm512_aesenc_epi128 (r.x4[3], k[j].x4[3]);
+	  r[0] = aes_enc_round_x4 (r[0], k[j][0]);
+	  r[1] = aes_enc_round_x4 (r[1], k[j][1]);
+	  r[2] = aes_enc_round_x4 (r[2], k[j][2]);
+	  r[3] = aes_enc_round_x4 (r[3], k[j][3]);
 	}
-      r.x4[0] = _mm512_aesenclast_epi128 (r.x4[0], k[j].x4[0]);
-      r.x4[1] = _mm512_aesenclast_epi128 (r.x4[1], k[j].x4[1]);
-      r.x4[2] = _mm512_aesenclast_epi128 (r.x4[2], k[j].x4[2]);
-      r.x4[3] = _mm512_aesenclast_epi128 (r.x4[3], k[j].x4[3]);
+      r[0] = aes_enc_last_round_x4 (r[0], k[j][0]);
+      r[1] = aes_enc_last_round_x4 (r[1], k[j][1]);
+      r[2] = aes_enc_last_round_x4 (r[2], k[j][2]);
+      r[3] = aes_enc_last_round_x4 (r[3], k[j][3]);
 
-      aes_block_store_x4 (dst, i, r.x4[0]);
-      aes_block_store_x4 (dst + 4, i, r.x4[1]);
-      aes_block_store_x4 (dst + 8, i, r.x4[2]);
-      aes_block_store_x4 (dst + 12, i, r.x4[3]);
+      aes_block_store_x4 (dst, i, r[0]);
+      aes_block_store_x4 (dst + 4, i, r[1]);
+      aes_block_store_x4 (dst + 8, i, r[2]);
+      aes_block_store_x4 (dst + 12, i, r[3]);
 #else
-      r.x1[0] = xor3 (r.x1[0], aes_block_load (src[0] + i), k[0].x1[0]);
-      r.x1[1] = xor3 (r.x1[1], aes_block_load (src[1] + i), k[0].x1[1]);
-      r.x1[2] = xor3 (r.x1[2], aes_block_load (src[2] + i), k[0].x1[2]);
-      r.x1[3] = xor3 (r.x1[3], aes_block_load (src[3] + i), k[0].x1[3]);
+#if __x86_64__
+      r[0] = u8x16_xor3 (r[0], aes_block_load (src[0] + i), k[0][0]);
+      r[1] = u8x16_xor3 (r[1], aes_block_load (src[1] + i), k[0][1]);
+      r[2] = u8x16_xor3 (r[2], aes_block_load (src[2] + i), k[0][2]);
+      r[3] = u8x16_xor3 (r[3], aes_block_load (src[3] + i), k[0][3]);
 
       for (j = 1; j < rounds; j++)
 	{
-	  r.x1[0] = aes_enc_round (r.x1[0], k[j].x1[0]);
-	  r.x1[1] = aes_enc_round (r.x1[1], k[j].x1[1]);
-	  r.x1[2] = aes_enc_round (r.x1[2], k[j].x1[2]);
-	  r.x1[3] = aes_enc_round (r.x1[3], k[j].x1[3]);
+	  r[0] = aes_enc_round (r[0], k[j][0]);
+	  r[1] = aes_enc_round (r[1], k[j][1]);
+	  r[2] = aes_enc_round (r[2], k[j][2]);
+	  r[3] = aes_enc_round (r[3], k[j][3]);
 	}
 
-      r.x1[0] = aes_enc_last_round (r.x1[0], k[j].x1[0]);
-      r.x1[1] = aes_enc_last_round (r.x1[1], k[j].x1[1]);
-      r.x1[2] = aes_enc_last_round (r.x1[2], k[j].x1[2]);
-      r.x1[3] = aes_enc_last_round (r.x1[3], k[j].x1[3]);
+      r[0] = aes_enc_last_round (r[0], k[j][0]);
+      r[1] = aes_enc_last_round (r[1], k[j][1]);
+      r[2] = aes_enc_last_round (r[2], k[j][2]);
+      r[3] = aes_enc_last_round (r[3], k[j][3]);
 
-      aes_block_store (dst[0] + i, r.x1[0]);
-      aes_block_store (dst[1] + i, r.x1[1]);
-      aes_block_store (dst[2] + i, r.x1[2]);
-      aes_block_store (dst[3] + i, r.x1[3]);
+      aes_block_store (dst[0] + i, r[0]);
+      aes_block_store (dst[1] + i, r[1]);
+      aes_block_store (dst[2] + i, r[2]);
+      aes_block_store (dst[3] + i, r[3]);
+#else
+      r[0] ^= aes_block_load (src[0] + i);
+      r[1] ^= aes_block_load (src[1] + i);
+      r[2] ^= aes_block_load (src[2] + i);
+      r[3] ^= aes_block_load (src[3] + i);
+      for (j = 0; j < rounds - 1; j++)
+	{
+	  r[0] = vaesmcq_u8 (vaeseq_u8 (r[0], k[j][0]));
+	  r[1] = vaesmcq_u8 (vaeseq_u8 (r[1], k[j][1]));
+	  r[2] = vaesmcq_u8 (vaeseq_u8 (r[2], k[j][2]));
+	  r[3] = vaesmcq_u8 (vaeseq_u8 (r[3], k[j][3]));
+	}
+      r[0] = vaeseq_u8 (r[0], k[j][0]) ^ k[rounds][0];
+      r[1] = vaeseq_u8 (r[1], k[j][1]) ^ k[rounds][1];
+      r[2] = vaeseq_u8 (r[2], k[j][2]) ^ k[rounds][2];
+      r[3] = vaeseq_u8 (r[3], k[j][3]) ^ k[rounds][3];
+      aes_block_store (dst[0] + i, r[0]);
+      aes_block_store (dst[1] + i, r[1]);
+      aes_block_store (dst[2] + i, r[2]);
+      aes_block_store (dst[3] + i, r[3]);
+#endif
 #endif
     }
+
+  len -= u32xN_splat (count);
 
   for (i = 0; i < N; i++)
     {
       src[i] += count;
       dst[i] += count;
-      len[i] -= count;
     }
 
   if (n_left > 0)
@@ -359,9 +402,10 @@ more:
   return n_ops;
 }
 
+
 static_always_inline u32
-aesni_ops_dec_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
-		       u32 n_ops, aes_key_size_t ks)
+aes_ops_dec_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
+		     u32 n_ops, aes_key_size_t ks)
 {
   crypto_native_main_t *cm = &crypto_native_main;
   int rounds = AES_KEY_ROUNDS (ks);
@@ -373,9 +417,11 @@ aesni_ops_dec_aes_cbc (vlib_main_t * vm, vnet_crypto_op_t * ops[],
 
 decrypt:
 #ifdef __VAES__
-  vaes_cbc_dec (kd->decrypt_key, op->src, op->dst, op->iv, op->len, rounds);
+  vaes_cbc_dec (kd->decrypt_key, (u8x64u *) op->src, (u8x64u *) op->dst,
+		(u8x16u *) op->iv, op->len, rounds);
 #else
-  aes_cbc_dec (kd->decrypt_key, op->src, op->dst, op->iv, op->len, rounds);
+  aes_cbc_dec (kd->decrypt_key, (u8x16u *) op->src, (u8x16u *) op->dst,
+	       (u8x16u *) op->iv, op->len, rounds);
 #endif
   op->status = VNET_CRYPTO_OP_STATUS_COMPLETED;
 
@@ -390,7 +436,7 @@ decrypt:
 }
 
 static_always_inline void *
-aesni_cbc_key_exp (vnet_crypto_key_t * key, aes_key_size_t ks)
+aes_cbc_key_exp (vnet_crypto_key_t * key, aes_key_size_t ks)
 {
   u8x16 e[15], d[15];
   aes_cbc_key_data_t *kd;
@@ -400,7 +446,7 @@ aesni_cbc_key_exp (vnet_crypto_key_t * key, aes_key_size_t ks)
   for (int i = 0; i < AES_KEY_ROUNDS (ks) + 1; i++)
     {
 #if __VAES__
-      kd->decrypt_key[i] = _mm512_broadcast_i64x2 ((__m128i) d[i]);
+      kd->decrypt_key[i] = (u8x64) _mm512_broadcast_i64x2 ((__m128i) d[i]);
 #else
       kd->decrypt_key[i] = d[i];
 #endif
@@ -409,19 +455,19 @@ aesni_cbc_key_exp (vnet_crypto_key_t * key, aes_key_size_t ks)
   return kd;
 }
 
-#define foreach_aesni_cbc_handler_type _(128) _(192) _(256)
+#define foreach_aes_cbc_handler_type _(128) _(192) _(256)
 
 #define _(x) \
-static u32 aesni_ops_dec_aes_cbc_##x \
+static u32 aes_ops_dec_aes_cbc_##x \
 (vlib_main_t * vm, vnet_crypto_op_t * ops[], u32 n_ops) \
-{ return aesni_ops_dec_aes_cbc (vm, ops, n_ops, AES_KEY_##x); } \
-static u32 aesni_ops_enc_aes_cbc_##x \
+{ return aes_ops_dec_aes_cbc (vm, ops, n_ops, AES_KEY_##x); } \
+static u32 aes_ops_enc_aes_cbc_##x \
 (vlib_main_t * vm, vnet_crypto_op_t * ops[], u32 n_ops) \
-{ return aesni_ops_enc_aes_cbc (vm, ops, n_ops, AES_KEY_##x); } \
-static void * aesni_cbc_key_exp_##x (vnet_crypto_key_t *key) \
-{ return aesni_cbc_key_exp (key, AES_KEY_##x); }
+{ return aes_ops_enc_aes_cbc (vm, ops, n_ops, AES_KEY_##x); } \
+static void * aes_cbc_key_exp_##x (vnet_crypto_key_t *key) \
+{ return aes_cbc_key_exp (key, AES_KEY_##x); }
 
-foreach_aesni_cbc_handler_type;
+foreach_aes_cbc_handler_type;
 #undef _
 
 #include <fcntl.h>
@@ -431,6 +477,8 @@ clib_error_t *
 crypto_native_aes_cbc_init_vaes (vlib_main_t * vm)
 #elif __AVX512F__
 crypto_native_aes_cbc_init_avx512 (vlib_main_t * vm)
+#elif __aarch64__
+crypto_native_aes_cbc_init_neon (vlib_main_t * vm)
 #elif __AVX2__
 crypto_native_aes_cbc_init_avx2 (vlib_main_t * vm)
 #else
@@ -463,12 +511,12 @@ crypto_native_aes_cbc_init_sse42 (vlib_main_t * vm)
 #define _(x) \
   vnet_crypto_register_ops_handler (vm, cm->crypto_engine_index, \
 				    VNET_CRYPTO_OP_AES_##x##_CBC_ENC, \
-				    aesni_ops_enc_aes_cbc_##x); \
+				    aes_ops_enc_aes_cbc_##x); \
   vnet_crypto_register_ops_handler (vm, cm->crypto_engine_index, \
 				    VNET_CRYPTO_OP_AES_##x##_CBC_DEC, \
-				    aesni_ops_dec_aes_cbc_##x); \
-  cm->key_fn[VNET_CRYPTO_ALG_AES_##x##_CBC] = aesni_cbc_key_exp_##x;
-  foreach_aesni_cbc_handler_type;
+				    aes_ops_dec_aes_cbc_##x); \
+  cm->key_fn[VNET_CRYPTO_ALG_AES_##x##_CBC] = aes_cbc_key_exp_##x;
+  foreach_aes_cbc_handler_type;
 #undef _
 
 error:

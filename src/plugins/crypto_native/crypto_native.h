@@ -39,11 +39,13 @@ clib_error_t *crypto_native_aes_cbc_init_sse42 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_cbc_init_avx2 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_cbc_init_avx512 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_cbc_init_vaes (vlib_main_t * vm);
+clib_error_t *crypto_native_aes_cbc_init_neon (vlib_main_t * vm);
 
 clib_error_t *crypto_native_aes_gcm_init_sse42 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_gcm_init_avx2 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_gcm_init_avx512 (vlib_main_t * vm);
 clib_error_t *crypto_native_aes_gcm_init_vaes (vlib_main_t * vm);
+clib_error_t *crypto_native_aes_gcm_init_neon (vlib_main_t * vm);
 #endif /* __crypto_native_h__ */
 
 /*

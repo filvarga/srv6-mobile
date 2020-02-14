@@ -421,7 +421,6 @@ TW (tw_timer_wheel_init) (TWT (tw_timer_wheel) * tw,
     }
   tw->timer_interval = timer_interval_in_seconds;
   tw->ticks_per_second = 1.0 / timer_interval_in_seconds;
-  tw->first_expires_tick = ~0ULL;
 
   vec_validate (tw->expired_timer_handles, 0);
   _vec_len (tw->expired_timer_handles) = 0;
@@ -476,7 +475,7 @@ void TW (tw_timer_wheel_free) (TWT (tw_timer_wheel) * tw)
 	}
     }
 
-#if TW_OVERFLOW_VECVOR > 0
+#if TW_OVERFLOW_VECTOR > 0
   ts = &tw->overflow;
   head = pool_elt_at_index (tw->timers, ts->head_index);
   next_index = head->next;
