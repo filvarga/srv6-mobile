@@ -147,13 +147,9 @@ vnet_classify_new_table (vnet_classify_main_t * cm,
   t->skip_n_vectors = skip_n_vectors;
   t->entries_per_page = 2;
 
-#if USE_DLMALLOC == 0
-  t->mheap = mheap_alloc (0 /* use VM */ , memory_size);
-#else
   t->mheap = create_mspace (memory_size, 1 /* locked */ );
   /* classifier requires the memory to be contiguous, so can not expand. */
   mspace_disable_expand (t->mheap);
-#endif
 
   vec_validate_aligned (t->buckets, nbuckets - 1, CLIB_CACHE_LINE_BYTES);
   oldheap = clib_mem_set_heap (t->mheap);
@@ -180,12 +176,7 @@ vnet_classify_delete_table_index (vnet_classify_main_t * cm,
 
   vec_free (t->mask);
   vec_free (t->buckets);
-#if USE_DLMALLOC == 0
-  mheap_free (t->mheap);
-#else
   destroy_mspace (t->mheap);
-#endif
-
   pool_put (cm->tables, t);
 }
 
@@ -2074,7 +2065,6 @@ show_classify_filter_command_fn (vlib_main_t * vm,
 
       if (verbose)
 	{
-	  u8 *s = 0;
 	  u32 table_index;
 
 	  for (j = 0; j < vec_len (set->table_indices); j++)
@@ -2091,8 +2081,7 @@ show_classify_filter_command_fn (vlib_main_t * vm,
 	}
       else
 	{
-	  u8 *s = 0;
-	  table_index = set->table_indices[0];
+	  table_index = set->table_indices ? set->table_indices[0] : ~0;
 
 	  if (table_index != ~0)
 	    s = format (s, " %u", table_index);

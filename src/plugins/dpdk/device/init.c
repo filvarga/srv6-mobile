@@ -199,6 +199,15 @@ check_l3cache ()
   return 0;
 }
 
+static void
+dpdk_enable_l4_csum_offload (dpdk_device_t * xd)
+{
+  xd->port_conf.txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
+  xd->port_conf.txmode.offloads |= DEV_TX_OFFLOAD_UDP_CKSUM;
+  xd->flags |= DPDK_DEVICE_FLAG_TX_OFFLOAD |
+    DPDK_DEVICE_FLAG_INTEL_PHDR_CKSUM;
+}
+
 static clib_error_t *
 dpdk_lib_init (dpdk_main_t * dm)
 {
@@ -295,8 +304,14 @@ dpdk_lib_init (dpdk_main_t * dm)
       else
 	devconf = &dm->conf->default_devconf;
 
+      /* Handle representor devices that share the same PCI ID */
+      if (dev_info.switch_info.domain_id != RTE_ETH_DEV_SWITCH_DOMAIN_ID_INVALID)
+        {
+          if (dev_info.switch_info.port_id != (uint16_t)-1)
+            xd->interface_name_suffix = format (0, "%d", dev_info.switch_info.port_id);
+        }
       /* Handle interface naming for devices with multiple ports sharing same PCI ID */
-      if (pci_dev &&
+      else if (pci_dev &&
 	  ((next_port_id = rte_eth_find_next (i + 1)) != RTE_MAX_ETHPORTS))
 	{
 	  struct rte_eth_dev_info di = { 0 };
@@ -476,6 +491,8 @@ dpdk_lib_init (dpdk_main_t * dm)
 	      /* Cisco VIC */
 	    case VNET_DPDK_PMD_ENIC:
 	      xd->port_type = port_type_from_link_speed (l.link_speed);
+	      if (dm->conf->enable_tcp_udp_checksum)
+		dpdk_enable_l4_csum_offload (xd);
 	      break;
 
 	      /* Intel Red Rock Canyon */

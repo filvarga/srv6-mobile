@@ -180,10 +180,10 @@ I:	cop
 M:	Dave Barach <dave@barachs.net>
 F:	src/vnet/cop/
 
-VNET NHRP
-I:	nhrp
+VNET TEIB
+I:	teib
 M:	Neale Ranns <nranns@cisco.com>
-F:	src/vnet/nhrp/
+F:	src/vnet/teib/
 
 Crypto native Plugin
 I:	crypto-native
@@ -648,6 +648,11 @@ F:	src/plugins/ioam
 Awkward chained buffer geometry tool
 I:	oddbuf
 F:	src/plugins/oddbuf
+
+Plugin - VRRP
+I:	vrrp
+M:	Matthew Smith <mgsmith@netgate.com>
+F:	src/plugins/vrrp
 
 VPP Config Tooling
 I:	vpp_config

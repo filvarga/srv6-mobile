@@ -255,6 +255,21 @@ vlib_thread_init (vlib_main_t * vm)
     }
   avail_cpu = clib_bitmap_set (avail_cpu, tm->main_lcore, 0);
 
+  /*
+   * Determine if the number of workers is greater than 0.
+   * If so, mark CPU 0 unavailable so workers will be numbered after main.
+   */
+  u32 n_workers = 0;
+  uword *p = hash_get_mem (tm->thread_registrations_by_name, "workers");
+  if (p != 0)
+    {
+      vlib_thread_registration_t *tr = (vlib_thread_registration_t *) p[0];
+      int worker_thread_count = tr->count;
+      n_workers = worker_thread_count;
+    }
+  if (tm->skip_cores == 0 && n_workers)
+    avail_cpu = clib_bitmap_set (avail_cpu, 0, 0);
+
   /* assume that there is socket 0 only if there is no data from sysfs */
   if (!tm->cpu_socket_bitmap)
     tm->cpu_socket_bitmap = clib_bitmap_set (0, 0, 1);
@@ -282,6 +297,8 @@ vlib_thread_init (vlib_main_t * vm)
   w->lwp = syscall (SYS_gettid);
   w->thread_id = pthread_self ();
   tm->n_vlib_mains = 1;
+
+  vlib_get_thread_core_numa (w, w->cpu_id);
 
   if (tm->sched_policy != ~0)
     {
@@ -577,24 +594,23 @@ vlib_worker_thread_bootstrap_fn (void *arg)
   return rv;
 }
 
-static void
-vlib_get_thread_core_socket (vlib_worker_thread_t * w, unsigned cpu_id)
+void
+vlib_get_thread_core_numa (vlib_worker_thread_t * w, unsigned cpu_id)
 {
   const char *sys_cpu_path = "/sys/devices/system/cpu/cpu";
   u8 *p = 0;
-  int core_id = -1, socket_id = -1;
+  int core_id = -1, numa_id = -1;
 
   p = format (p, "%s%u/topology/core_id%c", sys_cpu_path, cpu_id, 0);
   clib_sysfs_read ((char *) p, "%d", &core_id);
   vec_reset_length (p);
-  p =
-    format (p, "%s%u/topology/physical_package_id%c", sys_cpu_path, cpu_id,
-	    0);
-  clib_sysfs_read ((char *) p, "%d", &socket_id);
+  p = format (p, "%s%u/topology/physical_package_id%c", sys_cpu_path,
+	      cpu_id, 0);
+  clib_sysfs_read ((char *) p, "%d", &numa_id);
   vec_free (p);
 
   w->core_id = core_id;
-  w->socket_id = socket_id;
+  w->numa_id = numa_id;
 }
 
 static clib_error_t *
@@ -602,9 +618,28 @@ vlib_launch_thread_int (void *fp, vlib_worker_thread_t * w, unsigned cpu_id)
 {
   vlib_thread_main_t *tm = &vlib_thread_main;
   void *(*fp_arg) (void *) = fp;
+  void *numa_heap;
 
   w->cpu_id = cpu_id;
-  vlib_get_thread_core_socket (w, cpu_id);
+  vlib_get_thread_core_numa (w, cpu_id);
+
+  /* Set up NUMA-bound heap if indicated */
+  if (clib_per_numa_mheaps[w->numa_id] == 0)
+    {
+      /* If the user requested a NUMA heap, create it... */
+      if (tm->numa_heap_size)
+	{
+	  numa_heap = clib_mem_init_thread_safe_numa
+	    (0 /* DIY */ , tm->numa_heap_size, w->numa_id);
+	  clib_per_numa_mheaps[w->numa_id] = numa_heap;
+	}
+      else
+	{
+	  /* Or, use the main heap */
+	  clib_per_numa_mheaps[w->numa_id] = w->thread_mheap;
+	}
+    }
+
   if (tm->cb.vlib_launch_thread_cb && !w->registration->use_pthreads)
     return tm->cb.vlib_launch_thread_cb (fp, (void *) w, cpu_id);
   else
@@ -707,15 +742,8 @@ start_workers (vlib_main_t * vm)
 	      vec_add2 (vlib_worker_threads, w, 1);
 	      /* Currently unused, may not really work */
 	      if (tr->mheap_size)
-		{
-#if USE_DLMALLOC == 0
-		  w->thread_mheap =
-		    mheap_alloc (0 /* use VM */ , tr->mheap_size);
-#else
-		  w->thread_mheap = create_mspace (tr->mheap_size,
-						   0 /* unlocked */ );
-#endif
-		}
+		w->thread_mheap = create_mspace (tr->mheap_size,
+						 0 /* unlocked */ );
 	      else
 		w->thread_mheap = main_heap;
 
@@ -879,13 +907,8 @@ start_workers (vlib_main_t * vm)
 	      vec_add2 (vlib_worker_threads, w, 1);
 	      if (tr->mheap_size)
 		{
-#if USE_DLMALLOC == 0
-		  w->thread_mheap =
-		    mheap_alloc (0 /* use VM */ , tr->mheap_size);
-#else
 		  w->thread_mheap =
 		    create_mspace (tr->mheap_size, 0 /* locked */ );
-#endif
 		}
 	      else
 		w->thread_mheap = main_heap;
@@ -1241,6 +1264,9 @@ cpu_config (vlib_main_t * vm, unformat_input_t * input)
       else if (unformat (input, "main-core %u", &tm->main_lcore))
 	;
       else if (unformat (input, "skip-cores %u", &tm->skip_cores))
+	;
+      else if (unformat (input, "numa-heap-size %U",
+			 unformat_memory_size, &tm->numa_heap_size))
 	;
       else if (unformat (input, "coremask-%s %U", &name,
 			 unformat_bitmap_mask, &bitmap) ||
