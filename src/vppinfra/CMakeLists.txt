@@ -17,12 +17,13 @@ enable_language(ASM)
 # Generate vppinfra/config.h
 ##############################################################################
 set(LOG2_CACHE_LINE_BYTES ${VPP_LOG2_CACHE_LINE_SIZE})
-option(VPP_USE_DLMALLOC "Use dlmalloc memory allocator." ON)
-if(VPP_USE_DLMALLOC)
-  set(DLMALLOC 1)
-else(VPP_USE_DLMALLOC)
-  set(DLMALLOC 0)
-endif(VPP_USE_DLMALLOC)
+
+option(VPP_VECTOR_GROW_BY_ONE "Vectors grow by one, instead of 3/2" OFF)
+if(VPP_VECTOR_GROW_BY_ONE)
+  set(VECTOR_GROW_BY_ONE 1)
+else(VPP_VECTOR_GROW_BY_ONE)
+  set(VECTOR_GROW_BY_ONE 0)
+endif(VPP_VECTOR_GROW_BY_ONE)
 
 configure_file(
   ${CMAKE_SOURCE_DIR}/vppinfra/config.h.in
@@ -43,6 +44,7 @@ set(VPPINFRA_SRCS
   bihash_all_vector.c
   cpu.c
   cuckoo_template.c
+  dlmalloc.c
   elf.c
   elog.c
   error.c
@@ -55,14 +57,15 @@ set(VPPINFRA_SRCS
   longjmp.S
   macros.c
   maplog.c
+  mem_dlmalloc.c
   mhash.c
   mpcap.c
   pcap.c
   pmalloc.c
   pool.c
   ptclosure.c
-  random.c
   random_buffer.c
+  random.c
   random_isaac.c
   rbtree.c
   serialize.c
@@ -73,11 +76,11 @@ set(VPPINFRA_SRCS
   time.c
   time_range.c
   timing_wheel.c
-  tw_timer_2t_1w_2048sl.c
-  tw_timer_16t_2w_512sl.c
   tw_timer_16t_1w_2048sl.c
-  tw_timer_4t_3w_256sl.c
+  tw_timer_16t_2w_512sl.c
   tw_timer_1t_3w_1024sl_ov.c
+  tw_timer_2t_1w_2048sl.c
+  tw_timer_4t_3w_256sl.c
   unformat.c
   unix-formats.c
   unix-misc.c
@@ -135,7 +138,6 @@ set(VPPINFRA_HEADERS
   memcpy_sse3.h
   mem.h
   mhash.h
-  mheap_bootstrap.h
   mheap.h
   mpcap.h
   os.h
@@ -194,19 +196,6 @@ if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
     linux/sysfs.c
    )
 endif()
-
-
-if(VPP_USE_DLMALLOC)
-  list(APPEND VPPINFRA_SRCS
-    dlmalloc.c
-    mem_dlmalloc.c
-  )
-else(VPP_USE_DLMALLOC)
-  list(APPEND VPPINFRA_SRCS
-    mheap.c
-    mem_mheap.c
-  )
-endif(VPP_USE_DLMALLOC)
 
 add_vpp_library(vppinfra
   SOURCES ${VPPINFRA_SRCS}

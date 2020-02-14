@@ -1079,12 +1079,12 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 			}
 		      else if (ls_param->nhtype == SRV6_NHTYPE_NON_IP)
 			{
-			  ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+			  ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 			}
 		    }
 		  else
 		    {
-		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		      ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 		    }
 		}
 	      else
@@ -1098,7 +1098,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		    {
 		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
 
-		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		      ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 
 		      ip6srv->sr.tag =
 			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
@@ -1148,7 +1148,7 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 			}
 		      else if (ls_param->nhtype == SRV6_NHTYPE_NON_IP)
 			{
-			  ip6srv->ip.protocol = IP_PROTOCOL_NONE;
+			  ip6srv->ip.protocol = IP_PROTOCOL_IP6_ETHERNET;
 			}
 		    }
 		}
@@ -1930,12 +1930,12 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 			}
 		      else if (ls_param->nhtype == SRV6_NHTYPE_NON_IP)
 			{
-			  ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+			  ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 			}
 		    }
 		  else
 		    {
-		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		      ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 		    }
 		}
 	      else
@@ -1950,7 +1950,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		    {
 		      ip6srv->ip.protocol = IP_PROTOCOL_IPV6_ROUTE;
 
-		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		      ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 
 		      ip6srv->sr.tag =
 			clib_host_to_net_u16 (srh_tagfield[gtpu_type]);
@@ -1998,7 +1998,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 			}
 		      else if (ls_param->nhtype == SRV6_NHTYPE_NON_IP)
 			{
-			  ip6srv->ip.protocol = IP_PROTOCOL_NONE;
+			  ip6srv->ip.protocol = IP_PROTOCOL_IP6_ETHERNET;
 			}
 		    }
 		}
@@ -2470,12 +2470,12 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		    }
 		  else if (ls_param->nhtype == SRV6_NHTYPE_NON_IP)
 		    {
-		      ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		      ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 		    }
 		}
 	      else
 		{
-		  ip6srv->sr.protocol = IP_PROTOCOL_NONE;
+		  ip6srv->sr.protocol = IP_PROTOCOL_IP6_ETHERNET;
 		}
 
 	      good_n++;

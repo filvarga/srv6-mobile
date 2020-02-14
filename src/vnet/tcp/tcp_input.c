@@ -266,6 +266,100 @@ tcp_update_timestamp (tcp_connection_t * tc, u32 seq, u32 seq_end)
     }
 }
 
+static void
+tcp_handle_rst (tcp_connection_t * tc)
+{
+  switch (tc->rst_state)
+    {
+    case TCP_STATE_SYN_RCVD:
+      /* Cleanup everything. App wasn't notified yet */
+      session_transport_delete_notify (&tc->connection);
+      tcp_connection_cleanup (tc);
+      break;
+    case TCP_STATE_SYN_SENT:
+      session_stream_connect_notify (&tc->connection, 1 /* fail */ );
+      tcp_connection_cleanup (tc);
+      break;
+    case TCP_STATE_ESTABLISHED:
+      session_transport_reset_notify (&tc->connection);
+      session_transport_closed_notify (&tc->connection);
+      break;
+    case TCP_STATE_CLOSE_WAIT:
+    case TCP_STATE_FIN_WAIT_1:
+    case TCP_STATE_FIN_WAIT_2:
+    case TCP_STATE_CLOSING:
+    case TCP_STATE_LAST_ACK:
+      session_transport_closed_notify (&tc->connection);
+      break;
+    case TCP_STATE_CLOSED:
+    case TCP_STATE_TIME_WAIT:
+      break;
+    default:
+      TCP_DBG ("reset state: %u", tc->state);
+    }
+}
+
+static void
+tcp_program_reset_ntf (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
+{
+  if (!tcp_disconnect_pending (tc))
+    {
+      tc->rst_state = tc->state;
+      vec_add1 (wrk->pending_resets, tc->c_c_index);
+      tcp_disconnect_pending_on (tc);
+    }
+}
+
+/**
+ * Handle reset packet
+ *
+ * Programs disconnect/reset notification that should be sent
+ * later by calling @ref tcp_handle_disconnects
+ */
+static void
+tcp_rcv_rst (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
+{
+  TCP_EVT (TCP_EVT_RST_RCVD, tc);
+  switch (tc->state)
+    {
+    case TCP_STATE_SYN_RCVD:
+      tcp_program_reset_ntf (wrk, tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      break;
+    case TCP_STATE_SYN_SENT:
+      tcp_program_reset_ntf (wrk, tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      break;
+    case TCP_STATE_ESTABLISHED:
+      tcp_connection_timers_reset (tc);
+      /* Set the cleanup timer, in case the session layer/app don't
+       * cleanly close the connection */
+      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
+      tcp_cong_recovery_off (tc);
+      tcp_program_reset_ntf (wrk, tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      break;
+    case TCP_STATE_CLOSE_WAIT:
+    case TCP_STATE_FIN_WAIT_1:
+    case TCP_STATE_FIN_WAIT_2:
+    case TCP_STATE_CLOSING:
+    case TCP_STATE_LAST_ACK:
+      tcp_connection_timers_reset (tc);
+      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
+      tcp_cong_recovery_off (tc);
+      tcp_program_reset_ntf (wrk, tc);
+      /* Make sure we mark the session as closed. In some states we may
+       * be still trying to send data */
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      break;
+    case TCP_STATE_CLOSED:
+    case TCP_STATE_TIME_WAIT:
+      break;
+    default:
+      TCP_DBG ("reset state: %u", tc->state);
+    }
+}
+
 /**
  * Validate incoming segment as per RFC793 p. 69 and RFC1323 p. 19
  *
@@ -392,7 +486,7 @@ tcp_segment_validate (tcp_worker_ctx_t * wrk, tcp_connection_t * tc0,
   /* 2nd: check the RST bit */
   if (PREDICT_FALSE (tcp_rst (th0)))
     {
-      tcp_connection_reset (tc0);
+      tcp_rcv_rst (wrk, tc0);
       *error0 = TCP_ERROR_RST_RCVD;
       goto error;
     }
@@ -1676,22 +1770,35 @@ tcp_program_disconnect (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
 static void
 tcp_handle_disconnects (tcp_worker_ctx_t * wrk)
 {
-  u32 thread_index, *pending_disconnects;
+  u32 thread_index, *pending_disconnects, *pending_resets;
   tcp_connection_t *tc;
   int i;
 
-  if (!vec_len (wrk->pending_disconnects))
-    return;
-
-  thread_index = wrk->vm->thread_index;
-  pending_disconnects = wrk->pending_disconnects;
-  for (i = 0; i < vec_len (pending_disconnects); i++)
+  if (vec_len (wrk->pending_disconnects))
     {
-      tc = tcp_connection_get (pending_disconnects[i], thread_index);
-      tcp_disconnect_pending_off (tc);
-      session_transport_closing_notify (&tc->connection);
+      thread_index = wrk->vm->thread_index;
+      pending_disconnects = wrk->pending_disconnects;
+      for (i = 0; i < vec_len (pending_disconnects); i++)
+	{
+	  tc = tcp_connection_get (pending_disconnects[i], thread_index);
+	  tcp_disconnect_pending_off (tc);
+	  session_transport_closing_notify (&tc->connection);
+	}
+      _vec_len (wrk->pending_disconnects) = 0;
     }
-  _vec_len (wrk->pending_disconnects) = 0;
+
+  if (vec_len (wrk->pending_resets))
+    {
+      thread_index = wrk->vm->thread_index;
+      pending_resets = wrk->pending_resets;
+      for (i = 0; i < vec_len (pending_resets); i++)
+	{
+	  tc = tcp_connection_get (pending_resets[i], thread_index);
+	  tcp_disconnect_pending_off (tc);
+	  tcp_handle_rst (tc);
+	}
+      _vec_len (wrk->pending_resets) = 0;
+    }
 }
 
 static void
@@ -2556,7 +2663,7 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  /* If ACK is acceptable, signal client that peer is not
 	   * willing to accept connection and drop connection*/
 	  if (tcp_ack (tcp0))
-	    tcp_connection_reset (tc0);
+	    tcp_rcv_rst (wrk, tc0);
 	  error0 = TCP_ERROR_RST_RCVD;
 	  goto drop;
 	}
@@ -2701,6 +2808,7 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 					      my_thread_index);
   tcp_inc_counter (syn_sent, TCP_ERROR_MSG_QUEUE_FULL, errors);
   vlib_buffer_free (vm, first_buffer, from_frame->n_vectors);
+  tcp_handle_disconnects (wrk);
 
   return from_frame->n_vectors;
 }
@@ -2837,7 +2945,7 @@ tcp46_rcv_process_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  /* Make sure the segment is exactly right */
 	  if (tc0->rcv_nxt != vnet_buffer (b0)->tcp.seq_number || is_fin0)
 	    {
-	      tcp_connection_reset (tc0);
+	      tcp_send_reset_w_pkt (tc0, b0, thread_index, is_ip4);
 	      error0 = TCP_ERROR_SEGMENT_INVALID;
 	      goto drop;
 	    }
@@ -2850,7 +2958,8 @@ tcp46_rcv_process_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	   */
 	  if (tcp_rcv_ack_no_cc (tc0, b0, &error0))
 	    {
-	      tcp_connection_reset (tc0);
+	      tcp_send_reset_w_pkt (tc0, b0, thread_index, is_ip4);
+	      error0 = TCP_ERROR_SEGMENT_INVALID;
 	      goto drop;
 	    }
 
@@ -2877,7 +2986,9 @@ tcp46_rcv_process_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  if (session_stream_accept_notify (&tc0->connection))
 	    {
 	      error0 = TCP_ERROR_MSG_QUEUE_FULL;
-	      tcp_connection_reset (tc0);
+	      tcp_send_reset (tc0);
+	      session_transport_delete_notify (&tc0->connection);
+	      tcp_connection_cleanup (tc0);
 	      goto drop;
 	    }
 	  error0 = TCP_ERROR_ACK_OK;
@@ -3579,27 +3690,25 @@ tcp_input_lookup_buffer (vlib_buffer_t * b, u8 thread_index, u32 * error,
 
 static inline void
 tcp_input_dispatch_buffer (tcp_main_t * tm, tcp_connection_t * tc,
-			   vlib_buffer_t * b, u16 * next, u32 * error)
+			   vlib_buffer_t * b, u16 * next,
+			   vlib_node_runtime_t * error_node)
 {
   tcp_header_t *tcp;
+  u32 error;
   u8 flags;
 
   tcp = tcp_buffer_hdr (b);
   flags = tcp->flags & filter_flags;
   *next = tm->dispatch_table[tc->state][flags].next;
-  *error = tm->dispatch_table[tc->state][flags].error;
+  error = tm->dispatch_table[tc->state][flags].error;
   tc->segs_in += 1;
 
-  if (PREDICT_FALSE (*error == TCP_ERROR_DISPATCH
-		     || *next == TCP_INPUT_NEXT_RESET))
+  if (PREDICT_FALSE (error != TCP_ERROR_NONE))
     {
-      /* Overload tcp flags to store state */
-      tcp_state_t state = tc->state;
-      vnet_buffer (b)->tcp.flags = tc->state;
-
-      if (*error == TCP_ERROR_DISPATCH)
+      b->error = error_node->errors[error];
+      if (error == TCP_ERROR_DISPATCH)
 	clib_warning ("tcp conn %u disp error state %U flags %U",
-		      tc->c_c_index, format_tcp_state, state,
+		      tc->c_c_index, format_tcp_state, tc->state,
 		      format_tcp_flags, (int) flags);
     }
 }
@@ -3612,9 +3721,11 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   tcp_main_t *tm = vnet_get_tcp_main ();
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
   u16 nexts[VLIB_FRAME_SIZE], *next;
+  vlib_node_runtime_t *error_node;
 
   tcp_set_time_now (tcp_get_worker (thread_index));
 
+  error_node = vlib_node_get_runtime (vm, tcp_node_index (input, is_ip4));
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
   vlib_get_buffers (vm, from, bufs, n_left_from);
@@ -3650,8 +3761,8 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
 	  vnet_buffer (b[1])->tcp.connection_index = tc1->c_c_index;
 
-	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], &error0);
-	  tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], &error1);
+	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
+	  tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], error_node);
 	}
       else
 	{
@@ -3659,19 +3770,25 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	    {
 	      ASSERT (tcp_lookup_is_valid (tc0, b[0], tcp_buffer_hdr (b[0])));
 	      vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
-	      tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], &error0);
+	      tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
 	    }
 	  else
-	    tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
+	    {
+	      tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
+	      b[0]->error = error_node->errors[error0];
+	    }
 
 	  if (PREDICT_TRUE (tc1 != 0))
 	    {
 	      ASSERT (tcp_lookup_is_valid (tc1, b[1], tcp_buffer_hdr (b[1])));
 	      vnet_buffer (b[1])->tcp.connection_index = tc1->c_c_index;
-	      tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], &error1);
+	      tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], error_node);
 	    }
 	  else
-	    tcp_input_set_error_next (tm, &next[1], &error1, is_ip4);
+	    {
+	      tcp_input_set_error_next (tm, &next[1], &error1, is_ip4);
+	      b[1]->error = error_node->errors[error1];
+	    }
 	}
 
       b += 2;
@@ -3696,10 +3813,13 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	{
 	  ASSERT (tcp_lookup_is_valid (tc0, b[0], tcp_buffer_hdr (b[0])));
 	  vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
-	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], &error0);
+	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
 	}
       else
-	tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
+	{
+	  tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
+	  b[0]->error = error_node->errors[error0];
+	}
 
       b += 1;
       next += 1;
@@ -3860,7 +3980,7 @@ do {                                                       	\
   _(LISTEN, TCP_FLAG_FIN | TCP_FLAG_RST, TCP_INPUT_NEXT_DROP,
     TCP_ERROR_SEGMENT_INVALID);
   _(LISTEN, TCP_FLAG_FIN | TCP_FLAG_RST | TCP_FLAG_ACK, TCP_INPUT_NEXT_DROP,
-    TCP_ERROR_NONE);
+    TCP_ERROR_SEGMENT_INVALID);
   _(LISTEN, TCP_FLAG_FIN | TCP_FLAG_SYN, TCP_INPUT_NEXT_DROP,
     TCP_ERROR_SEGMENT_INVALID);
   _(LISTEN, TCP_FLAG_FIN | TCP_FLAG_SYN | TCP_FLAG_ACK, TCP_INPUT_NEXT_DROP,
@@ -4047,10 +4167,10 @@ do {                                                       	\
   _(CLOSED, TCP_FLAG_RST, TCP_INPUT_NEXT_DROP, TCP_ERROR_CONNECTION_CLOSED);
   _(CLOSED, TCP_FLAG_RST | TCP_FLAG_ACK, TCP_INPUT_NEXT_DROP,
     TCP_ERROR_CONNECTION_CLOSED);
-  _(CLOSED, TCP_FLAG_ACK, TCP_INPUT_NEXT_RESET, TCP_ERROR_NONE);
-  _(CLOSED, TCP_FLAG_SYN, TCP_INPUT_NEXT_RESET, TCP_ERROR_NONE);
+  _(CLOSED, TCP_FLAG_ACK, TCP_INPUT_NEXT_RESET, TCP_ERROR_CONNECTION_CLOSED);
+  _(CLOSED, TCP_FLAG_SYN, TCP_INPUT_NEXT_RESET, TCP_ERROR_CONNECTION_CLOSED);
   _(CLOSED, TCP_FLAG_FIN | TCP_FLAG_ACK, TCP_INPUT_NEXT_RESET,
-    TCP_ERROR_NONE);
+    TCP_ERROR_CONNECTION_CLOSED);
 #undef _
 }
 

@@ -380,16 +380,17 @@ fs_try_alloc_fifo_batch (fifo_segment_header_t * fsh,
 			 fifo_segment_slice_t * fss,
 			 u32 fl_index, u32 batch_size)
 {
-  u32 size, hdrs, rounded_data_size;
+  u32 hdrs, rounded_data_size;
   svm_fifo_chunk_t *c;
   svm_fifo_t *f;
   void *oldheap;
+  uword size;
   u8 *fmem;
   int i;
 
   rounded_data_size = fs_freelist_index_to_size (fl_index);
   hdrs = sizeof (*f) + sizeof (*c);
-  size = (hdrs + rounded_data_size) * batch_size;
+  size = (uword) (hdrs + rounded_data_size) * batch_size;
 
   oldheap = ssvm_push_heap (fsh->ssvm_sh);
   fmem = clib_mem_alloc_aligned_at_offset (size, CLIB_CACHE_LINE_BYTES,
@@ -608,12 +609,12 @@ fifo_segment_prealloc_fifo_hdrs (fifo_segment_t * fs, u32 slice_index,
   fifo_segment_slice_t *fss;
   svm_fifo_t *f;
   void *oldheap;
-  u32 size;
+  uword size;
   u8 *fmem;
   int i;
 
   fss = fsh_slice_get (fsh, slice_index);
-  size = (sizeof (*f)) * batch_size;
+  size = (uword) (sizeof (*f)) * batch_size;
 
   oldheap = ssvm_push_heap (fsh->ssvm_sh);
   fmem = clib_mem_alloc_aligned_at_offset (size, CLIB_CACHE_LINE_BYTES,
@@ -644,11 +645,12 @@ int
 fifo_segment_prealloc_fifo_chunks (fifo_segment_t * fs, u32 slice_index,
 				   u32 chunk_size, u32 batch_size)
 {
-  u32 size, rounded_data_size, fl_index;
   fifo_segment_header_t *fsh = fs->h;
+  u32 rounded_data_size, fl_index;
   fifo_segment_slice_t *fss;
   svm_fifo_chunk_t *c;
   void *oldheap;
+  uword size;
   u8 *cmem;
   int i;
 
@@ -660,7 +662,7 @@ fifo_segment_prealloc_fifo_chunks (fifo_segment_t * fs, u32 slice_index,
 
   fl_index = fs_freelist_for_size (chunk_size);
   rounded_data_size = fs_freelist_index_to_size (fl_index);
-  size = (sizeof (*c) + rounded_data_size) * batch_size;
+  size = (uword) (sizeof (*c) + rounded_data_size) * batch_size;
 
   oldheap = ssvm_push_heap (fsh->ssvm_sh);
   cmem = clib_mem_alloc_aligned_at_offset (size, CLIB_CACHE_LINE_BYTES,
@@ -1023,12 +1025,6 @@ format_fifo_segment (u8 * s, va_list * args)
   int i;
 
   indent = format_get_indent (s) + 2;
-#if USE_DLMALLOC == 0
-  s = format (s, "%U segment heap: %U\n", format_white_space, indent,
-	      format_mheap, fsh->ssvm_sh->heap, verbose);
-  s = format (s, "%U segment has %u active fifos\n",
-	      format_white_space, indent, fifo_segment_num_fifos (fsh));
-#endif
 
   if (fs == 0)
     {

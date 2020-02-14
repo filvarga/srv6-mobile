@@ -380,24 +380,19 @@ readv (int fd, const struct iovec * iov, int iovcnt)
   vlsh = ldp_fd_to_vlsh (fd);
   if (vlsh != VLS_INVALID_HANDLE)
     {
-      do
+      for (i = 0; i < iovcnt; ++i)
 	{
-	  for (i = 0; i < iovcnt; ++i)
+	  rv = vls_read (vlsh, iov[i].iov_base, iov[i].iov_len);
+	  if (rv <= 0)
+	    break;
+	  else
 	    {
-	      rv = vls_read (vlsh, iov[i].iov_base, iov[i].iov_len);
-	      if (rv < 0)
+	      total += rv;
+	      if (rv < iov[i].iov_len)
 		break;
-	      else
-		{
-		  total += rv;
-		  if (rv < iov[i].iov_len)
-		    break;
-		}
 	    }
 	}
-      while ((rv >= 0) && (total == 0));
-
-      if (rv < 0)
+      if (rv < 0 && total == 0)
 	{
 	  errno = -rv;
 	  size = -1;
@@ -653,6 +648,7 @@ ldp_select_vcl_map_to_libc (clib_bitmap_t * vclb, fd_set * __restrict libcb)
   /* *INDENT-OFF* */
   clib_bitmap_foreach (si, vclb, ({
     vlsh = vls_session_index_to_vlsh (si);
+    ASSERT (vlsh != VLS_INVALID_HANDLE);
     fd = ldp_vlsh_to_fd (vlsh);
     if (PREDICT_FALSE (fd < 0))
       {
