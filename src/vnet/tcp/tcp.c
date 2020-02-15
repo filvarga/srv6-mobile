@@ -237,13 +237,12 @@ tcp_half_open_connection_new (void)
 void
 tcp_connection_cleanup (tcp_connection_t * tc)
 {
-  tcp_main_t *tm = &tcp_main;
-
   TCP_EVT (TCP_EVT_DELETE, tc);
 
   /* Cleanup local endpoint if this was an active connect */
-  transport_endpoint_cleanup (TRANSPORT_PROTO_TCP, &tc->c_lcl_ip,
-			      tc->c_lcl_port);
+  if (!(tc->cfg_flags & TCP_CFG_F_NO_ENDPOINT))
+    transport_endpoint_cleanup (TRANSPORT_PROTO_TCP, &tc->c_lcl_ip,
+				tc->c_lcl_port);
 
   /* Check if connection is not yet fully established */
   if (tc->state == TCP_STATE_SYN_SENT)
@@ -256,8 +255,6 @@ tcp_connection_cleanup (tcp_connection_t * tc)
     }
   else
     {
-      int thread_index = tc->c_thread_index;
-
       /* Make sure all timers are cleared */
       tcp_connection_timers_reset (tc);
 
@@ -273,10 +270,7 @@ tcp_connection_cleanup (tcp_connection_t * tc)
       if (tc->cfg_flags & TCP_CFG_F_RATE_SAMPLE)
 	tcp_bt_cleanup (tc);
 
-      /* Poison the entry */
-      if (CLIB_DEBUG > 0)
-	clib_memset (tc, 0xFA, sizeof (*tc));
-      pool_put (tm->connections[thread_index], tc);
+      tcp_connection_free (tc);
     }
 }
 
@@ -297,12 +291,12 @@ tcp_connection_del (tcp_connection_t * tc)
 tcp_connection_t *
 tcp_connection_alloc (u8 thread_index)
 {
-  tcp_main_t *tm = vnet_get_tcp_main ();
+  tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
   tcp_connection_t *tc;
 
-  pool_get (tm->connections[thread_index], tc);
+  pool_get (wrk->connections, tc);
   clib_memset (tc, 0, sizeof (*tc));
-  tc->c_c_index = tc - tm->connections[thread_index];
+  tc->c_c_index = tc - wrk->connections;
   tc->c_thread_index = thread_index;
   return tc;
 }
@@ -310,12 +304,12 @@ tcp_connection_alloc (u8 thread_index)
 tcp_connection_t *
 tcp_connection_alloc_w_base (u8 thread_index, tcp_connection_t * base)
 {
-  tcp_main_t *tm = vnet_get_tcp_main ();
+  tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
   tcp_connection_t *tc;
 
-  pool_get (tm->connections[thread_index], tc);
+  pool_get (wrk->connections, tc);
   clib_memcpy_fast (tc, base, sizeof (*tc));
-  tc->c_c_index = tc - tm->connections[thread_index];
+  tc->c_c_index = tc - wrk->connections;
   tc->c_thread_index = thread_index;
   return tc;
 }
@@ -323,65 +317,14 @@ tcp_connection_alloc_w_base (u8 thread_index, tcp_connection_t * base)
 void
 tcp_connection_free (tcp_connection_t * tc)
 {
-  tcp_main_t *tm = &tcp_main;
+  tcp_worker_ctx_t *wrk = tcp_get_worker (tc->c_thread_index);
   if (CLIB_DEBUG)
     {
-      u8 thread_index = tc->c_thread_index;
       clib_memset (tc, 0xFA, sizeof (*tc));
-      pool_put (tm->connections[thread_index], tc);
+      pool_put (wrk->connections, tc);
       return;
     }
-  pool_put (tm->connections[tc->c_thread_index], tc);
-}
-
-/** Notify session that connection has been reset.
- *
- * Switch state to closed and wait for session to call cleanup.
- */
-void
-tcp_connection_reset (tcp_connection_t * tc)
-{
-  TCP_EVT (TCP_EVT_RST_RCVD, tc);
-  switch (tc->state)
-    {
-    case TCP_STATE_SYN_RCVD:
-      /* Cleanup everything. App wasn't notified yet */
-      session_transport_delete_notify (&tc->connection);
-      tcp_connection_cleanup (tc);
-      break;
-    case TCP_STATE_SYN_SENT:
-      session_stream_connect_notify (&tc->connection, 1 /* fail */ );
-      tcp_connection_cleanup (tc);
-      break;
-    case TCP_STATE_ESTABLISHED:
-      tcp_connection_timers_reset (tc);
-      /* Set the cleanup timer, in case the session layer/app don't
-       * cleanly close the connection */
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
-      session_transport_reset_notify (&tc->connection);
-      tcp_cong_recovery_off (tc);
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-      session_transport_closed_notify (&tc->connection);
-      break;
-    case TCP_STATE_CLOSE_WAIT:
-    case TCP_STATE_FIN_WAIT_1:
-    case TCP_STATE_FIN_WAIT_2:
-    case TCP_STATE_CLOSING:
-    case TCP_STATE_LAST_ACK:
-      tcp_connection_timers_reset (tc);
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
-      tcp_cong_recovery_off (tc);
-      /* Make sure we mark the session as closed. In some states we may
-       * be still trying to send data */
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-      session_transport_closed_notify (&tc->connection);
-      break;
-    case TCP_STATE_CLOSED:
-    case TCP_STATE_TIME_WAIT:
-      break;
-    default:
-      TCP_DBG ("reset state: %u", tc->state);
-    }
+  pool_put (wrk->connections, tc);
 }
 
 /**
@@ -425,6 +368,7 @@ tcp_connection_close (tcp_connection_t * tc)
 	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
 	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
 	  session_transport_closed_notify (&tc->connection);
+	  tcp_worker_stats_inc (tc->c_thread_index, rst_unread, 1);
 	  break;
 	}
       if (!transport_max_tx_dequeue (&tc->connection))
@@ -1433,6 +1377,7 @@ tcp_timer_waitclose_handler (u32 conn_index, u32 thread_index)
 
       if (!(tc->flags & TCP_CONN_FINPNDG))
 	{
+	  clib_warning ("close-wait with fin sent");
 	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
 	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
 	  break;
@@ -1448,6 +1393,7 @@ tcp_timer_waitclose_handler (u32 conn_index, u32 thread_index)
 
       /* Make sure we don't wait in LAST ACK forever */
       tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.lastack_time);
+      tcp_worker_stats_inc (thread_index, to_closewait, 1);
 
       /* Don't delete the connection yet */
       break;
@@ -1469,13 +1415,29 @@ tcp_timer_waitclose_handler (u32 conn_index, u32 thread_index)
 	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
 	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
 	}
+      tcp_worker_stats_inc (thread_index, to_finwait1, 1);
       break;
     case TCP_STATE_LAST_ACK:
+      tcp_connection_timers_reset (tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
+      session_transport_closed_notify (&tc->connection);
+      tcp_worker_stats_inc (thread_index, to_lastack, 1);
+      break;
     case TCP_STATE_CLOSING:
       tcp_connection_timers_reset (tc);
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
       tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
       session_transport_closed_notify (&tc->connection);
+      tcp_worker_stats_inc (thread_index, to_closing, 1);
+      break;
+    case TCP_STATE_FIN_WAIT_2:
+      tcp_send_reset (tc);
+      tcp_connection_timers_reset (tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      session_transport_closed_notify (&tc->connection);
+      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
+      tcp_worker_stats_inc (thread_index, to_finwait2, 1);
       break;
     default:
       tcp_connection_del (tc);
@@ -1498,15 +1460,18 @@ static void
 tcp_expired_timers_dispatch (u32 * expired_timers)
 {
   u32 thread_index = vlib_get_thread_index ();
-  u32 connection_index, timer_id;
+  u32 connection_index, timer_id, n_expired;
   tcp_connection_t *tc;
   int i;
+
+  n_expired = vec_len (expired_timers);
+  tcp_worker_stats_inc (thread_index, timer_expirations, n_expired);
 
   /*
    * Invalidate all timer handles before dispatching. This avoids dangling
    * index references to timer wheel pool entries that have been freed.
    */
-  for (i = 0; i < vec_len (expired_timers); i++)
+  for (i = 0; i < n_expired; i++)
     {
       connection_index = expired_timers[i] & 0x0FFFFFFF;
       timer_id = expired_timers[i] >> 28;
@@ -1524,7 +1489,7 @@ tcp_expired_timers_dispatch (u32 * expired_timers)
   /*
    * Dispatch expired timers
    */
-  for (i = 0; i < vec_len (expired_timers); i++)
+  for (i = 0; i < n_expired; i++)
     {
       connection_index = expired_timers[i] & 0x0FFFFFFF;
       timer_id = expired_timers[i] >> 28;
@@ -1563,6 +1528,7 @@ tcp_main_enable (vlib_main_t * vm)
   u32 num_threads, n_workers, prealloc_conn_per_wrk;
   tcp_connection_t *tc __attribute__ ((unused));
   tcp_main_t *tm = vnet_get_tcp_main ();
+  tcp_worker_ctx_t *wrk;
   clib_error_t *error = 0;
   int thread;
 
@@ -1585,25 +1551,28 @@ tcp_main_enable (vlib_main_t * vm)
    */
 
   num_threads = 1 /* main thread */  + vtm->n_threads;
-  vec_validate (tm->connections, num_threads - 1);
   vec_validate (tm->wrk_ctx, num_threads - 1);
   n_workers = num_threads == 1 ? 1 : vtm->n_threads;
   prealloc_conn_per_wrk = tcp_cfg.preallocated_connections / n_workers;
 
   for (thread = 0; thread < num_threads; thread++)
     {
-      vec_validate (tm->wrk_ctx[thread].pending_deq_acked, 255);
-      vec_validate (tm->wrk_ctx[thread].pending_disconnects, 255);
-      vec_reset_length (tm->wrk_ctx[thread].pending_deq_acked);
-      vec_reset_length (tm->wrk_ctx[thread].pending_disconnects);
-      tm->wrk_ctx[thread].vm = vlib_mains[thread];
+      wrk = &tm->wrk_ctx[thread];
+
+      vec_validate (wrk->pending_deq_acked, 255);
+      vec_validate (wrk->pending_disconnects, 255);
+      vec_validate (wrk->pending_resets, 255);
+      vec_reset_length (wrk->pending_deq_acked);
+      vec_reset_length (wrk->pending_disconnects);
+      vec_reset_length (wrk->pending_resets);
+      wrk->vm = vlib_mains[thread];
 
       /*
        * Preallocate connections. Assume that thread 0 won't
        * use preallocated threads when running multi-core
        */
       if ((thread > 0 || num_threads == 1) && prealloc_conn_per_wrk)
-	pool_init_fixed (tm->connections[thread], prealloc_conn_per_wrk);
+	pool_init_fixed (wrk->connections, prealloc_conn_per_wrk);
     }
 
   /*
@@ -2017,8 +1986,8 @@ tcp_configure_v6_source_address_range (vlib_main_t * vm,
 }
 
 static clib_error_t *
-tcp_src_address (vlib_main_t * vm,
-		 unformat_input_t * input, vlib_cli_command_t * cmd_arg)
+tcp_src_address_fn (vlib_main_t * vm,
+		    unformat_input_t * input, vlib_cli_command_t * cmd_arg)
 {
   ip4_address_t v4start, v4end;
   ip6_address_t v6start, v6end;
@@ -2100,7 +2069,7 @@ VLIB_CLI_COMMAND (tcp_src_address_command, static) =
 {
   .path = "tcp src-address",
   .short_help = "tcp src-address <ip-addr> [- <ip-addr>] add src address range",
-  .function = tcp_src_address,
+  .function = tcp_src_address_fn,
 };
 /* *INDENT-ON* */
 
@@ -2311,6 +2280,70 @@ VLIB_CLI_COMMAND (show_tcp_punt_command, static) =
   .path = "show tcp punt",
   .short_help = "show tcp punt",
   .function = show_tcp_punt_fn,
+};
+/* *INDENT-ON* */
+
+static clib_error_t *
+show_tcp_stats_fn (vlib_main_t * vm, unformat_input_t * input,
+		   vlib_cli_command_t * cmd)
+{
+  tcp_main_t *tm = vnet_get_tcp_main ();
+  tcp_worker_ctx_t *wrk;
+  u32 thread;
+
+  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+    return clib_error_return (0, "unknown input `%U'", format_unformat_error,
+			      input);
+  for (thread = 0; thread < vec_len (tm->wrk_ctx); thread++)
+    {
+      wrk = tcp_get_worker (thread);
+      vlib_cli_output (vm, "Thread %d:\n", thread);
+
+#define _(name,type,str)					\
+  if (wrk->stats.name)						\
+    vlib_cli_output (vm, " %ld %s", wrk->stats.name, str);
+      foreach_tcp_wrk_stat
+#undef _
+    }
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (show_tcp_stats_command, static) =
+{
+  .path = "show tcp stats",
+  .short_help = "show tcp stats",
+  .function = show_tcp_stats_fn,
+};
+/* *INDENT-ON* */
+
+static clib_error_t *
+clear_tcp_stats_fn (vlib_main_t * vm, unformat_input_t * input,
+		    vlib_cli_command_t * cmd)
+{
+  tcp_main_t *tm = vnet_get_tcp_main ();
+  tcp_worker_ctx_t *wrk;
+  u32 thread;
+
+  if (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
+    return clib_error_return (0, "unknown input `%U'", format_unformat_error,
+			      input);
+
+  for (thread = 0; thread < vec_len (tm->wrk_ctx); thread++)
+    {
+      wrk = tcp_get_worker (thread);
+      clib_memset (&wrk->stats, 0, sizeof (wrk->stats));
+    }
+
+  return 0;
+}
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (clear_tcp_stats_command, static) =
+{
+  .path = "clear tcp stats",
+  .short_help = "clear tcp stats",
+  .function = clear_tcp_stats_fn,
 };
 /* *INDENT-ON* */
 

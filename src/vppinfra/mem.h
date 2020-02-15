@@ -45,20 +45,53 @@
 #include <vppinfra/clib.h>	/* uword, etc */
 #include <vppinfra/clib_error.h>
 
-#if USE_DLMALLOC == 0
-#include <vppinfra/mheap_bootstrap.h>
-#else
 #include <vppinfra/dlmalloc.h>
-#endif
 
 #include <vppinfra/os.h>
 #include <vppinfra/string.h>	/* memcpy, clib_memset */
 #include <vppinfra/sanitizer.h>
 
 #define CLIB_MAX_MHEAPS 256
+#define CLIB_MAX_NUMAS 8
+
+/* Unspecified NUMA socket */
+#define VEC_NUMA_UNSPECIFIED (0xFF)
 
 /* Per CPU heaps. */
 extern void *clib_per_cpu_mheaps[CLIB_MAX_MHEAPS];
+extern void *clib_per_numa_mheaps[CLIB_MAX_NUMAS];
+
+always_inline void *
+clib_mem_get_per_cpu_heap (void)
+{
+  int cpu = os_get_thread_index ();
+  return clib_per_cpu_mheaps[cpu];
+}
+
+always_inline void *
+clib_mem_set_per_cpu_heap (u8 * new_heap)
+{
+  int cpu = os_get_thread_index ();
+  void *old = clib_per_cpu_mheaps[cpu];
+  clib_per_cpu_mheaps[cpu] = new_heap;
+  return old;
+}
+
+always_inline void *
+clib_mem_get_per_numa_heap (u32 numa_id)
+{
+  ASSERT (numa_id < ARRAY_LEN (clib_per_numa_mheaps));
+  return clib_per_numa_mheaps[numa_id];
+}
+
+always_inline void *
+clib_mem_set_per_numa_heap (u8 * new_heap)
+{
+  int numa = os_get_numa_index ();
+  void *old = clib_per_numa_mheaps[numa];
+  clib_per_numa_mheaps[numa] = new_heap;
+  return old;
+}
 
 always_inline void
 clib_mem_set_thread_index (void)
@@ -81,31 +114,10 @@ clib_mem_set_thread_index (void)
   ASSERT (__os_thread_index > 0);
 }
 
-always_inline void *
-clib_mem_get_per_cpu_heap (void)
-{
-  int cpu = os_get_thread_index ();
-  return clib_per_cpu_mheaps[cpu];
-}
-
-always_inline void *
-clib_mem_set_per_cpu_heap (u8 * new_heap)
-{
-  int cpu = os_get_thread_index ();
-  void *old = clib_per_cpu_mheaps[cpu];
-  clib_per_cpu_mheaps[cpu] = new_heap;
-  return old;
-}
-
 always_inline uword
 clib_mem_size_nocheck (void *p)
 {
-#if USE_DLMALLOC == 0
-  mheap_elt_t *e = mheap_user_pointer_to_elt (p);
-  return mheap_elt_data_bytes (e);
-#else
   return mspace_usable_size_with_delta (p);
-#endif
 }
 
 /* Memory allocator which may call os_out_of_memory() if it fails */
@@ -127,15 +139,7 @@ clib_mem_alloc_aligned_at_offset (uword size, uword align, uword align_offset,
   cpu = os_get_thread_index ();
   heap = clib_per_cpu_mheaps[cpu];
 
-#if USE_DLMALLOC == 0
-  uword offset;
-  heap = mheap_get_aligned (heap, size, align, align_offset, &offset);
-  clib_per_cpu_mheaps[cpu] = heap;
-  if (PREDICT_TRUE (offset != ~0))
-    p = heap + offset;
-#else
   p = mspace_get_aligned (heap, size, align, align_offset);
-#endif /* USE_DLMALLOC */
 
   if (PREDICT_FALSE (0 == p))
     {
@@ -202,24 +206,9 @@ clib_mem_alloc_aligned_or_null (uword size, uword align)
 always_inline uword
 clib_mem_is_heap_object (void *p)
 {
-#if USE_DLMALLOC == 0
-  void *heap = clib_mem_get_per_cpu_heap ();
-  uword offset = (uword) p - (uword) heap;
-  mheap_elt_t *e, *n;
-
-  if (offset >= vec_len (heap))
-    return 0;
-
-  e = mheap_elt_at_uoffset (heap, offset);
-  n = mheap_next_elt (e);
-
-  /* Check that heap forward and reverse pointers agree. */
-  return e->n_user_data == n->prev_n_user_data;
-#else
   void *heap = clib_mem_get_per_cpu_heap ();
 
   return mspace_is_heap_object (heap, p);
-#endif /* USE_DLMALLOC */
 }
 
 always_inline void
@@ -232,11 +221,7 @@ clib_mem_free (void *p)
 
   CLIB_MEM_POISON (p, clib_mem_size_nocheck (p));
 
-#if USE_DLMALLOC == 0
-  mheap_put (heap, (u8 *) p - heap);
-#else
   mspace_put (heap, p);
-#endif
 }
 
 always_inline void *
@@ -287,6 +272,8 @@ clib_mem_set_heap (void *heap)
 
 void *clib_mem_init (void *heap, uword size);
 void *clib_mem_init_thread_safe (void *memory, uword memory_size);
+void *clib_mem_init_thread_safe_numa (void *memory, uword memory_size,
+				      u8 numa);
 
 void clib_mem_exit (void);
 
@@ -341,6 +328,8 @@ clib_mem_vm_alloc (uword size)
   mmap_addr = mmap (0, size, PROT_READ | PROT_WRITE, flags, -1, 0);
   if (mmap_addr == (void *) -1)
     mmap_addr = 0;
+  else
+    CLIB_MEM_UNPOISON (mmap_addr, size);
 
   return mmap_addr;
 }
@@ -349,6 +338,7 @@ always_inline void
 clib_mem_vm_free (void *addr, uword size)
 {
   munmap (addr, size);
+  CLIB_MEM_POISON (addr, size);
 }
 
 always_inline void *
@@ -364,6 +354,8 @@ clib_mem_vm_unmap (void *addr, uword size)
   mmap_addr = mmap (addr, size, PROT_NONE, flags, -1, 0);
   if (mmap_addr == (void *) -1)
     mmap_addr = 0;
+  else
+    CLIB_MEM_UNPOISON (mmap_addr, size);
 
   return mmap_addr;
 }
@@ -377,6 +369,8 @@ clib_mem_vm_map (void *addr, uword size)
   mmap_addr = mmap (addr, size, (PROT_READ | PROT_WRITE), flags, -1, 0);
   if (mmap_addr == (void *) -1)
     mmap_addr = 0;
+  else
+    CLIB_MEM_UNPOISON (mmap_addr, size);
 
   return mmap_addr;
 }
@@ -425,6 +419,7 @@ typedef struct
   int fd;		/**< File descriptor to be mapped */
   uword requested_va;	/**< Request fixed position mapping */
   void *addr;		/**< Pointer to mapped memory, if successful */
+  u8 numa_node;
 } clib_mem_vm_map_t;
 
 clib_error_t *clib_mem_vm_ext_map (clib_mem_vm_map_t * a);
