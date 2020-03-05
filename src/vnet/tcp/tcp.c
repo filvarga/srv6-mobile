@@ -327,6 +327,18 @@ tcp_connection_free (tcp_connection_t * tc)
   pool_put (wrk->connections, tc);
 }
 
+void
+tcp_program_cleanup (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
+{
+  tcp_cleanup_req_t *req;
+  clib_time_type_t now;
+
+  now = transport_time_now (tc->c_thread_index);
+  clib_fifo_add2 (wrk->pending_cleanups, req);
+  req->connection_index = tc->c_c_index;
+  req->free_time = now + tcp_cfg.cleanup_time;
+}
+
 /**
  * Begin connection closing procedure.
  *
@@ -366,8 +378,8 @@ tcp_connection_close (tcp_connection_t * tc)
 	  tcp_send_reset (tc);
 	  tcp_connection_timers_reset (tc);
 	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
 	  session_transport_closed_notify (&tc->connection);
+	  tcp_program_cleanup (tcp_get_worker (tc->c_thread_index), tc);
 	  tcp_worker_stats_inc (tc->c_thread_index, rst_unread, 1);
 	  break;
 	}
@@ -396,11 +408,7 @@ tcp_connection_close (tcp_connection_t * tc)
       tcp_timer_update (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.finwait1_time);
       break;
     case TCP_STATE_CLOSED:
-      tcp_connection_timers_reset (tc);
-      /* Delete connection but instead of doing it now wait until next
-       * dispatch cycle to give the session layer a chance to clear
-       * unhandled events */
-      tcp_timer_update (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
+      /* Cleanup should've been programmed already */
       break;
     default:
       TCP_DBG ("state: %u", tc->state);
@@ -431,12 +439,12 @@ tcp_session_reset (u32 conn_index, u32 thread_index)
 {
   tcp_connection_t *tc;
   tc = tcp_connection_get (conn_index, thread_index);
-  session_transport_closed_notify (&tc->connection);
   tcp_send_reset (tc);
   tcp_connection_timers_reset (tc);
   tcp_cong_recovery_off (tc);
   tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-  tcp_timer_update (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
+  session_transport_closed_notify (&tc->connection);
+  tcp_program_cleanup (tcp_get_worker (thread_index), tc);
 }
 
 /**
@@ -598,6 +606,10 @@ static void
 tcp_init_rcv_mss (tcp_connection_t * tc)
 {
   u8 ip_hdr_len;
+
+  /* Already provided at connection init time */
+  if (tc->mss)
+    return;
 
   ip_hdr_len = tc->c_is_ip4 ? sizeof (ip4_header_t) : sizeof (ip6_header_t);
   tc->mss = tcp_cfg.default_mtu - sizeof (tcp_header_t) - ip_hdr_len;
@@ -763,6 +775,7 @@ tcp_session_open (transport_endpoint_cfg_t * rmt)
   tc->cc_algo = tcp_cc_algo_get (tcp_cfg.cc_algo);
   /* The other connection vars will be initialized after SYN ACK */
   tcp_connection_timers_init (tc);
+  tc->mss = rmt->mss;
 
   TCP_EVT (TCP_EVT_OPEN, tc);
   tc->state = TCP_STATE_SYN_SENT;
@@ -964,8 +977,8 @@ format_tcp_vars (u8 * s, va_list * args)
 	      tc->rto, tc->rto_boff, tc->srtt, tc->mrtt_us * 1000, tc->rttvar,
 	      tc->rtt_ts);
   s = format (s, " rtt_seq %u\n", tc->rtt_seq - tc->iss);
-  s = format (s, " next_node %u opaque 0x%x\n", tc->next_node_index,
-	      tc->next_node_opaque);
+  s = format (s, " next_node %u opaque 0x%x fib_index %u\n",
+	      tc->next_node_index, tc->next_node_opaque, tc->c_fib_index);
   s = format (s, " cong:   %U", format_tcp_congestion, tc);
 
   if (tc->state >= TCP_STATE_ESTABLISHED)
@@ -1288,12 +1301,186 @@ tcp_session_tx_fifo_offset (transport_connection_t * trans_conn)
 }
 
 static void
+tcp_timer_waitclose_handler (tcp_connection_t * tc)
+{
+  tcp_worker_ctx_t *wrk = tcp_get_worker (tc->c_thread_index);
+
+  switch (tc->state)
+    {
+    case TCP_STATE_CLOSE_WAIT:
+      tcp_connection_timers_reset (tc);
+      /* App never returned with a close */
+      if (!(tc->flags & TCP_CONN_FINPNDG))
+	{
+	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+	  session_transport_closed_notify (&tc->connection);
+	  tcp_program_cleanup (wrk, tc);
+	  tcp_workerp_stats_inc (wrk, to_closewait, 1);
+	  break;
+	}
+
+      /* Send FIN either way and switch to LAST_ACK. */
+      tcp_cong_recovery_off (tc);
+      /* Make sure we don't try to send unsent data */
+      tc->snd_nxt = tc->snd_una;
+      tcp_send_fin (tc);
+      tcp_connection_set_state (tc, TCP_STATE_LAST_ACK);
+      session_transport_closed_notify (&tc->connection);
+
+      /* Make sure we don't wait in LAST ACK forever */
+      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.lastack_time);
+      tcp_workerp_stats_inc (wrk, to_closewait2, 1);
+
+      /* Don't delete the connection yet */
+      break;
+    case TCP_STATE_FIN_WAIT_1:
+      tcp_connection_timers_reset (tc);
+      if (tc->flags & TCP_CONN_FINPNDG)
+	{
+	  /* If FIN pending, we haven't sent everything, but we did try.
+	   * Notify session layer that transport is closed. */
+	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+	  tcp_send_reset (tc);
+	  tcp_program_cleanup (wrk, tc);
+	}
+      else
+	{
+	  /* We've sent the fin but no progress. Close the connection and
+	   * to make sure everything is flushed, setup a cleanup timer */
+	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+	  tcp_program_cleanup (wrk, tc);
+	}
+      session_transport_closed_notify (&tc->connection);
+      tcp_workerp_stats_inc (wrk, to_finwait1, 1);
+      break;
+    case TCP_STATE_LAST_ACK:
+      tcp_connection_timers_reset (tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      session_transport_closed_notify (&tc->connection);
+      tcp_program_cleanup (wrk, tc);
+      tcp_workerp_stats_inc (wrk, to_lastack, 1);
+      break;
+    case TCP_STATE_CLOSING:
+      tcp_connection_timers_reset (tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      session_transport_closed_notify (&tc->connection);
+      tcp_program_cleanup (wrk, tc);
+      tcp_workerp_stats_inc (wrk, to_closing, 1);
+      break;
+    case TCP_STATE_FIN_WAIT_2:
+      tcp_send_reset (tc);
+      tcp_connection_timers_reset (tc);
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      session_transport_closed_notify (&tc->connection);
+      tcp_program_cleanup (wrk, tc);
+      tcp_workerp_stats_inc (wrk, to_finwait2, 1);
+      break;
+    case TCP_STATE_TIME_WAIT:
+      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      tcp_program_cleanup (wrk, tc);
+      break;
+    default:
+      clib_warning ("waitclose in state: %U", format_tcp_state, tc->state);
+      break;
+    }
+}
+
+/* *INDENT-OFF* */
+static timer_expiration_handler *timer_expiration_handlers[TCP_N_TIMERS] =
+{
+    tcp_timer_retransmit_handler,
+    tcp_timer_delack_handler,
+    tcp_timer_persist_handler,
+    tcp_timer_waitclose_handler,
+    tcp_timer_retransmit_syn_handler,
+};
+/* *INDENT-ON* */
+
+static void
+tcp_dispatch_pending_timers (tcp_worker_ctx_t * wrk)
+{
+  u32 n_timers, connection_index, timer_id, thread_index, timer_handle;
+  tcp_connection_t *tc;
+  int i;
+
+  if (!(n_timers = clib_fifo_elts (wrk->pending_timers)))
+    return;
+
+  thread_index = wrk->vm->thread_index;
+  for (i = 0; i < clib_min (n_timers, wrk->max_timers_per_loop); i++)
+    {
+      clib_fifo_sub1 (wrk->pending_timers, timer_handle);
+      connection_index = timer_handle & 0x0FFFFFFF;
+      timer_id = timer_handle >> 28;
+
+      if (PREDICT_TRUE (timer_id != TCP_TIMER_RETRANSMIT_SYN))
+	tc = tcp_connection_get (connection_index, thread_index);
+      else
+	tc = tcp_half_open_connection_get (connection_index);
+
+      if (PREDICT_FALSE (!tc))
+	continue;
+
+      /* Skip timer if it was rearmed while pending dispatch */
+      if (PREDICT_FALSE (tc->timers[timer_id] != TCP_TIMER_HANDLE_INVALID))
+	continue;
+
+      (*timer_expiration_handlers[timer_id]) (tc);
+    }
+
+  if (thread_index == 0 && clib_fifo_elts (wrk->pending_timers))
+    vlib_process_signal_event_mt (wrk->vm, session_queue_process_node.index,
+				  SESSION_Q_PROCESS_FLUSH_FRAMES, 0);
+}
+
+/**
+ * Flush ip lookup tx frames populated by timer pops
+ */
+static void
+tcp_flush_frames_to_output (tcp_worker_ctx_t * wrk)
+{
+  if (wrk->ip_lookup_tx_frames[0])
+    {
+      vlib_put_frame_to_node (wrk->vm, ip4_lookup_node.index,
+			      wrk->ip_lookup_tx_frames[0]);
+      wrk->ip_lookup_tx_frames[0] = 0;
+    }
+  if (wrk->ip_lookup_tx_frames[1])
+    {
+      vlib_put_frame_to_node (wrk->vm, ip6_lookup_node.index,
+			      wrk->ip_lookup_tx_frames[1]);
+      wrk->ip_lookup_tx_frames[1] = 0;
+    }
+}
+
+static void
+tcp_handle_cleanups (tcp_worker_ctx_t * wrk, clib_time_type_t now)
+{
+  u32 thread_index = wrk->vm->thread_index;
+  tcp_cleanup_req_t *req;
+  tcp_connection_t *tc;
+
+  while (clib_fifo_elts (wrk->pending_cleanups))
+    {
+      req = clib_fifo_head (wrk->pending_cleanups);
+      if (req->free_time > now)
+	break;
+      clib_fifo_sub2 (wrk->pending_cleanups, req);
+      tc = tcp_connection_get (req->connection_index, thread_index);
+      session_transport_delete_notify (&tc->connection);
+      tcp_connection_cleanup (tc);
+    }
+}
+
+static void
 tcp_update_time (f64 now, u8 thread_index)
 {
   tcp_worker_ctx_t *wrk = tcp_get_worker (thread_index);
 
   tcp_set_time_now (wrk);
+  tcp_handle_cleanups (wrk, now);
   tw_timer_expire_timers_16t_2w_512sl (&wrk->timer_wheel, now);
+  tcp_dispatch_pending_timers (wrk);
   tcp_flush_frames_to_output (wrk);
 }
 
@@ -1361,111 +1548,18 @@ tcp_connection_tx_pacer_reset (tcp_connection_t * tc, u32 window,
 }
 
 static void
-tcp_timer_waitclose_handler (u32 conn_index, u32 thread_index)
-{
-  tcp_connection_t *tc;
-
-  tc = tcp_connection_get (conn_index, thread_index);
-  if (!tc)
-    return;
-
-  switch (tc->state)
-    {
-    case TCP_STATE_CLOSE_WAIT:
-      tcp_connection_timers_reset (tc);
-      session_transport_closed_notify (&tc->connection);
-
-      if (!(tc->flags & TCP_CONN_FINPNDG))
-	{
-	  clib_warning ("close-wait with fin sent");
-	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-	  break;
-	}
-
-      /* Session didn't come back with a close. Send FIN either way
-       * and switch to LAST_ACK. */
-      tcp_cong_recovery_off (tc);
-      /* Make sure we don't try to send unsent data */
-      tc->snd_nxt = tc->snd_una;
-      tcp_send_fin (tc);
-      tcp_connection_set_state (tc, TCP_STATE_LAST_ACK);
-
-      /* Make sure we don't wait in LAST ACK forever */
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.lastack_time);
-      tcp_worker_stats_inc (thread_index, to_closewait, 1);
-
-      /* Don't delete the connection yet */
-      break;
-    case TCP_STATE_FIN_WAIT_1:
-      tcp_connection_timers_reset (tc);
-      session_transport_closed_notify (&tc->connection);
-      if (tc->flags & TCP_CONN_FINPNDG)
-	{
-	  /* If FIN pending, we haven't sent everything, but we did try.
-	   * Notify session layer that transport is closed. */
-	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-	  tcp_send_reset (tc);
-	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-	}
-      else
-	{
-	  /* We've sent the fin but no progress. Close the connection and
-	   * to make sure everything is flushed, setup a cleanup timer */
-	  tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-	  tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-	}
-      tcp_worker_stats_inc (thread_index, to_finwait1, 1);
-      break;
-    case TCP_STATE_LAST_ACK:
-      tcp_connection_timers_reset (tc);
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-      session_transport_closed_notify (&tc->connection);
-      tcp_worker_stats_inc (thread_index, to_lastack, 1);
-      break;
-    case TCP_STATE_CLOSING:
-      tcp_connection_timers_reset (tc);
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-      session_transport_closed_notify (&tc->connection);
-      tcp_worker_stats_inc (thread_index, to_closing, 1);
-      break;
-    case TCP_STATE_FIN_WAIT_2:
-      tcp_send_reset (tc);
-      tcp_connection_timers_reset (tc);
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
-      session_transport_closed_notify (&tc->connection);
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
-      tcp_worker_stats_inc (thread_index, to_finwait2, 1);
-      break;
-    default:
-      tcp_connection_del (tc);
-      break;
-    }
-}
-
-/* *INDENT-OFF* */
-static timer_expiration_handler *timer_expiration_handlers[TCP_N_TIMERS] =
-{
-    tcp_timer_retransmit_handler,
-    tcp_timer_delack_handler,
-    tcp_timer_persist_handler,
-    tcp_timer_waitclose_handler,
-    tcp_timer_retransmit_syn_handler,
-};
-/* *INDENT-ON* */
-
-static void
 tcp_expired_timers_dispatch (u32 * expired_timers)
 {
-  u32 thread_index = vlib_get_thread_index ();
-  u32 connection_index, timer_id, n_expired;
+  u32 thread_index = vlib_get_thread_index (), n_left, max_per_loop;
+  u32 connection_index, timer_id, n_expired, max_loops;
+  tcp_worker_ctx_t *wrk;
   tcp_connection_t *tc;
   int i;
 
+  wrk = tcp_get_worker (thread_index);
   n_expired = vec_len (expired_timers);
-  tcp_worker_stats_inc (thread_index, timer_expirations, n_expired);
+  tcp_workerp_stats_inc (wrk, timer_expirations, n_expired);
+  n_left = clib_fifo_elts (wrk->pending_timers);
 
   /*
    * Invalidate all timer handles before dispatching. This avoids dangling
@@ -1486,15 +1580,17 @@ tcp_expired_timers_dispatch (u32 * expired_timers)
       tc->timers[timer_id] = TCP_TIMER_HANDLE_INVALID;
     }
 
-  /*
-   * Dispatch expired timers
-   */
-  for (i = 0; i < n_expired; i++)
-    {
-      connection_index = expired_timers[i] & 0x0FFFFFFF;
-      timer_id = expired_timers[i] >> 28;
-      (*timer_expiration_handlers[timer_id]) (connection_index, thread_index);
-    }
+  clib_fifo_add (wrk->pending_timers, expired_timers, n_expired);
+
+  max_loops = clib_max (1, 0.5 * TCP_TIMER_TICK * wrk->vm->loops_per_second);
+  max_per_loop = clib_max ((n_left + n_expired) / max_loops, 10);
+  max_per_loop = clib_min (max_per_loop, VLIB_FRAME_SIZE);
+  wrk->max_timers_per_loop = clib_max (n_left ? wrk->max_timers_per_loop : 0,
+				       max_per_loop);
+
+  if (thread_index == 0)
+    vlib_process_signal_event_mt (wrk->vm, session_queue_process_node.index,
+				  SESSION_Q_PROCESS_FLUSH_FRAMES, 0);
 }
 
 static void
@@ -1566,6 +1662,7 @@ tcp_main_enable (vlib_main_t * vm)
       vec_reset_length (wrk->pending_disconnects);
       vec_reset_length (wrk->pending_resets);
       wrk->vm = vlib_mains[thread];
+      wrk->max_timers_per_loop = 10;
 
       /*
        * Preallocate connections. Assume that thread 0 won't
@@ -1656,7 +1753,7 @@ tcp_configuration_init (void)
   tcp_cfg.lastack_time = 300;	/* 30s */
   tcp_cfg.finwait2_time = 300;	/* 30s */
   tcp_cfg.closing_time = 300;	/* 30s */
-  tcp_cfg.cleanup_time = 1;	/* 0.1s */
+  tcp_cfg.cleanup_time = 0.1;	/* 100ms */
 }
 
 static clib_error_t *
@@ -1806,7 +1903,7 @@ tcp_config_fn (vlib_main_t * vm, unformat_input_t * input)
       else if (unformat (input, "closing-time %u", &tmp_time))
 	tcp_cfg.closing_time = tmp_time / TCP_TIMER_TICK;
       else if (unformat (input, "cleanup-time %u", &tmp_time))
-	tcp_cfg.cleanup_time = tmp_time / TCP_TIMER_TICK;
+	tcp_cfg.cleanup_time = tmp_time / 1000.0;
       else
 	return clib_error_return (0, "unknown input `%U'",
 				  format_unformat_error, input);
@@ -2297,14 +2394,19 @@ show_tcp_stats_fn (vlib_main_t * vm, unformat_input_t * input,
   for (thread = 0; thread < vec_len (tm->wrk_ctx); thread++)
     {
       wrk = tcp_get_worker (thread);
-      vlib_cli_output (vm, "Thread %d:\n", thread);
+      vlib_cli_output (vm, "Thread %u:\n", thread);
+
+      if (clib_fifo_elts (wrk->pending_timers))
+	vlib_cli_output (vm, " %lu pending timers",
+			 clib_fifo_elts (wrk->pending_timers));
 
 #define _(name,type,str)					\
   if (wrk->stats.name)						\
-    vlib_cli_output (vm, " %ld %s", wrk->stats.name, str);
+    vlib_cli_output (vm, " %lu %s", wrk->stats.name, str);
       foreach_tcp_wrk_stat
 #undef _
     }
+
   return 0;
 }
 

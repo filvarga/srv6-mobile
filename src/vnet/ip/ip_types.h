@@ -24,6 +24,8 @@ typedef enum ip_address_family_t_
   AF_IP6,
 } ip_address_family_t;
 
+#define N_AF (AF_IP6+1)
+
 extern uword unformat_ip_address_family (unformat_input_t * input,
 					 va_list * args);
 extern u8 *format_ip_address_family (u8 * s, va_list * args);
@@ -46,11 +48,15 @@ typedef struct ip_address
 } __clib_packed ip_address_t;
 /* *INDENT-ON* */
 
+#define IP_ADDRESS_V4_ALL_0S {.ip.v4.as_u32 = 0, .version = AF_IP4}
+#define IP_ADDRESS_V6_ALL_0S {.ip.v4.as_u32 = 0, .version = AF_IP6}
+
 #define ip_addr_addr(_a) (_a)->ip
 #define ip_addr_v4(_a) (_a)->ip.v4
 #define ip_addr_v6(_a) (_a)->ip.v6
 #define ip_addr_version(_a) (_a)->version
 
+extern bool ip_address_is_zero (const ip_address_t * ip);
 extern int ip_address_cmp (const ip_address_t * ip1,
 			   const ip_address_t * ip2);
 extern void ip_address_copy (ip_address_t * dst, const ip_address_t * src);
@@ -60,8 +66,10 @@ extern u16 ip_address_size (const ip_address_t * a);
 extern u16 ip_version_to_size (u8 ver);
 extern u8 *format_ip_address (u8 * s, va_list * args);
 extern uword unformat_ip_address (unformat_input_t * input, va_list * args);
-extern void ip_address_to_46 (const ip_address_t * addr,
-			      ip46_address_t * a, fib_protocol_t * proto);
+extern fib_protocol_t ip_address_to_46 (const ip_address_t * addr,
+					ip46_address_t * a);
+extern void ip_address_from_46 (const ip46_address_t * a,
+				fib_protocol_t fproto, ip_address_t * addr);
 
 /* *INDENT-OFF* */
 typedef struct ip_prefix

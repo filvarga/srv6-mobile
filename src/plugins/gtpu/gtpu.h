@@ -23,6 +23,7 @@
 #include <vppinfra/hash.h>
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
+#include <vnet/ip/vtep.h>
 #include <vnet/l2/l2_input.h>
 #include <vnet/l2/l2_output.h>
 #include <vnet/l2/l2_bd.h>
@@ -81,7 +82,7 @@ typedef CLIB_PACKED(struct
 {
   ip4_header_t ip4;            /* 20 bytes */
   udp_header_t udp;            /* 8 bytes */
-  gtpu_header_t gtpu;	       /* 8 bytes */
+  gtpu_header_t gtpu;	       /* 12 bytes */
 }) ip4_gtpu_header_t;
 /* *INDENT-ON* */
 
@@ -173,6 +174,8 @@ typedef struct
    * The tunnels sibling index on the FIB entry's dependency list.
    */
   u32 sibling_index;
+
+  u32 flow_index;		/* infra flow index */
 } gtpu_tunnel_t;
 
 #define foreach_gtpu_input_next        \
@@ -208,8 +211,7 @@ typedef struct
 
   /* local VTEP IPs ref count used by gtpu-bypass node to check if
      received gtpu packet DIP matches any local VTEP address */
-  uword *vtep4;			/* local ip4 VTEPs keyed on their ip4 addr */
-  uword *vtep6;			/* local ip6 VTEPs keyed on their ip6 addr */
+  vtep_table_t vtep_table;
 
   /* mcast shared info */
   uword *mcast_shared;		/* keyed on mcast ip46 addr */
@@ -231,6 +233,7 @@ typedef struct
   /* convenience */
   vlib_main_t *vlib_main;
   vnet_main_t *vnet_main;
+  u32 flow_id_start;
 } gtpu_main_t;
 
 extern gtpu_main_t gtpu_main;
@@ -239,6 +242,7 @@ extern vlib_node_registration_t gtpu4_input_node;
 extern vlib_node_registration_t gtpu6_input_node;
 extern vlib_node_registration_t gtpu4_encap_node;
 extern vlib_node_registration_t gtpu6_encap_node;
+extern vlib_node_registration_t gtpu4_flow_input_node;
 
 u8 *format_gtpu_encap_trace (u8 * s, va_list * args);
 
@@ -262,6 +266,9 @@ typedef struct
 } gtpu_encap_trace_t;
 
 void vnet_int_gtpu_bypass_mode (u32 sw_if_index, u8 is_ip6, u8 is_enable);
+u32 vnet_gtpu_get_tunnel_index (u32 sw_if_index);
+int vnet_gtpu_add_del_rx_flow (u32 hw_if_index, u32 t_imdex, int is_add);
+
 #endif /* included_vnet_gtpu_h */
 
 

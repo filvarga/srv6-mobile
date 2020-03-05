@@ -251,8 +251,7 @@ tls_async_openssl_callback (SSL * s, void *cb_arg)
   int *evt_run_head = &om->queue[thread_index].evt_run_head;
 
   TLS_DBG (2, "Set event %d to run\n", event_index);
-
-  event = openssl_evt_get (event_index);
+  event = openssl_evt_get_w_thread (event_index, thread_index);
 
   /* Happend when a recursive case, especially in SW simulation */
   if (PREDICT_FALSE (event->status == SSL_ASYNC_READY))
@@ -303,6 +302,18 @@ vpp_tls_async_init_event (tls_ctx_t * ctx,
   return 1;
 }
 
+int
+vpp_openssl_is_inflight (tls_ctx_t * ctx)
+{
+  u32 eidx;
+  openssl_evt_t *event;
+  eidx = ctx->evt_index;
+  event = openssl_evt_get (eidx);
+
+  if (event->status == SSL_ASYNC_INFLIGHT)
+    return 1;
+  return 0;
+}
 
 int
 vpp_tls_async_update_event (tls_ctx_t * ctx, int eagain)
@@ -310,13 +321,11 @@ vpp_tls_async_update_event (tls_ctx_t * ctx, int eagain)
   u32 eidx;
   openssl_evt_t *event;
 
+  eidx = ctx->evt_index;
+  event = openssl_evt_get (eidx);
+  event->status = SSL_ASYNC_INFLIGHT;
   if (eagain)
-    {
-      eidx = ctx->evt_index;
-      event = openssl_evt_get (eidx);
-
-      return tls_async_openssl_callback (0, &event->cb_args);
-    }
+    return tls_async_openssl_callback (0, &event->cb_args);
 
   return 1;
 }

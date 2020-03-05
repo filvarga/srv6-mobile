@@ -327,17 +327,15 @@ tcp_rcv_rst (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
       break;
     case TCP_STATE_SYN_SENT:
-      tcp_program_reset_ntf (wrk, tc);
-      tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      /* Do not program ntf because the connection is half-open */
+      tcp_handle_rst (tc);
       break;
     case TCP_STATE_ESTABLISHED:
       tcp_connection_timers_reset (tc);
-      /* Set the cleanup timer, in case the session layer/app don't
-       * cleanly close the connection */
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
       tcp_cong_recovery_off (tc);
       tcp_program_reset_ntf (wrk, tc);
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      tcp_program_cleanup (wrk, tc);
       break;
     case TCP_STATE_CLOSE_WAIT:
     case TCP_STATE_FIN_WAIT_1:
@@ -345,12 +343,12 @@ tcp_rcv_rst (tcp_worker_ctx_t * wrk, tcp_connection_t * tc)
     case TCP_STATE_CLOSING:
     case TCP_STATE_LAST_ACK:
       tcp_connection_timers_reset (tc);
-      tcp_timer_set (tc, TCP_TIMER_WAITCLOSE, tcp_cfg.closewait_time);
       tcp_cong_recovery_off (tc);
       tcp_program_reset_ntf (wrk, tc);
       /* Make sure we mark the session as closed. In some states we may
        * be still trying to send data */
       tcp_connection_set_state (tc, TCP_STATE_CLOSED);
+      tcp_program_cleanup (wrk, tc);
       break;
     case TCP_STATE_CLOSED:
     case TCP_STATE_TIME_WAIT:
@@ -1096,9 +1094,7 @@ tcp_rcv_sacks (tcp_connection_t * tc, u32 ack)
     {
       if (seq_lt (blk->start, blk->end)
 	  && seq_gt (blk->start, tc->snd_una)
-	  && seq_gt (blk->start, ack)
-	  && seq_lt (blk->start, tc->snd_nxt)
-	  && seq_leq (blk->end, tc->snd_nxt))
+	  && seq_gt (blk->start, ack) && seq_leq (blk->end, tc->snd_nxt))
 	{
 	  blk++;
 	  continue;
@@ -3031,9 +3027,8 @@ tcp46_rcv_process_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      if (tc0->flags & TCP_CONN_FINRCVD)
 		{
 		  tcp_connection_set_state (tc0, TCP_STATE_CLOSED);
-		  tcp_timer_set (tc0, TCP_TIMER_WAITCLOSE,
-				 tcp_cfg.cleanup_time);
 		  session_transport_closed_notify (&tc0->connection);
+		  tcp_program_cleanup (wrk, tc0);
 		  goto drop;
 		}
 
@@ -3114,7 +3109,7 @@ tcp46_rcv_process_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	   * we can't ensure that we have no packets already enqueued
 	   * to output. Rely instead on the waitclose timer */
 	  tcp_connection_timers_reset (tc0);
-	  tcp_timer_set (tc0, TCP_TIMER_WAITCLOSE, tcp_cfg.cleanup_time);
+	  tcp_program_cleanup (tcp_get_worker (tc0->c_thread_index), tc0);
 
 	  goto drop;
 
