@@ -26,9 +26,12 @@ typedef struct segment_manager_main_
   /*
    * Configuration
    */
-  u32 default_fifo_size;		/**< default rx/tx fifo size */
-  u32 default_segment_size;		/**< default fifo segment size */
-  u32 default_app_mq_size;		/**< default app msg q size */
+  u32 default_fifo_size;	/**< default rx/tx fifo size */
+  u32 default_segment_size;	/**< default fifo segment size */
+  u32 default_app_mq_size;	/**< default app msg q size */
+  u32 default_max_fifo_size;	/**< default max fifo size */
+  u8 default_high_watermark;	/**< default high watermark % */
+  u8 default_low_watermark;	/**< default low watermark % */
 } segment_manager_main_t;
 
 static segment_manager_main_t sm_main;
@@ -54,6 +57,9 @@ segment_manager_props_init (segment_manager_props_t * props)
   props->rx_fifo_size = sm_main.default_fifo_size;
   props->tx_fifo_size = sm_main.default_fifo_size;
   props->evt_q_size = sm_main.default_app_mq_size;
+  props->max_fifo_size = sm_main.default_max_fifo_size;
+  props->high_watermark = sm_main.default_high_watermark;
+  props->low_watermark = sm_main.default_low_watermark;
   props->n_slices = vlib_num_workers () + 1;
   return props;
 }
@@ -159,6 +165,14 @@ segment_manager_add_segment (segment_manager_t * sm, uword segment_size)
    * Save segment index before dropping lock, if any held
    */
   fs_index = fs - sm->segments;
+
+  /*
+   * Set watermarks in segment
+   */
+  fs->h->high_watermark = sm->high_watermark;
+  fs->h->low_watermark = sm->low_watermark;
+  fs->h->pct_first_alloc = props->pct_first_alloc;
+  fs->h->flags &= ~FIFO_SEGMENT_F_MEM_LIMIT;
 
 done:
 
@@ -307,11 +321,12 @@ segment_manager_alloc (void)
  * Returns error if ssvm segment(s) allocation fails.
  */
 int
-segment_manager_init (segment_manager_t * sm, uword first_seg_size,
-		      u32 prealloc_fifo_pairs)
+segment_manager_init (segment_manager_t * sm)
 {
   u32 rx_fifo_size, tx_fifo_size, pair_size;
   u32 rx_rounded_data_size, tx_rounded_data_size;
+  uword first_seg_size;
+  u32 prealloc_fifo_pairs;
   u64 approx_total_size, max_seg_size = ((u64) 1 << 32) - (128 << 10);
   segment_manager_props_t *props;
   fifo_segment_t *segment;
@@ -319,7 +334,17 @@ segment_manager_init (segment_manager_t * sm, uword first_seg_size,
   int seg_index, i;
 
   props = segment_manager_properties_get (sm);
-  first_seg_size = clib_max (first_seg_size, sm_main.default_segment_size);
+  first_seg_size = clib_max (props->segment_size,
+			     sm_main.default_segment_size);
+  prealloc_fifo_pairs = props->prealloc_fifos;
+
+  sm->max_fifo_size = props->max_fifo_size ?
+    props->max_fifo_size : sm_main.default_max_fifo_size;
+  sm->max_fifo_size = clib_max (sm->max_fifo_size, 4096);
+
+  segment_manager_set_watermarks (sm,
+				  props->high_watermark,
+				  props->low_watermark);
 
   if (prealloc_fifo_pairs)
     {
@@ -432,6 +457,27 @@ segment_manager_get_if_valid (u32 index)
   if (pool_is_free_index (sm_main.segment_managers, index))
     return 0;
   return pool_elt_at_index (sm_main.segment_managers, index);
+}
+
+static fifo_segment_t *
+find_max_free_segment (segment_manager_t * sm, u32 thread_index)
+{
+  fifo_segment_t *cur, *fs = 0;
+  uword free_bytes, max_free_bytes = 0;
+
+  clib_rwlock_reader_lock (&sm->segments_rwlock);
+  /* *INDENT-OFF* */
+  pool_foreach (cur, sm->segments, ({
+    if ((free_bytes = fifo_segment_free_bytes (cur)) > max_free_bytes)
+      {
+        max_free_bytes = free_bytes;
+        fs = cur;
+      }
+  }));
+  /* *INDENT-ON* */
+  clib_rwlock_reader_unlock (&sm->segments_rwlock);
+
+  return fs;
 }
 
 u32
@@ -569,19 +615,25 @@ segment_manager_alloc_session_fifos (segment_manager_t * sm,
   /*
    * Find the first free segment to allocate the fifos in
    */
+  fs = find_max_free_segment (sm, thread_index);
 
-  /* *INDENT-OFF* */
-  segment_manager_foreach_segment_w_lock (fs, sm, ({
-    alloc_fail = segment_manager_try_alloc_fifos (fs,
-                                                  thread_index,
-                                                  props->rx_fifo_size,
-                                                  props->tx_fifo_size,
-                                                  rx_fifo, tx_fifo);
-    /* Exit with lock held, drop it after notifying app */
-    if (!alloc_fail)
-      goto alloc_success;
-  }));
-  /* *INDENT-ON* */
+  if (fs)
+    {
+      clib_rwlock_reader_lock (&sm->segments_rwlock);
+      alloc_fail = segment_manager_try_alloc_fifos (fs, thread_index,
+						    props->rx_fifo_size,
+						    props->tx_fifo_size,
+						    rx_fifo, tx_fifo);
+      /* On success, keep lock until fifos are initialized */
+      if (!alloc_fail)
+	goto alloc_success;
+
+      segment_manager_segment_reader_unlock (sm);
+    }
+  else
+    {
+      alloc_fail = 1;
+    }
 
 alloc_check:
 
@@ -686,50 +738,6 @@ segment_manager_dealloc_fifos (svm_fifo_t * rx_fifo, svm_fifo_t * tx_fifo)
     segment_manager_segment_reader_unlock (sm);
 }
 
-int
-segment_manager_grow_fifo (segment_manager_t * sm, svm_fifo_t * f, u32 size)
-{
-  fifo_segment_t *fs;
-  int rv;
-
-  fs = segment_manager_get_segment_w_lock (sm, f->segment_index);
-  rv = fifo_segment_grow_fifo (fs, f, size);
-  segment_manager_segment_reader_unlock (sm);
-
-  return rv;
-}
-
-int
-segment_manager_collect_fifo_chunks (segment_manager_t * sm, svm_fifo_t * f)
-{
-  fifo_segment_t *fs;
-  int rv;
-
-  fs = segment_manager_get_segment_w_lock (sm, f->segment_index);
-  rv = fifo_segment_collect_fifo_chunks (fs, f);
-  segment_manager_segment_reader_unlock (sm);
-
-  return rv;
-}
-
-int
-segment_manager_shrink_fifo (segment_manager_t * sm, svm_fifo_t * f, u32 size,
-			     u8 is_producer)
-{
-  int rv;
-
-  rv = svm_fifo_reduce_size (f, size, is_producer);
-
-  /* Nothing to collect at this point */
-  if (!is_producer)
-    return rv;
-
-  if (f->flags & SVM_FIFO_F_COLLECT_CHUNKS)
-    segment_manager_collect_fifo_chunks (sm, f);
-
-  return rv;
-}
-
 u32
 segment_manager_evt_q_expected_size (u32 q_len)
 {
@@ -831,6 +839,9 @@ segment_manager_main_init (segment_manager_main_init_args_t * a)
   sm->default_fifo_size = 1 << 12;
   sm->default_segment_size = 1 << 20;
   sm->default_app_mq_size = 128;
+  sm->default_max_fifo_size = 4 << 20;
+  sm->default_high_watermark = 80;
+  sm->default_low_watermark = 50;
 }
 
 static clib_error_t *
@@ -841,6 +852,9 @@ segment_manager_show_fn (vlib_main_t * vm, unformat_input_t * input,
   u8 show_segments = 0, verbose = 0;
   segment_manager_t *sm;
   fifo_segment_t *seg;
+  app_worker_t *app_wrk;
+  application_t *app;
+  u8 custom_logic;
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT)
     {
@@ -856,13 +870,22 @@ segment_manager_show_fn (vlib_main_t * vm, unformat_input_t * input,
 		   pool_elts (smm->segment_managers));
   if (verbose && pool_elts (smm->segment_managers))
     {
-      vlib_cli_output (vm, "%-10s%=15s%=12s", "Index", "App Index",
-		       "Segments");
+      vlib_cli_output (vm, "%-6s%=10s%=10s%=13s%=11s%=11s%=12s",
+		       "Index", "AppIndex", "Segments", "MaxFifoSize",
+		       "HighWater", "LowWater", "FifoTuning");
 
       /* *INDENT-OFF* */
       pool_foreach (sm, smm->segment_managers, ({
-	vlib_cli_output (vm, "%-10d%=15d%=12d", segment_manager_index (sm),
-			   sm->app_wrk_index, pool_elts (sm->segments));
+        app_wrk = app_worker_get_if_valid (sm->app_wrk_index);
+        app = app_wrk ? application_get (app_wrk->app_index) : 0;
+        custom_logic = (app && (app->cb_fns.fifo_tuning_callback)) ? 1 : 0;
+
+	vlib_cli_output (vm, "%-6d%=10d%=10d%=13U%=11d%=11d%=12s",
+                         segment_manager_index (sm),
+			 sm->app_wrk_index, pool_elts (sm->segments),
+                         format_memory_size, sm->max_fifo_size,
+                         sm->high_watermark, sm->low_watermark,
+                         custom_logic ? "custom" : "none");
       }));
       /* *INDENT-ON* */
 
@@ -952,6 +975,17 @@ segment_manager_format_sessions (segment_manager_t * sm, int verbose)
   /* *INDENT-ON* */
 
   clib_rwlock_reader_unlock (&sm->segments_rwlock);
+}
+
+void
+segment_manager_set_watermarks (segment_manager_t * sm,
+				u8 high_watermark, u8 low_watermark)
+{
+  ASSERT (high_watermark <= 100 && low_watermark <= 100 &&
+	  low_watermark <= high_watermark);
+
+  sm->high_watermark = high_watermark;
+  sm->low_watermark = low_watermark;
 }
 
 /*

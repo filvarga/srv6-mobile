@@ -571,6 +571,8 @@ static void *vl_api_tap_create_v2_t_print
     s =
       format (s, "host-ip6-gw %U ", format_ip6_address,
 	      mp->host_ip6_prefix.address);
+  if (mp->num_rx_queues)
+    s = format (s, "num_rx_queues %u ", mp->num_rx_queues);
   if (mp->tx_ring_sz)
     s = format (s, "tx-ring-size %u ", (mp->tx_ring_sz));
   if (mp->rx_ring_sz)
@@ -865,7 +867,7 @@ static void *vl_api_sr_mpls_policy_add_t_print
   if (mp->weight != htonl ((u32) 1))
     s = format (s, "%d ", (mp->weight));
 
-  if (mp->type)
+  if (mp->is_spray)
     s = format (s, "spray ");
 
   if (mp->n_segments)
@@ -1781,7 +1783,7 @@ static void *vl_api_sw_interface_dump_t_print
 
   if (mp->name_filter_valid)
     {
-      u8 *v = vl_api_from_api_to_vec (&mp->name_filter);
+      u8 *v = vl_api_from_api_to_new_vec (&mp->name_filter);
       s = format (s, "name_filter %v ", v);
       vec_free (v);
     }
@@ -1839,10 +1841,8 @@ static void *vl_api_cli_inband_t_print
 {
   u8 *s;
   u8 *cmd = 0;
-  u32 length = vl_api_string_len (&mp->cmd);
 
-  vec_validate (cmd, length);
-  clib_memcpy (cmd, vl_api_from_api_string (&mp->cmd), length);
+  cmd = vl_api_from_api_to_new_vec (&mp->cmd);
 
   s = format (0, "SCRIPT: exec %v ", cmd);
 
@@ -1898,8 +1898,10 @@ static void *vl_api_vxlan_gpe_add_del_tunnel_t_print
 
   s = format (0, "SCRIPT: vxlan_gpe_add_del_tunnel ");
 
-  ip46_address_t local = to_ip46 (mp->is_ipv6, mp->local);
-  ip46_address_t remote = to_ip46 (mp->is_ipv6, mp->remote);
+  ip46_address_t local, remote;
+
+  ip_address_decode (&mp->local, &local);
+  ip_address_decode (&mp->remote, &remote);
 
   u8 is_grp = ip46_address_is_multicast (&remote);
   char *remote_name = is_grp ? "group" : "remote";
@@ -2531,8 +2533,10 @@ static void *vl_api_pg_enable_disable_t_print
   u8 *s;
 
   s = format (0, "SCRIPT: pg_enable_disable ");
-  if ((mp->stream_name_length) > 0)
-    s = format (s, "stream %s", mp->stream_name);
+  if (vl_api_string_len (&mp->stream_name) > 0)
+    s =
+      format (s, "stream %s",
+	      vl_api_from_api_to_new_c_string (&mp->stream_name));
   if (!mp->is_enabled)
     s = format (s, "disable");
 
@@ -3395,7 +3399,7 @@ static void *vl_api_sw_interface_set_lldp_t_print
   s = format (0, "SCRIPT: sw_interface_set_lldp ");
   s = format (s, "sw_if_index %d ", (mp->sw_if_index));
 
-  if (memcmp (mp->port_desc, null_data, sizeof (mp->port_desc)))
+  if (memcmp (&mp->port_desc, null_data, sizeof (mp->port_desc)))
     s = format (s, "port_desc %s ", mp->port_desc);
 
   if (memcmp (mp->mgmt_ip4, null_data, sizeof (mp->mgmt_ip4)))

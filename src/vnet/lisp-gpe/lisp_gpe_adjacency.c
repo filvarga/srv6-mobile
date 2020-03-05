@@ -159,7 +159,7 @@ lisp_gpe_adj_stack (lisp_gpe_adjacency_t * ladj)
   fib_protocol_t nh_proto;
   ip46_address_t nh;
 
-  ip_address_to_46 (&ladj->remote_rloc, &nh, &nh_proto);
+  nh_proto = ip_address_to_46 (&ladj->remote_rloc, &nh);
 
   /*
    * walk all the adjacencies on th lisp interface and restack them
@@ -264,7 +264,7 @@ lisp_gpe_increment_stats_counters (lisp_cp_main_t * lcm,
   key.tunnel_index = ladj->tunnel_index;
 
   uword *p = hash_get_mem (lgm->lisp_stats_index_by_key, &key);
-  ASSERT (p);
+  ALWAYS_ASSERT (p);
 
   /* compute payload length starting after GPE */
   u32 bytes = b->current_length - (lisp_data - b->data - b->current_data);

@@ -559,13 +559,18 @@ icmp6_router_solicitation (vlib_main_t * vm,
                               }
                             h.unused  = 0;
 
-                            clib_warning ("Prefix %U valid %u preferred %u",
-                                          format_ip6_address, &pr_info->prefix,
-                                          clib_net_to_host_u32 (h.valid_time),
-                                          clib_net_to_host_u32 (h.preferred_time));
+                            /* Handy for debugging, but too noisy... */
+                            if (0 && CLIB_DEBUG > 0)
+                              clib_warning
+                                ("send RA for prefix %U/%d "
+                                 "sw_if_index %d valid %u preferred %u",
+                                 format_ip6_address, &pr_info->prefix,
+                                 pr_info->prefix_len, sw_if_index0,
+                                 clib_net_to_host_u32 (h.valid_time),
+                                 clib_net_to_host_u32 (h.preferred_time));
 
                             if (h.valid_time == 0)
-                              clib_warning ("WARNING: valid_time 0!!!");
+                              clib_warning ("BUG: send RA with valid_time 0");
 
                             clib_memcpy(&h.dst_address, &pr_info->prefix,  sizeof(ip6_address_t));
 
@@ -1414,6 +1419,66 @@ ip6_ra_delegate_disable (index_t rai)
   pool_put (ip6_ra_pool, radv_info);
 }
 
+void
+ip6_ra_update_secondary_radv_info (ip6_address_t * address, u8 prefix_len,
+				   u32 primary_sw_if_index,
+				   u32 valid_time, u32 preferred_time)
+{
+  vlib_main_t *vm = vlib_get_main ();
+  static u32 *radv_indices;
+  ip6_ra_t *radv_info;
+  int i;
+  ip6_address_t mask;
+  ip6_address_mask_from_width (&mask, prefix_len);
+
+  vec_reset_length (radv_indices);
+  /* *INDENT-OFF* */
+  pool_foreach (radv_info, ip6_ra_pool,
+  ({
+    vec_add1 (radv_indices, radv_info - ip6_ra_pool);
+  }));
+  /* *INDENT-ON* */
+
+  /*
+   * If we have another customer for this prefix,
+   * tell the RA code about it...
+   */
+  for (i = 0; i < vec_len (radv_indices); i++)
+    {
+      ip6_radv_prefix_t *this_prefix;
+      radv_info = pool_elt_at_index (ip6_ra_pool, radv_indices[i]);
+
+      /* We already took care of these timers... */
+      if (radv_info->sw_if_index == primary_sw_if_index)
+	continue;
+
+      /* *INDENT-OFF* */
+      pool_foreach (this_prefix, radv_info->adv_prefixes_pool,
+      ({
+        if (this_prefix->prefix_len == prefix_len
+            && ip6_address_is_equal_masked (&this_prefix->prefix, address,
+                                            &mask))
+          {
+            int rv = ip6_ra_prefix (vm,
+                                    radv_info->sw_if_index,
+                                    address,
+                                    prefix_len,
+                                    0 /* use_default */,
+                                    valid_time,
+                                    preferred_time,
+                                    0 /* no_advertise */,
+                                    0 /* off_link */,
+                                    0 /* no_autoconfig */,
+                                    0 /* no_onlink */,
+                                    0 /* is_no */);
+            if (rv != 0)
+              clib_warning ("ip6_neighbor_ra_prefix returned %d", rv);
+          }
+      }));
+      /* *INDENT-ON*/
+    }
+}
+
 /* send a RA or update the timer info etc.. */
 static uword
 ip6_ra_process_timer_event (vlib_main_t * vm,
@@ -1882,34 +1947,28 @@ ip6_ra_cmd (vlib_main_t * vm,
 			 unformat_ip6_address, &ip6_addr, &addr_len))
 	{
 	  add_radv_info = 0;
-	  break;
 	}
       else if (unformat (line_input, "ra-managed-config-flag"))
 	{
 	  managed = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-other-config-flag"))
 	{
 	  other = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-suppress") ||
 	       unformat (line_input, "ra-surpress"))
 	{
 	  suppress = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-suppress-link-layer") ||
 	       unformat (line_input, "ra-surpress-link-layer"))
 	{
 	  suppress_ll_option = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-send-unicast"))
 	{
 	  send_unicast = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-lifetime"))
 	{
@@ -1919,7 +1978,6 @@ ip6_ra_cmd (vlib_main_t * vm,
 	      goto done;
 	    }
 	  use_lifetime = 1;
-	  break;
 	}
       else if (unformat (line_input, "ra-initial"))
 	{
@@ -1929,7 +1987,6 @@ ip6_ra_cmd (vlib_main_t * vm,
 	      error = unformat_parse_error (line_input);
 	      goto done;
 	    }
-	  break;
 	}
       else if (unformat (line_input, "ra-interval"))
 	{
@@ -1941,12 +1998,10 @@ ip6_ra_cmd (vlib_main_t * vm,
 
 	  if (!unformat (line_input, "%d", &ra_min_interval))
 	    ra_min_interval = 0;
-	  break;
 	}
       else if (unformat (line_input, "ra-cease"))
 	{
 	  cease = 1;
-	  break;
 	}
       else
 	{

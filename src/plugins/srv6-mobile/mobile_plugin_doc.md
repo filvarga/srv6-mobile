@@ -1,4 +1,4 @@
-SRv6 Mobile User Plane Plugin for VPP
+SRv6 Mobile User Plane Plugins {#srv6_mobile_plugin_doc}
 ========================
 
 # Introduction
@@ -137,3 +137,6 @@ For example, the below command configures the SID prefix 2001:db8::/64 with `end
 ```
 sr localsid prefix 2001:db8::/64 behavior end.m.gtp6.e
 ```
+
+To run some demo setup please refer to: @subpage srv6_mobile_runner_doc
+

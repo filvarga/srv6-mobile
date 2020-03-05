@@ -113,6 +113,18 @@ u32x16_extract_hi (u32x16 v)
   return (u32x8) _mm512_extracti64x4_epi64 ((__m512i) v, 1);
 }
 
+static_always_inline u8x32
+u8x64_extract_lo (u8x64 v)
+{
+  return (u8x32) _mm512_extracti64x4_epi64 ((__m512i) v, 0);
+}
+
+static_always_inline u8x32
+u8x64_extract_hi (u8x64 v)
+{
+  return (u8x32) _mm512_extracti64x4_epi64 ((__m512i) v, 1);
+}
+
 static_always_inline u32
 u32x16_min_scalar (u32x16 v)
 {
@@ -149,11 +161,62 @@ u64x8_permute (u64x8 a, u64x8 b, u64x8 mask)
 #define u8x64_extract_u8x16(a, n) \
   (u8x16) _mm512_extracti64x2_epi64 ((__m512i) (a), n)
 
+#define u8x64_word_shift_left(a,n)  (u8x64) _mm512_bslli_epi128((__m512i) a, n)
+#define u8x64_word_shift_right(a,n) (u8x64) _mm512_bsrli_epi128((__m512i) a, n)
+
 static_always_inline u8x64
 u8x64_xor3 (u8x64 a, u8x64 b, u8x64 c)
 {
   return (u8x64) _mm512_ternarylogic_epi32 ((__m512i) a, (__m512i) b,
 					    (__m512i) c, 0x96);
+}
+
+static_always_inline u8x64
+u8x64_reflect_u8x16 (u8x64 x)
+{
+  static const u8x64 mask = {
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+  };
+  return (u8x64) _mm512_shuffle_epi8 ((__m512i) x, (__m512i) mask);
+}
+
+static_always_inline u8x64
+u8x64_mask_load (u8x64 a, void *p, u64 mask)
+{
+  return (u8x64) _mm512_mask_loadu_epi8 ((__m512i) a, mask, p);
+}
+
+static_always_inline void
+u8x64_mask_store (u8x64 a, void *p, u64 mask)
+{
+  _mm512_mask_storeu_epi8 (p, mask, (__m512i) a);
+}
+
+static_always_inline u8x64
+u8x64_splat_u8x16 (u8x16 a)
+{
+  return (u8x64) _mm512_broadcast_i64x2 ((__m128i) a);
+}
+
+static_always_inline u32x16
+u32x16_splat_u32x4 (u32x4 a)
+{
+  return (u32x16) _mm512_broadcast_i64x2 ((__m128i) a);
+}
+
+static_always_inline u32x16
+u32x16_mask_blend (u32x16 a, u32x16 b, u16 mask)
+{
+  return (u32x16) _mm512_mask_blend_epi32 (mask, (__m512i) a, (__m512i) b);
+}
+
+static_always_inline u8x64
+u8x64_mask_blend (u8x64 a, u8x64 b, u64 mask)
+{
+  return (u8x64) _mm512_mask_blend_epi8 (mask, (__m512i) a, (__m512i) b);
 }
 
 static_always_inline void

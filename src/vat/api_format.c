@@ -264,6 +264,26 @@ unformat_ethernet_type_host_byte_order (unformat_input_t * input,
   return 0;
 }
 
+/* Parse an IP46 address. */
+uword
+unformat_ip46_address (unformat_input_t * input, va_list * args)
+{
+  ip46_address_t *ip46 = va_arg (*args, ip46_address_t *);
+  ip46_type_t type = va_arg (*args, ip46_type_t);
+  if ((type != IP46_TYPE_IP6) &&
+      unformat (input, "%U", unformat_ip4_address, &ip46->ip4))
+    {
+      ip46_address_mask_ip4 (ip46);
+      return 1;
+    }
+  else if ((type != IP46_TYPE_IP4) &&
+	   unformat (input, "%U", unformat_ip6_address, &ip46->ip6))
+    {
+      return 1;
+    }
+  return 0;
+}
+
 /* Parse an IP6 address. */
 uword
 unformat_ip6_address (unformat_input_t * input, va_list * args)
@@ -759,6 +779,16 @@ set_ip4_address (vl_api_address_t * a, u32 v)
     }
 }
 
+void
+ip_set (ip46_address_t * dst, void *src, u8 is_ip4)
+{
+  if (is_ip4)
+    dst->ip4.as_u32 = ((ip4_address_t *) src)->as_u32;
+  else
+    clib_memcpy_fast (&dst->ip6, (ip6_address_t *) src,
+		      sizeof (ip6_address_t));
+}
+
 static void
 increment_mac_address (u8 * mac)
 {
@@ -1127,18 +1157,12 @@ vl_api_cli_inband_reply_t_handler (vl_api_cli_inband_reply_t * mp)
 {
   vat_main_t *vam = &vat_main;
   i32 retval = ntohl (mp->retval);
-  u32 length = vl_api_string_len (&mp->reply);
 
   vec_reset_length (vam->cmd_reply);
 
   vam->retval = retval;
   if (retval == 0)
-    {
-      vec_validate (vam->cmd_reply, length);
-      clib_memcpy ((char *) (vam->cmd_reply),
-		   vl_api_from_api_string (&mp->reply), length);
-      vam->cmd_reply[length] = 0;
-    }
+    vam->cmd_reply = vl_api_from_api_to_new_vec (&mp->reply);
   vam->result_ready = 1;
 }
 
@@ -1147,16 +1171,18 @@ vl_api_cli_inband_reply_t_handler_json (vl_api_cli_inband_reply_t * mp)
 {
   vat_main_t *vam = &vat_main;
   vat_json_node_t node;
+  u8 *reply = 0;		/* reply vector */
 
+  reply = vl_api_from_api_to_new_vec (&mp->reply);
   vec_reset_length (vam->cmd_reply);
 
   vat_json_init_object (&node);
   vat_json_object_add_int (&node, "retval", ntohl (mp->retval));
-  vat_json_object_add_string_copy (&node, "reply",
-				   vl_api_from_api_string (&mp->reply));
+  vat_json_object_add_string_copy (&node, "reply", reply);
 
   vat_json_print (vam->ofp, &node);
   vat_json_free (&node);
+  vec_free (reply);
 
   vam->retval = ntohl (mp->retval);
   vam->result_ready = 1;
@@ -5638,9 +5664,8 @@ exec_inband (vat_main_t * vam)
    * must be a vector ending in \n, not a C-string ending
    * in \n\0.
    */
-  u32 len = vec_len (vam->input->buffer);
-  M2 (CLI_INBAND, mp, len);
-  vl_api_to_api_string (len - 1, (const char *) vam->input->buffer, &mp->cmd);
+  M2 (CLI_INBAND, mp, vec_len (vam->input->buffer));
+  vl_api_vec_to_api_string (vam->input->buffer, &mp->cmd);
 
   S (mp);
   W (ret);
@@ -7272,15 +7297,20 @@ api_tap_create_v2 (vat_main_t * vam)
 {
   unformat_input_t *i = vam->input;
   vl_api_tap_create_v2_t *mp;
-#define TAP_FLAG_GSO (1 << 0)
   u8 mac_address[6];
   u8 random_mac = 1;
   u32 id = ~0;
+  u32 num_rx_queues = 0;
   u8 *host_if_name = 0;
+  u8 host_if_name_set = 0;
   u8 *host_ns = 0;
+  u8 host_ns_set = 0;
   u8 host_mac_addr[6];
   u8 host_mac_addr_set = 0;
   u8 *host_bridge = 0;
+  u8 host_bridge_set = 0;
+  u8 host_ip4_prefix_set = 0;
+  u8 host_ip6_prefix_set = 0;
   ip4_address_t host_ip4_addr;
   ip4_address_t host_ip4_gw;
   u8 host_ip4_gw_set = 0;
@@ -7289,8 +7319,8 @@ api_tap_create_v2 (vat_main_t * vam)
   ip6_address_t host_ip6_gw;
   u8 host_ip6_gw_set = 0;
   u32 host_ip6_prefix_len = 0;
-  u8 host_mtu_set = 0;
   u32 host_mtu_size = 0;
+  u8 host_mtu_set = 0;
   u32 tap_flags = 0;
   int ret;
   u32 rx_ring_sz = 0, tx_ring_sz = 0;
@@ -7300,38 +7330,40 @@ api_tap_create_v2 (vat_main_t * vam)
   /* Parse args required to build the message */
   while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
     {
-      if (unformat (i, "hw-addr %U", unformat_ethernet_address, mac_address))
-	{
-	  random_mac = 0;
-	}
-      else if (unformat (i, "id %u", &id))
+      if (unformat (i, "id %u", &id))
 	;
+      else
+	if (unformat
+	    (i, "hw-addr %U", unformat_ethernet_address, mac_address))
+	random_mac = 0;
       else if (unformat (i, "host-if-name %s", &host_if_name))
+	host_if_name_set = 1;
+      else if (unformat (i, "num-rx-queues %u", &num_rx_queues))
 	;
       else if (unformat (i, "host-ns %s", &host_ns))
-	;
+	host_ns_set = 1;
       else if (unformat (i, "host-mac-addr %U", unformat_ethernet_address,
 			 host_mac_addr))
 	host_mac_addr_set = 1;
       else if (unformat (i, "host-bridge %s", &host_bridge))
-	;
-      else if (unformat (i, "host-ip4-addr %U/%d", unformat_ip4_address,
+	host_bridge_set = 1;
+      else if (unformat (i, "host-ip4-addr %U/%u", unformat_ip4_address,
 			 &host_ip4_addr, &host_ip4_prefix_len))
-	;
-      else if (unformat (i, "host-ip6-addr %U/%d", unformat_ip6_address,
+	host_ip4_prefix_set = 1;
+      else if (unformat (i, "host-ip6-addr %U/%u", unformat_ip6_address,
 			 &host_ip6_addr, &host_ip6_prefix_len))
-	;
+	host_ip6_prefix_set = 1;
       else if (unformat (i, "host-ip4-gw %U", unformat_ip4_address,
 			 &host_ip4_gw))
 	host_ip4_gw_set = 1;
       else if (unformat (i, "host-ip6-gw %U", unformat_ip6_address,
 			 &host_ip6_gw))
 	host_ip6_gw_set = 1;
-      else if (unformat (i, "rx-ring-size %d", &rx_ring_sz))
+      else if (unformat (i, "rx-ring-size %u", &rx_ring_sz))
 	;
-      else if (unformat (i, "tx-ring-size %d", &tx_ring_sz))
+      else if (unformat (i, "tx-ring-size %u", &tx_ring_sz))
 	;
-      else if (unformat (i, "host-mtu-size %d", &host_mtu_size))
+      else if (unformat (i, "host-mtu-size %u", &host_mtu_size))
 	host_mtu_set = 1;
       else if (unformat (i, "no-gso"))
 	tap_flags &= ~TAP_FLAG_GSO;
@@ -7397,33 +7429,43 @@ api_tap_create_v2 (vat_main_t * vam)
   /* Construct the API message */
   M (TAP_CREATE_V2, mp);
 
-  mp->use_random_mac = random_mac;
-
   mp->id = ntohl (id);
-  mp->host_namespace_set = host_ns != 0;
-  mp->host_bridge_set = host_bridge != 0;
-  mp->host_ip4_prefix_set = host_ip4_prefix_len != 0;
-  mp->host_ip6_prefix_set = host_ip6_prefix_len != 0;
-  mp->rx_ring_sz = ntohs (rx_ring_sz);
+  mp->use_random_mac = random_mac;
+  mp->num_rx_queues = (u8) num_rx_queues;
   mp->tx_ring_sz = ntohs (tx_ring_sz);
+  mp->rx_ring_sz = ntohs (rx_ring_sz);
   mp->host_mtu_set = host_mtu_set;
   mp->host_mtu_size = ntohl (host_mtu_size);
+  mp->host_mac_addr_set = host_mac_addr_set;
+  mp->host_ip4_prefix_set = host_ip4_prefix_set;
+  mp->host_ip6_prefix_set = host_ip6_prefix_set;
+  mp->host_ip4_gw_set = host_ip4_gw_set;
+  mp->host_ip6_gw_set = host_ip6_gw_set;
   mp->tap_flags = ntohl (tap_flags);
+  mp->host_namespace_set = host_ns_set;
+  mp->host_if_name_set = host_if_name_set;
+  mp->host_bridge_set = host_bridge_set;
 
   if (random_mac == 0)
     clib_memcpy (mp->mac_address, mac_address, 6);
   if (host_mac_addr_set)
     clib_memcpy (mp->host_mac_addr, host_mac_addr, 6);
-  if (host_if_name)
+  if (host_if_name_set)
     clib_memcpy (mp->host_if_name, host_if_name, vec_len (host_if_name));
-  if (host_ns)
+  if (host_ns_set)
     clib_memcpy (mp->host_namespace, host_ns, vec_len (host_ns));
-  if (host_bridge)
+  if (host_bridge_set)
     clib_memcpy (mp->host_bridge, host_bridge, vec_len (host_bridge));
-  if (host_ip4_prefix_len)
-    clib_memcpy (mp->host_ip4_prefix.address, &host_ip4_addr, 4);
-  if (host_ip6_prefix_len)
-    clib_memcpy (mp->host_ip6_prefix.address, &host_ip6_addr, 16);
+  if (host_ip4_prefix_set)
+    {
+      clib_memcpy (mp->host_ip4_prefix.address, &host_ip4_addr, 4);
+      mp->host_ip4_prefix.len = (u8) host_ip4_prefix_len;
+    }
+  if (host_ip6_prefix_set)
+    {
+      clib_memcpy (mp->host_ip6_prefix.address, &host_ip6_addr, 16);
+      mp->host_ip6_prefix.len = (u8) host_ip6_prefix_len;
+    }
   if (host_ip4_gw_set)
     clib_memcpy (mp->host_ip4_gw, &host_ip4_gw, 4);
   if (host_ip6_gw_set)
@@ -8536,7 +8578,7 @@ api_sr_mpls_policy_add (vat_main_t * vam)
 
   mp->bsid = htonl (bsid);
   mp->weight = htonl (weight);
-  mp->type = type;
+  mp->is_spray = type;
   mp->n_segments = n_segments;
   memcpy (mp->segments, segments, sizeof (u32) * n_segments);
   vec_free (segments);
@@ -12664,10 +12706,8 @@ api_vxlan_gpe_add_del_tunnel (vat_main_t * vam)
 {
   unformat_input_t *line_input = vam->input;
   vl_api_vxlan_gpe_add_del_tunnel_t *mp;
-  ip4_address_t local4, remote4;
-  ip6_address_t local6, remote6;
+  ip46_address_t local, remote;
   u8 is_add = 1;
-  u8 ipv4_set = 0, ipv6_set = 0;
   u8 local_set = 0;
   u8 remote_set = 0;
   u8 grp_set = 0;
@@ -12679,65 +12719,30 @@ api_vxlan_gpe_add_del_tunnel (vat_main_t * vam)
   u8 vni_set = 0;
   int ret;
 
-  /* Can't "universally zero init" (={0}) due to GCC bug 53119 */
-  clib_memset (&local4, 0, sizeof local4);
-  clib_memset (&remote4, 0, sizeof remote4);
-  clib_memset (&local6, 0, sizeof local6);
-  clib_memset (&remote6, 0, sizeof remote6);
-
   while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
     {
       if (unformat (line_input, "del"))
 	is_add = 0;
       else if (unformat (line_input, "local %U",
-			 unformat_ip4_address, &local4))
+			 unformat_ip46_address, &local))
 	{
 	  local_set = 1;
-	  ipv4_set = 1;
 	}
       else if (unformat (line_input, "remote %U",
-			 unformat_ip4_address, &remote4))
+			 unformat_ip46_address, &remote))
 	{
 	  remote_set = 1;
-	  ipv4_set = 1;
-	}
-      else if (unformat (line_input, "local %U",
-			 unformat_ip6_address, &local6))
-	{
-	  local_set = 1;
-	  ipv6_set = 1;
-	}
-      else if (unformat (line_input, "remote %U",
-			 unformat_ip6_address, &remote6))
-	{
-	  remote_set = 1;
-	  ipv6_set = 1;
 	}
       else if (unformat (line_input, "group %U %U",
-			 unformat_ip4_address, &remote4,
+			 unformat_ip46_address, &remote,
 			 api_unformat_sw_if_index, vam, &mcast_sw_if_index))
 	{
 	  grp_set = remote_set = 1;
-	  ipv4_set = 1;
 	}
       else if (unformat (line_input, "group %U",
-			 unformat_ip4_address, &remote4))
+			 unformat_ip46_address, &remote))
 	{
 	  grp_set = remote_set = 1;
-	  ipv4_set = 1;
-	}
-      else if (unformat (line_input, "group %U %U",
-			 unformat_ip6_address, &remote6,
-			 api_unformat_sw_if_index, vam, &mcast_sw_if_index))
-	{
-	  grp_set = remote_set = 1;
-	  ipv6_set = 1;
-	}
-      else if (unformat (line_input, "group %U",
-			 unformat_ip6_address, &remote6))
-	{
-	  grp_set = remote_set = 1;
-	  ipv6_set = 1;
 	}
       else
 	if (unformat (line_input, "mcast_sw_if_index %u", &mcast_sw_if_index))
@@ -12778,7 +12783,7 @@ api_vxlan_gpe_add_del_tunnel (vat_main_t * vam)
       errmsg ("tunnel nonexistent multicast device");
       return -99;
     }
-  if (ipv4_set && ipv6_set)
+  if (ip46_address_is_ip4 (&local) != ip46_address_is_ip4 (&remote))
     {
       errmsg ("both IPv4 and IPv6 addresses specified");
       return -99;
@@ -12792,17 +12797,12 @@ api_vxlan_gpe_add_del_tunnel (vat_main_t * vam)
 
   M (VXLAN_GPE_ADD_DEL_TUNNEL, mp);
 
-
-  if (ipv6_set)
-    {
-      clib_memcpy (&mp->local, &local6, sizeof (local6));
-      clib_memcpy (&mp->remote, &remote6, sizeof (remote6));
-    }
-  else
-    {
-      clib_memcpy (&mp->local, &local4, sizeof (local4));
-      clib_memcpy (&mp->remote, &remote4, sizeof (remote4));
-    }
+  ip_address_encode (&local,
+		     ip46_address_is_ip4 (&local) ? IP46_TYPE_IP4 :
+		     IP46_TYPE_IP6, &mp->local);
+  ip_address_encode (&remote,
+		     ip46_address_is_ip4 (&remote) ? IP46_TYPE_IP4 :
+		     IP46_TYPE_IP6, &mp->remote);
 
   mp->mcast_sw_if_index = ntohl (mcast_sw_if_index);
   mp->encap_vrf_id = ntohl (encap_vrf_id);
@@ -12810,7 +12810,6 @@ api_vxlan_gpe_add_del_tunnel (vat_main_t * vam)
   mp->protocol = protocol;
   mp->vni = ntohl (vni);
   mp->is_add = is_add;
-  mp->is_ipv6 = ipv6_set;
 
   S (mp);
   W (ret);
@@ -12821,8 +12820,10 @@ static void vl_api_vxlan_gpe_tunnel_details_t_handler
   (vl_api_vxlan_gpe_tunnel_details_t * mp)
 {
   vat_main_t *vam = &vat_main;
-  ip46_address_t local = to_ip46 (mp->is_ipv6, mp->local);
-  ip46_address_t remote = to_ip46 (mp->is_ipv6, mp->remote);
+  ip46_address_t local, remote;
+
+  ip_address_decode (&mp->local, &local);
+  ip_address_decode (&mp->remote, &remote);
 
   print (vam->ofp, "%11d%24U%24U%13d%12d%19d%14d%14d",
 	 ntohl (mp->sw_if_index),
@@ -12841,6 +12842,10 @@ static void vl_api_vxlan_gpe_tunnel_details_t_handler_json
   vat_json_node_t *node = NULL;
   struct in_addr ip4;
   struct in6_addr ip6;
+  ip46_address_t local, remote;
+
+  ip_address_decode (&mp->local, &local);
+  ip_address_decode (&mp->remote, &remote);
 
   if (VAT_JSON_ARRAY != vam->json_tree.type)
     {
@@ -12851,19 +12856,19 @@ static void vl_api_vxlan_gpe_tunnel_details_t_handler_json
 
   vat_json_init_object (node);
   vat_json_object_add_uint (node, "sw_if_index", ntohl (mp->sw_if_index));
-  if (mp->is_ipv6)
+  if (ip46_address_is_ip4 (&local))
     {
-      clib_memcpy (&ip6, &(mp->local[0]), sizeof (ip6));
-      vat_json_object_add_ip6 (node, "local", ip6);
-      clib_memcpy (&ip6, &(mp->remote[0]), sizeof (ip6));
-      vat_json_object_add_ip6 (node, "remote", ip6);
+      clib_memcpy (&ip4, &local.ip4, sizeof (ip4));
+      vat_json_object_add_ip4 (node, "local", ip4);
+      clib_memcpy (&ip4, &remote.ip4, sizeof (ip4));
+      vat_json_object_add_ip4 (node, "remote", ip4);
     }
   else
     {
-      clib_memcpy (&ip4, &(mp->local[0]), sizeof (ip4));
-      vat_json_object_add_ip4 (node, "local", ip4);
-      clib_memcpy (&ip4, &(mp->remote[0]), sizeof (ip4));
-      vat_json_object_add_ip4 (node, "remote", ip4);
+      clib_memcpy (&ip6, &local.ip6, sizeof (ip6));
+      vat_json_object_add_ip6 (node, "local", ip6);
+      clib_memcpy (&ip6, &remote.ip6, sizeof (ip6));
+      vat_json_object_add_ip6 (node, "remote", ip6);
     }
   vat_json_object_add_uint (node, "vni", ntohl (mp->vni));
   vat_json_object_add_uint (node, "protocol", ntohl (mp->protocol));
@@ -18581,17 +18586,15 @@ api_pg_capture (vat_main_t * vam)
 	}
     }
 
-  u32 name_len = vec_len (pcap_file);
   /* Construct the API message */
   M (PG_CAPTURE, mp);
   mp->context = 0;
   mp->interface_id = ntohl (if_id);
   mp->is_enabled = enable;
   mp->count = ntohl (count);
-  mp->pcap_name_length = ntohl (name_len);
   if (pcap_file_set != 0)
     {
-      clib_memcpy (mp->pcap_file_name, pcap_file, name_len);
+      vl_api_vec_to_api_string (pcap_file, &mp->pcap_file_name);
     }
   vec_free (pcap_file);
 
@@ -18629,15 +18632,13 @@ api_pg_enable_disable (vat_main_t * vam)
 	}
     }
 
-  u32 name_len = vec_len (stream_name);
   /* Construct the API message */
   M (PG_ENABLE_DISABLE, mp);
   mp->context = 0;
   mp->is_enabled = enable;
   if (stream_name_set != 0)
     {
-      mp->stream_name_length = ntohl (name_len);
-      clib_memcpy (mp->stream_name, stream_name, name_len);
+      vl_api_vec_to_api_string (stream_name, &mp->stream_name);
     }
   vec_free (stream_name);
 
@@ -19508,7 +19509,7 @@ api_lldp_config (vat_main_t * vam)
   M (LLDP_CONFIG, mp);
   mp->tx_hold = htonl (tx_hold);
   mp->tx_interval = htonl (tx_interval);
-  clib_memcpy (mp->system_name, sys_name, vec_len (sys_name));
+  vl_api_vec_to_api_string (sys_name, &mp->system_name);
   vec_free (sys_name);
 
   S (mp);
@@ -19564,7 +19565,7 @@ api_sw_interface_set_lldp (vat_main_t * vam)
   M (SW_INTERFACE_SET_LLDP, mp);
   mp->sw_if_index = ntohl (sw_if_index);
   mp->enable = enable;
-  clib_memcpy (mp->port_desc, port_desc, vec_len (port_desc));
+  vl_api_vec_to_api_string (port_desc, &mp->port_desc);
   clib_memcpy (mp->mgmt_oid, mgmt_oid, vec_len (mgmt_oid));
   clib_memcpy (mp->mgmt_ip4, &ip4_addr, sizeof (ip4_addr));
   clib_memcpy (mp->mgmt_ip6, &ip6_addr, sizeof (ip6_addr));
@@ -20625,7 +20626,7 @@ _(l2_flags,                                                             \
 _(bridge_flags,                                                         \
   "bd_id <bridge-domain-id> [learn] [forward] [uu-flood] [flood] [arp-term] [disable]\n") \
 _(tap_create_v2,                                                        \
-  "id <num> [hw-addr <mac-addr>] [host-ns <name>] [rx-ring-size <num> [tx-ring-size <num>] [host-mtu-size <mtu>] [gso | no-gso]") \
+  "id <num> [hw-addr <mac-addr>] [host-if-name <name>] [host-ns <name>] [num-rx-queues <num>] [rx-ring-size <num>] [tx-ring-size <num>] [host-bridge <name>] [host-mac-addr <mac-addr>] [host-ip4-addr <ip4addr/mask>] [host-ip6-addr <ip6addr/mask>] [host-mtu-size <mtu>] [gso | no-gso | csum-offload]") \
 _(tap_delete_v2,                                                        \
   "<vpp-if-name> | sw_if_index <id>")                                   \
 _(sw_interface_tap_v2_dump, "")                                         \
