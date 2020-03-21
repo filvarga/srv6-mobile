@@ -187,8 +187,7 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr,
 	  clib_memcpy (&ls->usid_block, localsid_addr,
 		       sizeof (ip6_address_t));
 
-	  usid_width =
-	    prefixlen != 0 ? prefixlen - usid_len : pref_length - usid_len;
+	  usid_width = pref_length - usid_len; 
 	  if (usid_width % 8)
 	    {
 	      pool_put (sm->localsids, ls);
