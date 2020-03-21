@@ -582,7 +582,11 @@ static void *vl_api_tap_create_v2_t_print
   if ((mp->tap_flags) & 0x1)
     s = format (s, "gso-enabled ");
   if ((mp->tap_flags) & 0x2)
-    s = format (s, "csum-offload-enabled");
+    s = format (s, "csum-offload-enabled ");
+  if ((mp->tap_flags) & 0x4)
+    s = format (s, "persist ");
+  if ((mp->tap_flags) & 0x8)
+    s = format (s, "attach ");
   FINISH;
 }
 
@@ -1480,8 +1484,10 @@ static void *vl_api_vxlan_add_del_tunnel_t_print
   u8 *s;
   s = format (0, "SCRIPT: vxlan_add_del_tunnel ");
 
-  ip46_address_t src = to_ip46 (mp->is_ipv6, mp->src_address);
-  ip46_address_t dst = to_ip46 (mp->is_ipv6, mp->dst_address);
+  ip46_address_t src =
+    to_ip46 (mp->src_address.af, (u8 *) & mp->src_address.un);
+  ip46_address_t dst =
+    to_ip46 (mp->dst_address.af, (u8 *) & mp->dst_address.un);
 
   u8 is_grp = ip46_address_is_multicast (&dst);
   char *dst_name = is_grp ? "group" : "dst";
@@ -2185,11 +2191,11 @@ static void *vl_api_policer_add_del_t_print
     }
 
   s = format (s, "conform_action %U ", format_policer_action,
-	      mp->conform_action_type, mp->conform_dscp);
+	      mp->conform_action.type, mp->conform_action.dscp);
   s = format (s, "exceed_action %U ", format_policer_action,
-	      mp->exceed_action_type, mp->exceed_dscp);
+	      mp->exceed_action.type, mp->exceed_action.dscp);
   s = format (s, "violate_action %U ", format_policer_action,
-	      mp->violate_action_type, mp->violate_dscp);
+	      mp->violate_action.type, mp->violate_action.dscp);
 
   if (mp->color_aware)
     s = format (s, "color-aware ");
@@ -3378,13 +3384,13 @@ static void *vl_api_app_namespace_add_del_t_print
   (vl_api_app_namespace_add_del_t * mp, void *handle)
 {
   u8 *s;
-  u8 len = clib_min (mp->namespace_id_len,
-		     ARRAY_LEN (mp->namespace_id) - 1);
-  mp->namespace_id[len] = 0;
+
   s = format (0, "SCRIPT: app_namespace_add_del ");
   s = format (s, "ns-id %s secret %lu sw_if_index %d ipv4_fib_id %d "
-	      "ipv6_fib_id %d", (char *) mp->namespace_id, mp->secret,
-	      (mp->sw_if_index), (mp->ip4_fib_id), (mp->ip6_fib_id));
+	      "ipv6_fib_id %d",
+	      vl_api_from_api_to_new_c_string (&mp->namespace_id),
+	      mp->secret, (mp->sw_if_index), (mp->ip4_fib_id),
+	      (mp->ip6_fib_id));
   FINISH;
 }
 
@@ -3433,21 +3439,25 @@ static void *vl_api_session_rule_add_del_t_print
   (vl_api_session_rule_add_del_t * mp, void *handle)
 {
   u8 *s;
+  fib_prefix_t lcl, rmt;
   char *proto = mp->transport_proto == 0 ? "tcp" : "udp";
   s = format (0, "SCRIPT: session_rule_add_del ");
   mp->tag[sizeof (mp->tag) - 1] = 0;
-  if (mp->is_ip4)
+  ip_prefix_decode (&mp->lcl, &lcl);
+  ip_prefix_decode (&mp->rmt, &rmt);
+
+  if (lcl.fp_proto == FIB_PROTOCOL_IP4)
     s = format (s, "appns %d scope %d %s %U/%d %d %U/%d %d action %u tag %s",
 		mp->appns_index, mp->scope, proto, format_ip4_address,
-		(ip4_address_t *) mp->lcl_ip, mp->lcl_plen,
-		format_ip4_address, (ip4_address_t *) mp->rmt_ip,
-		mp->rmt_plen, mp->action_index, mp->tag);
+		&lcl.fp_addr.ip4, lcl.fp_len,
+		format_ip4_address, &rmt.fp_addr.ip4,
+		rmt.fp_len, mp->action_index, mp->tag);
   else
     s = format (s, "appns %d scope %d %s %U/%d %d %U/%d %d action %u tag %s",
 		mp->appns_index, mp->scope, proto, format_ip6_address,
-		(ip6_address_t *) mp->lcl_ip, mp->lcl_plen,
-		format_ip6_address, (ip6_address_t *) mp->rmt_ip,
-		mp->rmt_plen, mp->action_index, mp->tag);
+		&lcl.fp_addr.ip6, lcl.fp_len,
+		format_ip6_address, &rmt.fp_addr.ip6,
+		rmt.fp_len, mp->action_index, mp->tag);
   FINISH;
 }
 

@@ -17,6 +17,7 @@ RUN set -eux; \
     tcpdump \
     python2.7 \
     python3-cffi \
+    python2.7 \
     netcat; \
     rm -rf /var/lib/apt/lists/*; \
     mv /usr/sbin/tcpdump /usr/bin/tcpdump

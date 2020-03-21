@@ -71,12 +71,14 @@ enum ipsec_sad_flags
   IPSEC_API_SAD_FLAG_IS_TUNNEL_V6 = 0x08,
   /* enable UDP encapsulation for NAT traversal */
   IPSEC_API_SAD_FLAG_UDP_ENCAP = 0x10,
+  /* IPsec SA is for inbound traffic */
+  IPSEC_API_SAD_FLAG_IS_INBOUND = 0x40,
 };
 
 enum ipsec_proto
 {
-  IPSEC_API_PROTO_ESP,
-  IPSEC_API_PROTO_AH,
+  IPSEC_API_PROTO_ESP = 50,
+  IPSEC_API_PROTO_AH = 51,
 };
 
 typedef key

@@ -1036,6 +1036,12 @@ tcp_available_cc_snd_space (const tcp_connection_t * tc)
   return available_wnd - flight_size;
 }
 
+static inline u8
+tcp_is_descheduled (tcp_connection_t * tc)
+{
+  return (transport_connection_is_descheduled (&tc->connection) ? 1 : 0);
+}
+
 always_inline u8
 tcp_is_lost_fin (tcp_connection_t * tc)
 {
@@ -1046,6 +1052,7 @@ tcp_is_lost_fin (tcp_connection_t * tc)
 
 u32 tcp_snd_space (tcp_connection_t * tc);
 int tcp_fastrecovery_prr_snd_space (tcp_connection_t * tc);
+void tcp_reschedule (tcp_connection_t * tc);
 
 fib_node_index_t tcp_lookup_rmt_in_fib (tcp_connection_t * tc);
 
@@ -1294,6 +1301,14 @@ tcp_cc_data (tcp_connection_t * tc)
 
 void newreno_rcv_cong_ack (tcp_connection_t * tc, tcp_cc_ack_t ack_type,
 			   tcp_rate_sample_t * rs);
+/**
+ * Initialize connection by gleaning network and rcv params from buffer
+ *
+ * @param tc		connection to initialize
+ * @param b		buffer whose current data is pointing at ip
+ * @param is_ip4	flag set to 1 if using ip4
+ */
+void tcp_init_w_buffer (tcp_connection_t * tc, vlib_buffer_t * b, u8 is_ip4);
 
 /**
  * Push TCP header to buffer

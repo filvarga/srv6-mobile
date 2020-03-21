@@ -149,7 +149,8 @@ ipsec_sa_add_del_command_fn (vlib_main_t * vm,
     rv = ipsec_sa_add_and_lock (id, spi, proto, crypto_alg,
 				&ck, integ_alg, &ik, flags,
 				0, clib_host_to_net_u32 (salt),
-				&tun_src, &tun_dst, NULL);
+				&tun_src, &tun_dst, NULL,
+				IPSEC_UDP_PORT_NONE);
   else
     rv = ipsec_sa_unlock_id (id);
 
@@ -729,8 +730,8 @@ create_ipsec_tunnel_command_fn (vlib_main_t * vm,
   ip46_address_t local_ip = ip46_address_initializer;
   ip46_address_t remote_ip = ip46_address_initializer;
   ip_address_t nh = IP_ADDRESS_V4_ALL_0S;
-  ipsec_crypto_alg_t crypto_alg;
-  ipsec_integ_alg_t integ_alg;
+  ipsec_crypto_alg_t crypto_alg = IPSEC_CRYPTO_ALG_NONE;
+  ipsec_integ_alg_t integ_alg = IPSEC_INTEG_ALG_NONE;
   ipsec_sa_flags_t flags;
   u32 local_spi, remote_spi, salt, table_id, fib_index;
   u32 instance = ~0;
@@ -852,14 +853,14 @@ create_ipsec_tunnel_command_fn (vlib_main_t * vm,
 			       local_spi, IPSEC_PROTOCOL_ESP, crypto_alg,
 			       &lck, integ_alg, &lik, flags, table_id,
 			       clib_host_to_net_u32 (salt), &local_ip,
-			       &remote_ip, NULL);
+			       &remote_ip, NULL, IPSEC_UDP_PORT_NONE);
       rv |=
 	ipsec_sa_add_and_lock (ipsec_tun_mk_remote_sa_id (sw_if_index),
 			       remote_spi, IPSEC_PROTOCOL_ESP, crypto_alg,
 			       &rck, integ_alg, &rik,
 			       (flags | IPSEC_SA_FLAG_IS_INBOUND), table_id,
 			       clib_host_to_net_u32 (salt), &remote_ip,
-			       &local_ip, NULL);
+			       &local_ip, NULL, IPSEC_UDP_PORT_NONE);
       rv |=
 	ipsec_tun_protect_update_one (sw_if_index, &nh,
 				      ipsec_tun_mk_local_sa_id (sw_if_index),

@@ -130,7 +130,8 @@ session_add_self_custom_tx_evt (transport_connection_t * tc, u8 has_prio)
   if (!(s->flags & SESSION_F_CUSTOM_TX))
     {
       s->flags |= SESSION_F_CUSTOM_TX;
-      if (svm_fifo_set_event (s->tx_fifo))
+      if (svm_fifo_set_event (s->tx_fifo)
+	  || transport_connection_is_descheduled (tc))
 	{
 	  session_worker_t *wrk;
 	  session_evt_elt_t *elt;
@@ -141,8 +142,22 @@ session_add_self_custom_tx_evt (transport_connection_t * tc, u8 has_prio)
 	    elt = session_evt_alloc_old (wrk);
 	  elt->evt.session_index = tc->s_index;
 	  elt->evt.event_type = SESSION_IO_EVT_TX;
+	  tc->flags &= ~TRANSPORT_CONNECTION_F_DESCHED;
 	}
     }
+}
+
+void
+sesssion_reschedule_tx (transport_connection_t * tc)
+{
+  session_worker_t *wrk = session_main_get_worker (tc->thread_index);
+  session_evt_elt_t *elt;
+
+  ASSERT (tc->thread_index == vlib_get_thread_index ());
+
+  elt = session_evt_alloc_new (wrk);
+  elt->evt.session_index = tc->s_index;
+  elt->evt.event_type = SESSION_IO_EVT_TX;
 }
 
 static void
@@ -268,7 +283,7 @@ session_delete (session_t * s)
   session_free_w_fifos (s);
 }
 
-static session_t *
+session_t *
 session_alloc_for_connection (transport_connection_t * tc)
 {
   session_t *s;
