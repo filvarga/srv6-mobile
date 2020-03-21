@@ -89,7 +89,6 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
 {
   void **plugin_mem_p = va_arg (*args, void **);
   srv6_end_gtp6_dt_param_t *ls_mem;
-  u32 fib_index, local_fib_index;
   u32 fib_index = 0;
   u32 local_fib_index = 0;
   u32 type;
