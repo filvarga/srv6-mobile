@@ -1637,7 +1637,7 @@ tcp_timer_persist_handler (tcp_connection_t * tc)
   /* Problem already solved or worse */
   if (tc->state == TCP_STATE_CLOSED || tc->snd_wnd > tc->snd_mss
       || (tc->flags & TCP_CONN_FINSNT))
-    return;
+    goto update_scheduler;
 
   available_bytes = transport_max_tx_dequeue (&tc->connection);
   offset = tc->snd_nxt - tc->snd_una;
@@ -1651,7 +1651,7 @@ tcp_timer_persist_handler (tcp_connection_t * tc)
     }
 
   if (available_bytes <= offset)
-    return;
+    goto update_scheduler;
 
   /* Increment RTO backoff */
   tc->rto_boff += 1;
@@ -1665,6 +1665,7 @@ tcp_timer_persist_handler (tcp_connection_t * tc)
       tcp_persist_timer_set (tc);
       return;
     }
+
   b = vlib_get_buffer (vm, bi);
   data = tcp_init_buffer (vm, b);
 
@@ -1693,6 +1694,13 @@ tcp_timer_persist_handler (tcp_connection_t * tc)
 
   /* Just sent new data, enable retransmit */
   tcp_retransmit_timer_update (tc);
+
+  return;
+
+update_scheduler:
+
+  if (tcp_is_descheduled (tc))
+    transport_connection_reschedule (&tc->connection);
 }
 
 /**
@@ -2064,6 +2072,7 @@ tcp_send_acks (tcp_connection_t * tc, u32 max_burst_size)
   if (!vec_len (tc->snd_sacks))
     {
       tcp_send_ack (tc);
+      tc->dupacks_out += 1;
       tc->pending_dupacks = 0;
       return 1;
     }

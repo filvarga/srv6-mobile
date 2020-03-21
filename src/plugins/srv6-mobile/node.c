@@ -407,8 +407,8 @@ VLIB_NODE_FN (srv6_end_m_gtp4_e) (vlib_main_t * vm,
 		  tag = ip6srv0->sr.tag;
 		}
 
-	      offset = ls0->localsid_len / 8;
-	      shift = ls0->localsid_len % 8;
+	      offset = ls0->localsid_prefix_len / 8;
+	      shift = ls0->localsid_prefix_len % 8;
 
 	      gtpu_type = gtpu_type_get (tag);
 
@@ -1321,7 +1321,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 	      u16 ie_size = 0;
 	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 
-	      index = ls0->localsid_len;
+	      index = ls0->localsid_prefix_len;
 	      index += 8;
 	      offset = index / 8;
 	      shift = index % 8;
@@ -1422,8 +1422,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_e) (vlib_main_t * vm,
 		}
 
 	      vlib_buffer_advance (b0,
-	  		           (word) sizeof (ip6srv_combo_header_t) +
-			           ip6srv0->sr.length * 8);
+				   (word) sizeof (ip6srv_combo_header_t) +
+				   ip6srv0->sr.length * 8);
 
 	      // get length of encapsulated IPv6 packet (the remaining part)
 	      p = vlib_buffer_get_current (b0);

@@ -90,6 +90,8 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
   void **plugin_mem_p = va_arg (*args, void **);
   srv6_end_gtp6_dt_param_t *ls_mem;
   u32 fib_index, local_fib_index;
+  u32 fib_index = 0;
+  u32 local_fib_index = 0;
   u32 type;
 
   if (unformat (input, "end.m.gtp6.dt4 fib-table %u", &fib_index))
@@ -117,8 +119,12 @@ clb_unformat_srv6_end_m_gtp6_dt (unformat_input_t * input, va_list * args)
 
   ls_mem->fib4_index = fib_table_find (FIB_PROTOCOL_IP4, fib_index);
   ls_mem->fib6_index = fib_table_find (FIB_PROTOCOL_IP6, fib_index);
-  ls_mem->local_fib_index =
-    fib_table_find (FIB_PROTOCOL_IP6, local_fib_index);
+
+  if (type == SRV6_GTP6_DT6 || type == SRV6_GTP6_DT46)
+    {
+      ls_mem->local_fib_index =
+	fib_table_find (FIB_PROTOCOL_IP6, local_fib_index);
+    }
 
   ls_mem->type = type;
 

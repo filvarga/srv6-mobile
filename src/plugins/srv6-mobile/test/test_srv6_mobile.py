@@ -149,7 +149,13 @@ class TestSRv6TMGTP4D(VppTestCase):
 
         self.vapi.cli("set sr encaps source addr A1::1")
         self.vapi.cli("sr policy add bsid D4:: next D2:: next D3::")
+<<<<<<< HEAD
         self.vapi.cli("sr policy add bsid D5:: behavior t.m.gtp4.d D4::/32 v6src_prefix C1::/64 nhtype ipv6")
+=======
+        self.vapi.cli(
+            "sr policy add bsid D5:: behavior t.m.gtp4.d"
+            "D4::/32 v6src_prefix C1::/64 nhtype ipv6")
+>>>>>>> upstream/master
         self.vapi.cli("sr steer l3 {}/32 via bsid D5::".format(self.ip4_dst))
         self.vapi.cli("ip route add D2::/32 via {}".format(self.ip6_dst))
 
@@ -169,8 +175,17 @@ class TestSRv6TMGTP4D(VppTestCase):
 
         for pkt in capture:
             self.logger.info(pkt.show2(dump=True))
+<<<<<<< HEAD
             self.logger.info("GTP4.D Address={}".format(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0])))
             self.assertEqual(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0]), "d4:0:101:101::c800:0")
+=======
+            self.logger.info("GTP4.D Address={}".format(
+                str(pkt[IPv6ExtHdrSegmentRouting].addresses[0])))
+            self.assertEqual(
+                str(pkt[IPv6ExtHdrSegmentRouting].addresses[0]),
+                "d4:0:101:101::c800:0")
+
+>>>>>>> upstream/master
 
 class TestSRv6EndMGTP6E(VppTestCase):
     """ SRv6 End.M.GTP6.E """
@@ -213,10 +228,20 @@ class TestSRv6EndMGTP6E(VppTestCase):
         pkts = list()
         for d, s in inner:
             pkt = (Ether() /
+<<<<<<< HEAD
                    IPv6(dst=str(ip6_dst), src=str(ip6_src)) /
                    IPv6ExtHdrSegmentRouting(segleft=1, lastentry=0, tag=0, addresses=["a1::1"]) /
                    IPv6(dst=d, src=s) /
                    UDP(sport=1000, dport=23))
+=======
+                   IPv6(dst=str(ip6_dst),
+                        src=str(ip6_src)) /
+                   IPv6ExtHdrSegmentRouting(segleft=1,
+                                            lastentry=0,
+                                            tag=0,
+                                            addresses=["a1::1"]) /
+                   IPv6(dst=d, src=s) / UDP(sport=1000, dport=23))
+>>>>>>> upstream/master
             self.logger.info(pkt.show2(dump=True))
             pkts.append(pkt)
 
@@ -306,7 +331,12 @@ class TestSRv6EndMGTP6D(VppTestCase):
 
         self.vapi.cli("set sr encaps source addr A1::1")
         self.vapi.cli("sr policy add bsid D4:: next D2:: next D3::")
+<<<<<<< HEAD
         self.vapi.cli("sr localsid prefix 2001::/64 behavior end.m.gtp6.d D4::/64")
+=======
+        self.vapi.cli(
+            "sr localsid prefix 2001::/64 behavior end.m.gtp6.d D4::/64")
+>>>>>>> upstream/master
         self.vapi.cli("ip route add D2::/64 via {}".format(self.ip6_nhop))
 
         self.logger.info(self.vapi.cli("show sr policies"))
@@ -324,5 +354,12 @@ class TestSRv6EndMGTP6D(VppTestCase):
 
         for pkt in capture:
             self.logger.info(pkt.show2(dump=True))
+<<<<<<< HEAD
             self.logger.info("GTP6.D Address={}".format(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0])))
             self.assertEqual(str(pkt[IPv6ExtHdrSegmentRouting].addresses[0]), "d4::c800:0")
+=======
+            self.logger.info("GTP6.D Address={}".format(
+                str(pkt[IPv6ExtHdrSegmentRouting].addresses[0])))
+            self.assertEqual(
+                str(pkt[IPv6ExtHdrSegmentRouting].addresses[0]), "d4::c800:0")
+>>>>>>> upstream/master

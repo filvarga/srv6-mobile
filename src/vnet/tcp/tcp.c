@@ -707,6 +707,51 @@ tcp_connection_init_vars (tcp_connection_t * tc)
   tc->start_ts = tcp_time_now_us (tc->c_thread_index);
 }
 
+void
+tcp_init_w_buffer (tcp_connection_t * tc, vlib_buffer_t * b, u8 is_ip4)
+{
+  tcp_header_t *th = tcp_buffer_hdr (b);
+
+  tc->c_lcl_port = th->dst_port;
+  tc->c_rmt_port = th->src_port;
+  tc->c_is_ip4 = is_ip4;
+
+  if (is_ip4)
+    {
+      ip4_header_t *ip4 = vlib_buffer_get_current (b);
+      tc->c_lcl_ip4.as_u32 = ip4->dst_address.as_u32;
+      tc->c_rmt_ip4.as_u32 = ip4->src_address.as_u32;
+    }
+  else
+    {
+      ip6_header_t *ip6 = vlib_buffer_get_current (b);
+      clib_memcpy_fast (&tc->c_lcl_ip6, &ip6->dst_address,
+			sizeof (ip6_address_t));
+      clib_memcpy_fast (&tc->c_rmt_ip6, &ip6->src_address,
+			sizeof (ip6_address_t));
+    }
+
+  tc->irs = vnet_buffer (b)->tcp.seq_number;
+  tc->rcv_nxt = vnet_buffer (b)->tcp.seq_number + 1;
+  tc->rcv_las = tc->rcv_nxt;
+  tc->sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_RX];
+  tc->snd_wl1 = vnet_buffer (b)->tcp.seq_number;
+  tc->snd_wl2 = vnet_buffer (b)->tcp.ack_number;
+
+  /* RFC1323: TSval timestamps sent on {SYN} and {SYN,ACK}
+   * segments are used to initialize PAWS. */
+  if (tcp_opts_tstamp (&tc->rcv_opts))
+    {
+      tc->tsval_recent = tc->rcv_opts.tsval;
+      tc->tsval_recent_age = tcp_time_now ();
+    }
+
+  if (tcp_opts_wscale (&tc->rcv_opts))
+    tc->snd_wscale = tc->rcv_opts.wscale;
+
+  tc->snd_wnd = clib_net_to_host_u16 (th->window) << tc->snd_wscale;
+}
+
 static int
 tcp_alloc_custom_local_endpoint (tcp_main_t * tm, ip46_address_t * lcl_addr,
 				 u16 * lcl_port, u8 is_ip4)
@@ -1195,29 +1240,6 @@ tcp_session_cal_goal_size (tcp_connection_t * tc)
   return goal_size > tc->snd_mss ? goal_size : tc->snd_mss;
 }
 
-/**
- * Compute maximum segment size for session layer.
- *
- * Since the result needs to be the actual data length, it first computes
- * the tcp options to be used in the next burst and subtracts their
- * length from the connection's snd_mss.
- */
-static u16
-tcp_session_send_mss (transport_connection_t * trans_conn)
-{
-  tcp_connection_t *tc = (tcp_connection_t *) trans_conn;
-
-  /* Ensure snd_mss does accurately reflect the amount of data we can push
-   * in a segment. This also makes sure that options are updated according to
-   * the current state of the connection. */
-  tcp_update_burst_snd_vars (tc);
-
-  if (PREDICT_FALSE (tc->cfg_flags & TCP_CFG_F_TSO))
-    return tcp_session_cal_goal_size (tc);
-
-  return tc->snd_mss;
-}
-
 always_inline u32
 tcp_round_snd_space (tcp_connection_t * tc, u32 snd_space)
 {
@@ -1281,23 +1303,32 @@ tcp_snd_space (tcp_connection_t * tc)
   return tcp_snd_space_inline (tc);
 }
 
-static u32
-tcp_session_send_space (transport_connection_t * trans_conn)
+static int
+tcp_session_send_params (transport_connection_t * trans_conn,
+			 transport_send_params_t * sp)
 {
   tcp_connection_t *tc = (tcp_connection_t *) trans_conn;
-  return clib_min (tcp_snd_space_inline (tc),
-		   tc->snd_wnd - (tc->snd_nxt - tc->snd_una));
-}
 
-static u32
-tcp_session_tx_fifo_offset (transport_connection_t * trans_conn)
-{
-  tcp_connection_t *tc = (tcp_connection_t *) trans_conn;
+  /* Ensure snd_mss does accurately reflect the amount of data we can push
+   * in a segment. This also makes sure that options are updated according to
+   * the current state of the connection. */
+  tcp_update_burst_snd_vars (tc);
+
+  if (PREDICT_FALSE (tc->cfg_flags & TCP_CFG_F_TSO))
+    sp->snd_mss = tcp_session_cal_goal_size (tc);
+  else
+    sp->snd_mss = tc->snd_mss;
+
+  sp->snd_space = clib_min (tcp_snd_space_inline (tc),
+			    tc->snd_wnd - (tc->snd_nxt - tc->snd_una));
 
   ASSERT (seq_geq (tc->snd_nxt, tc->snd_una));
-
   /* This still works if fast retransmit is on */
-  return (tc->snd_nxt - tc->snd_una);
+  sp->tx_offset = tc->snd_nxt - tc->snd_una;
+
+  sp->flags = sp->snd_space ? 0 : TRANSPORT_SND_F_DESCHED;
+
+  return 0;
 }
 
 static void
@@ -1467,6 +1498,8 @@ tcp_handle_cleanups (tcp_worker_ctx_t * wrk, clib_time_type_t now)
 	break;
       clib_fifo_sub2 (wrk->pending_cleanups, req);
       tc = tcp_connection_get (req->connection_index, thread_index);
+      if (PREDICT_FALSE (!tc))
+	continue;
       session_transport_delete_notify (&tc->connection);
       tcp_connection_cleanup (tc);
     }
@@ -1507,10 +1540,8 @@ const static transport_proto_vft_t tcp_proto = {
   .close = tcp_session_close,
   .cleanup = tcp_session_cleanup,
   .reset = tcp_session_reset,
-  .send_mss = tcp_session_send_mss,
-  .send_space = tcp_session_send_space,
+  .send_params = tcp_session_send_params,
   .update_time = tcp_update_time,
-  .tx_fifo_offset = tcp_session_tx_fifo_offset,
   .flush_data = tcp_session_flush_data,
   .custom_tx = tcp_session_custom_tx,
   .format_connection = format_tcp_session,
@@ -1545,6 +1576,13 @@ tcp_connection_tx_pacer_reset (tcp_connection_t * tc, u32 window,
 				       tcp_cc_get_pacing_rate (tc),
 				       start_bucket,
 				       srtt * CLIB_US_TIME_FREQ);
+}
+
+void
+tcp_reschedule (tcp_connection_t * tc)
+{
+  if (tcp_in_cong_recovery (tc) || tcp_snd_space_inline (tc))
+    transport_connection_reschedule (&tc->connection);
 }
 
 static void

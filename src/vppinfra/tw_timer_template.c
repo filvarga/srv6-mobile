@@ -513,7 +513,7 @@ static inline
   u32 slow_wheel_index __attribute__ ((unused));
   u32 glacier_wheel_index __attribute__ ((unused));
 
-  /* Shouldn't happen */
+  /* Called too soon to process new timer expirations? */
   if (PREDICT_FALSE (now < tw->next_run_time))
     return callback_vector_arg;
 
@@ -524,6 +524,14 @@ static inline
 
   /* Remember when we ran, compute next runtime */
   tw->next_run_time = (now + tw->timer_interval);
+
+  /* First call, or time jumped backwards? */
+  if (PREDICT_FALSE
+      ((tw->last_run_time == 0.0) || (now <= tw->last_run_time)))
+    {
+      tw->last_run_time = now;
+      return callback_vector_arg;
+    }
 
   if (callback_vector_arg == 0)
     {
