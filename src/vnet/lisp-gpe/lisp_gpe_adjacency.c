@@ -46,8 +46,8 @@ BVT (clib_bihash)
 
 #define LISP_ADJ_SET_KEY(_key, _itf, _nh)       \
 {						\
-  _key.key[0] = (_nh)->ip.v6.as_u64[0];		\
-  _key.key[1] = (_nh)->ip.v6.as_u64[1];		\
+  _key.key[0] = ip_addr_v6((_nh)).as_u64[0];    \
+  _key.key[1] = ip_addr_v6((_nh)).as_u64[1];    \
   _key.key[2] = (_itf);				\
 }
 
@@ -159,7 +159,7 @@ lisp_gpe_adj_stack (lisp_gpe_adjacency_t * ladj)
   fib_protocol_t nh_proto;
   ip46_address_t nh;
 
-  ip_address_to_46 (&ladj->remote_rloc, &nh, &nh_proto);
+  nh_proto = ip_address_to_46 (&ladj->remote_rloc, &nh);
 
   /*
    * walk all the adjacencies on th lisp interface and restack them
@@ -264,7 +264,7 @@ lisp_gpe_increment_stats_counters (lisp_cp_main_t * lcm,
   key.tunnel_index = ladj->tunnel_index;
 
   uword *p = hash_get_mem (lgm->lisp_stats_index_by_key, &key);
-  ASSERT (p);
+  ALWAYS_ASSERT (p);
 
   /* compute payload length starting after GPE */
   u32 bytes = b->current_length - (lisp_data - b->data - b->current_data);

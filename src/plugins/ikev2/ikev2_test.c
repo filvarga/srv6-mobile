@@ -100,6 +100,12 @@ static void vl_api_ikev2_plugin_get_version_reply_t_handler
 }
 
 static int
+api_ikev2_profile_set_ipsec_udp_port (vat_main_t * vam)
+{
+  return 0;
+}
+
+static int
 api_ikev2_profile_add_del (vat_main_t * vam)
 {
   unformat_input_t *i = vam->input;
@@ -400,6 +406,49 @@ api_ikev2_set_local_key (vat_main_t * vam)
 
   clib_memcpy (mp->key_file, file, vec_len (file));
   vec_free (file);
+
+  S (mp);
+  W (ret);
+  return ret;
+}
+
+static int
+api_ikev2_profile_set_udp_encap (vat_main_t * vam)
+{
+  unformat_input_t *i = vam->input;
+  vl_api_ikev2_set_responder_t *mp;
+  int ret;
+  u8 *name = 0;
+
+  const char *valid_chars = "a-zA-Z0-9_";
+
+  while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (i, "%U udp-encap", unformat_token, valid_chars, &name))
+	vec_add1 (name, 0);
+      else
+	{
+	  errmsg ("parse error '%U'", format_unformat_error, i);
+	  return -99;
+	}
+    }
+
+  if (!vec_len (name))
+    {
+      errmsg ("profile name must be specified");
+      return -99;
+    }
+
+  if (vec_len (name) > 64)
+    {
+      errmsg ("profile name too long");
+      return -99;
+    }
+
+  M (IKEV2_PROFILE_SET_UDP_ENCAP, mp);
+
+  clib_memcpy (mp->name, name, vec_len (name));
+  vec_free (name);
 
   S (mp);
   W (ret);

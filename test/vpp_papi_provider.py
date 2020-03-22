@@ -96,7 +96,7 @@ defaultmapping = {
                                  'ip6_table_index': 4294967295,
                                  'l2_table_index': 4294967295, },
     'pppoe_add_del_session': {'is_add': 1, },
-    'policer_add_del': {'is_add': 1, 'conform_action_type': 1, },
+    'policer_add_del': {'is_add': 1, 'conform_action': {'type': 1}, },
     'proxy_arp_add_del': {'is_add': 1, },
     'proxy_arp_intfc_enable_disable': {'is_enable': 1, },
     'set_ip_flow_hash': {'src': 1, 'dst': 1, 'sport': 1, 'dport': 1,
@@ -126,7 +126,7 @@ defaultmapping = {
     'want_bfd_events': {'enable_disable': 1, },
     'want_igmp_events': {'enable': 1, },
     'want_interface_events': {'enable_disable': 1, },
-    'want_l2_macs_events': {'enable_disable': 1, },
+    'want_l2_macs_events': {'enable_disable': 1, 'pid': os.getpid(), },
 }
 
 
@@ -372,15 +372,6 @@ class VppPapiProvider(object):
     def want_interface_events(self, enable_disable=1):
         return self.api(self.papi.want_interface_events,
                         {'enable_disable': enable_disable,
-                         'pid': os.getpid(), })
-
-    def want_l2_macs_events(self, enable_disable=1, scan_delay=0,
-                            max_macs_in_event=0, learn_limit=0):
-        return self.api(self.papi.want_l2_macs_events,
-                        {'enable_disable': enable_disable,
-                         'scan_delay': scan_delay,
-                         'max_macs_in_event': max_macs_in_event,
-                         'learn_limit': learn_limit,
                          'pid': os.getpid(), })
 
     def sw_interface_set_mac_address(self, sw_if_index, mac):
@@ -926,7 +917,7 @@ class VppPapiProvider(object):
         return self.api(self.papi.sr_mpls_policy_add,
                         {'bsid': bsid,
                          'weight': weight,
-                         'type': type,
+                         'is_spray': type,
                          'n_segments': len(segments),
                          'segments': segments})
 
@@ -1174,41 +1165,6 @@ class VppPapiProvider(object):
 
         return self.api(
             self.papi.macip_acl_dump, {'acl_index': acl_index})
-
-    def policer_add_del(self,
-                        name,
-                        cir,
-                        eir,
-                        cb,
-                        eb,
-                        is_add=1,
-                        rate_type=0,
-                        round_type=0,
-                        ptype=0,
-                        color_aware=0,
-                        conform_action_type=1,
-                        conform_dscp=0,
-                        exceed_action_type=0,
-                        exceed_dscp=0,
-                        violate_action_type=0,
-                        violate_dscp=0):
-        return self.api(self.papi.policer_add_del,
-                        {'name': name,
-                         'cir': cir,
-                         'eir': eir,
-                         'cb': cb,
-                         'eb': eb,
-                         'is_add': is_add,
-                         'rate_type': rate_type,
-                         'round_type': round_type,
-                         'type': ptype,
-                         'color_aware': color_aware,
-                         'conform_action_type': conform_action_type,
-                         'conform_dscp': conform_dscp,
-                         'exceed_action_type': exceed_action_type,
-                         'exceed_dscp': exceed_dscp,
-                         'violate_action_type': violate_action_type,
-                         'violate_dscp': violate_dscp})
 
     def ip_punt_police(self,
                        policer_index,
@@ -1564,8 +1520,7 @@ class VppPapiProvider(object):
              'sw_if_index': sw_if_index,
              'ip4_fib_id': ip4_fib_id,
              'ip6_fib_id': ip6_fib_id,
-             'namespace_id': namespace_id,
-             'namespace_id_len': len(namespace_id)})
+             'namespace_id': namespace_id})
 
     def punt_socket_register(self, reg, pathname,
                              header_version=1):

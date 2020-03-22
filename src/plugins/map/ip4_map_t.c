@@ -30,6 +30,7 @@ typedef enum
 typedef enum
 {
   IP4_MAPT_ICMP_NEXT_IP6_LOOKUP,
+  IP4_MAPT_ICMP_NEXT_IP6_REWRITE,
   IP4_MAPT_ICMP_NEXT_IP6_FRAG,
   IP4_MAPT_ICMP_NEXT_DROP,
   IP4_MAPT_ICMP_N_NEXT
@@ -38,6 +39,7 @@ typedef enum
 typedef enum
 {
   IP4_MAPT_TCP_UDP_NEXT_IP6_LOOKUP,
+  IP4_MAPT_TCP_UDP_NEXT_IP6_REWRITE,
   IP4_MAPT_TCP_UDP_NEXT_IP6_FRAG,
   IP4_MAPT_TCP_UDP_NEXT_DROP,
   IP4_MAPT_TCP_UDP_N_NEXT
@@ -46,6 +48,7 @@ typedef enum
 typedef enum
 {
   IP4_MAPT_FRAGMENTED_NEXT_IP6_LOOKUP,
+  IP4_MAPT_FRAGMENTED_NEXT_IP6_REWRITE,
   IP4_MAPT_FRAGMENTED_NEXT_IP6_FRAG,
   IP4_MAPT_FRAGMENTED_NEXT_DROP,
   IP4_MAPT_FRAGMENTED_N_NEXT
@@ -89,14 +92,18 @@ ip4_to_ip6_set_inner_icmp_cb (vlib_buffer_t * b, ip4_header_t * ip4,
 			      ip6_header_t * ip6, void *arg)
 {
   icmp_to_icmp6_ctx_t *ctx = arg;
+  ip4_address_t old_src, old_dst;
+
+  old_src.as_u32 = ip4->src_address.as_u32;
+  old_dst.as_u32 = ip4->dst_address.as_u32;
 
   //Note that the source address is within the domain
   //while the destination address is the one outside the domain
-  ip4_map_t_embedded_address (ctx->d, &ip6->dst_address, &ip4->dst_address);
+  ip4_map_t_embedded_address (ctx->d, &ip6->dst_address, &old_dst);
   ip6->src_address.as_u64[0] =
-    map_get_pfx_net (ctx->d, ip4->src_address.as_u32, ctx->recv_port);
+    map_get_pfx_net (ctx->d, old_src.as_u32, ctx->recv_port);
   ip6->src_address.as_u64[1] =
-    map_get_sfx_net (ctx->d, ip4->src_address.as_u32, ctx->recv_port);
+    map_get_sfx_net (ctx->d, old_src.as_u32, ctx->recv_port);
 
   return 0;
 }
@@ -147,7 +154,7 @@ ip4_map_t_icmp (vlib_main_t * vm,
 			       vnet_buffer (p0)->map_t.map_domain_index);
 
 	  ip40 = vlib_buffer_get_current (p0);
-	  ctx0.recv_port = ip4_get_port (ip40, 1);
+	  ctx0.recv_port = ip4_get_port (ip40, 0);
 	  ctx0.d = d0;
 	  if (ctx0.recv_port == 0)
 	    {
@@ -172,6 +179,11 @@ ip4_map_t_icmp (vlib_main_t * vm,
 	      vnet_buffer (p0)->ip_frag.mtu = vnet_buffer (p0)->map_t.mtu;
 	      vnet_buffer (p0)->ip_frag.next_index = IP_FRAG_NEXT_IP6_LOOKUP;
 	      next0 = IP4_MAPT_ICMP_NEXT_IP6_FRAG;
+	    }
+	  else
+	    {
+	      next0 = ip4_map_ip6_lookup_bypass (p0, NULL) ?
+		IP4_MAPT_ICMP_NEXT_IP6_REWRITE : next0;
 	    }
 	err0:
 	  if (PREDICT_TRUE (error0 == MAP_ERROR_NONE))
@@ -291,6 +303,11 @@ ip4_map_t_fragmented (vlib_main_t * vm,
 		  vnet_buffer (p0)->ip_frag.next_index =
 		    IP_FRAG_NEXT_IP6_LOOKUP;
 		  next0 = IP4_MAPT_FRAGMENTED_NEXT_IP6_FRAG;
+		}
+	      else
+		{
+		  next0 = ip4_map_ip6_lookup_bypass (p0, NULL) ?
+		    IP4_MAPT_FRAGMENTED_NEXT_IP6_REWRITE : next0;
 		}
 	    }
 
@@ -458,6 +475,11 @@ ip4_map_t_tcp_udp (vlib_main_t * vm,
 		    IP_FRAG_NEXT_IP6_LOOKUP;
 		  next0 = IP4_MAPT_TCP_UDP_NEXT_IP6_FRAG;
 		}
+	      else
+		{
+		  next0 = ip4_map_ip6_lookup_bypass (p0, NULL) ?
+		    IP4_MAPT_TCP_UDP_NEXT_IP6_REWRITE : next0;
+		}
 	    }
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
 					   to_next, n_left_to_next, pi0,
@@ -506,11 +528,11 @@ ip4_map_t_classify (vlib_buffer_t * p0, map_domain_t * d0,
       *next0 = IP4_MAPT_NEXT_MAPT_ICMP;
       if (d0->ea_bits_len == 0 && d0->rules)
 	*dst_port0 = 0;
-      else if (((icmp46_header_t *) u8_ptr_add (ip40, sizeof (*ip40)))->code
+      else if (((icmp46_header_t *) u8_ptr_add (ip40, sizeof (*ip40)))->type
 	       == ICMP4_echo_reply
 	       || ((icmp46_header_t *)
 		   u8_ptr_add (ip40,
-			       sizeof (*ip40)))->code == ICMP4_echo_request)
+			       sizeof (*ip40)))->type == ICMP4_echo_request)
 	*dst_port0 = l4_dst_port;
     }
   else
@@ -689,6 +711,7 @@ VLIB_REGISTER_NODE(ip4_map_t_fragmented_node) = {
   .n_next_nodes = IP4_MAPT_FRAGMENTED_N_NEXT,
   .next_nodes = {
       [IP4_MAPT_FRAGMENTED_NEXT_IP6_LOOKUP] = "ip6-lookup",
+      [IP4_MAPT_FRAGMENTED_NEXT_IP6_REWRITE] = "ip6-load-balance",
       [IP4_MAPT_FRAGMENTED_NEXT_IP6_FRAG] = IP6_FRAG_NODE_NAME,
       [IP4_MAPT_FRAGMENTED_NEXT_DROP] = "error-drop",
   },
@@ -709,6 +732,7 @@ VLIB_REGISTER_NODE(ip4_map_t_icmp_node) = {
   .n_next_nodes = IP4_MAPT_ICMP_N_NEXT,
   .next_nodes = {
       [IP4_MAPT_ICMP_NEXT_IP6_LOOKUP] = "ip6-lookup",
+      [IP4_MAPT_ICMP_NEXT_IP6_REWRITE] = "ip6-load-balance",
       [IP4_MAPT_ICMP_NEXT_IP6_FRAG] = IP6_FRAG_NODE_NAME,
       [IP4_MAPT_ICMP_NEXT_DROP] = "error-drop",
   },
@@ -729,6 +753,7 @@ VLIB_REGISTER_NODE(ip4_map_t_tcp_udp_node) = {
   .n_next_nodes = IP4_MAPT_TCP_UDP_N_NEXT,
   .next_nodes = {
       [IP4_MAPT_TCP_UDP_NEXT_IP6_LOOKUP] = "ip6-lookup",
+      [IP4_MAPT_TCP_UDP_NEXT_IP6_REWRITE] = "ip6-load-balance",
       [IP4_MAPT_TCP_UDP_NEXT_IP6_FRAG] = IP6_FRAG_NODE_NAME,
       [IP4_MAPT_TCP_UDP_NEXT_DROP] = "error-drop",
   },

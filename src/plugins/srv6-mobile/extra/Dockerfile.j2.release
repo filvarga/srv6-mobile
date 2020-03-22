@@ -15,8 +15,9 @@ RUN set -eux; \
     net-tools \
     iproute2 \
     tcpdump \
-    python2.7 \
     python3-cffi \
+    python2.7 \
+    libssl-dev \
     netcat; \
     rm -rf /var/lib/apt/lists/*; \
     mv /usr/sbin/tcpdump /usr/bin/tcpdump
