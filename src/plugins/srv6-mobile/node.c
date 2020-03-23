@@ -768,8 +768,8 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 	      u32 offset, shift, index;
 	      ip6srv_combo_header_t *ip6srv;
 	      gtpu_pdu_session_t *sess = NULL;
-	      u32 ie_size = 0;
-	      u32 tlv_siz = 0;
+	      int ie_size = 0;
+	      u16 tlv_siz = 0;
 	      u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	      // Decap from GTP-U.
@@ -901,16 +901,18 @@ VLIB_NODE_FN (srv6_t_m_gtp4_d) (vlib_main_t * vm,
 		  u16 payload_len;
 
 		  payload_len = clib_net_to_host_u16 (hdr->gtpu.length);
-		  if (payload_len != 0
-		      && payload_len > hdr_len - sizeof (ip4_gtpu_header_t))
+		  if (payload_len != 0)
 		    {
-		      u8 *ies;
-
-		      ies = (u8 *) ((u8 *) hdr + hdr_len);
 		      ie_size =
 			payload_len - (hdr_len - sizeof (ip4_gtpu_header_t));
-		      clib_memcpy_fast (ie_buf, ies, ie_size);
-		      hdr_len += ie_size;
+		      if (ie_size > 0)
+			{
+			  u8 *ies;
+
+			  ies = (u8 *) ((u8 *) hdr + hdr_len);
+			  clib_memcpy_fast (ie_buf, ies, ie_size);
+			  hdr_len += ie_size;
+			}
 		    }
 		}
 
@@ -1609,8 +1611,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
 	  gtpu_pdu_session_t *sess = NULL;
-	  u32 ie_size = 0;
-	  u32 tlv_siz = 0;
+	  int ie_size = 0;
+	  u16 tlv_siz = 0;
 	  u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	  u32 next0 = SRV6_END_M_GTP6_D_NEXT_LOOKUP;
@@ -1760,16 +1762,18 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 		  u32 payload_len;
 
 		  payload_len = clib_net_to_host_u16 (hdr0->gtpu.length);
-		  if (payload_len != 0
-		      && payload_len > hdrlen - sizeof (ip6_gtpu_header_t))
+		  if (payload_len != 0)
 		    {
-		      u8 *ies;
-
-		      ies = (u8 *) ((u8 *) hdr0 + hdrlen);
 		      ie_size =
 			payload_len - (hdrlen - sizeof (ip6_gtpu_header_t));
-		      clib_memcpy_fast (ie_buf, ies, ie_size);
-		      hdrlen += ie_size;
+		      if (ie_size > 0)
+			{
+			  u8 *ies;
+
+			  ies = (u8 *) ((u8 *) hdr0 + hdrlen);
+			  clib_memcpy_fast (ie_buf, ies, ie_size);
+			  hdrlen += ie_size;
+			}
 		    }
 		}
 
@@ -2112,8 +2116,8 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 	  u32 hdrlen;
 	  ip6_header_t *encap = NULL;
 	  gtpu_pdu_session_t *sess;
-	  u32 ie_size = 0;
-	  u32 tlv_siz = 0;
+	  int ie_size = 0;
+	  u16 tlv_siz = 0;
 	  u8 ie_buf[GTPU_IE_MAX_SIZ];
 
 	  u32 next0 = SRV6_END_M_GTP6_D_DI_NEXT_LOOKUP;
@@ -2262,16 +2266,18 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d_di) (vlib_main_t * vm,
 		  u16 payload_len;
 
 		  payload_len = clib_net_to_host_u16 (hdr0->gtpu.length);
-		  if (payload_len != 0
-		      && payload_len > hdrlen - sizeof (ip6_gtpu_header_t))
+		  if (payload_len != 0)
 		    {
-		      u8 *ies;
-
-		      ies = (u8 *) ((u8 *) hdr0 + hdrlen);
 		      ie_size =
 			payload_len - (hdrlen - sizeof (ip6_gtpu_header_t));
-		      clib_memcpy_fast (ie_buf, ies, ie_size);
-		      hdrlen += ie_size;
+		      if (ie_size > 0)
+			{
+			  u8 *ies;
+
+			  ies = (u8 *) ((u8 *) hdr0 + hdrlen);
+			  clib_memcpy_fast (ie_buf, ies, ie_size);
+			  hdrlen += ie_size;
+			}
 		    }
 		}
 
