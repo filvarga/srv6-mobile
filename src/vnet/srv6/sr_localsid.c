@@ -188,12 +188,7 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr,
 	  clib_memcpy (&ls->usid_block, localsid_addr,
 		       sizeof (ip6_address_t));
 
-	  usid_width = pref_length - usid_len; 
-	  if (usid_width % 8)
-	    {
-	      pool_put (sm->localsids, ls);
-	      return -6;
-	    }
+	  usid_width = pref_length - usid_len;
 	  ip6_address_mask_from_width (&ls->usid_block_mask, usid_width);
 
 	  ls->usid_index = usid_width / 8;
@@ -342,10 +337,13 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	       && unformat (input, "addr %U", unformat_ip6_address,
 			    &resulting_address))
 	address_set = 1;
+      else if (!address_set
+	       && unformat (input, "prefix %U/%u", unformat_ip6_address,
+			    &resulting_address, &prefix_len))
+	address_set = 1;
       else if (unformat (input, "fib-table %u", &fib_index));
       else if (vlan_index == (u32) ~ 0
 	       && unformat (input, "vlan %u", &vlan_index));
-      else if (!usid_size && unformat (input, "usid %d", &usid_size));
       else if (!behavior && unformat (input, "behavior"))
 	{
 	  if (unformat (input, "end.x %U %U",
@@ -369,6 +367,8 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 	    behavior = SR_BEHAVIOR_DT6;
 	  else if (unformat (input, "end.dt4 %u", &sw_if_index))
 	    behavior = SR_BEHAVIOR_DT4;
+	  else if (unformat (input, "end.usid %u", &usid_size))
+	    behavior = SR_BEHAVIOR_END;
 	  else
 	    {
 	      /* Loop over all the plugin behavior format functions */
@@ -413,12 +413,18 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   if (usid_size)
     {
+      if (prefix_len < usid_size)
+	return clib_error_return (0,
+				  "Error: Prefix length must be greater"
+				  " than uSID length.");
+
       if (usid_size != 16 && usid_size != 32)
 	return clib_error_return (0,
 				  "Error: Invalid uSID length (16 or 32).");
 
-      if (behavior != SR_BEHAVIOR_END)
-	return clib_error_return (0, "Error: Unsupported behavior for uSID.");
+      if ((prefix_len - usid_size) & 0x7)
+	return clib_error_return (0,
+				  "Error: Prefix Length must be multiple of 8.");
     }
 
   if (!address_set)
@@ -481,6 +487,7 @@ VLIB_CLI_COMMAND (sr_localsid_command, static) = {
     "\tbehavior STRING            Specifies the behavior\n"
     "\n\tBehaviors:\n"
     "\tEnd\t-> Endpoint.\n"
+    "\tEnd.uSID\t-> Endpoint with uSID.\n"
     "\tEnd.X\t-> Endpoint with decapsulation and Layer-3 cross-connect.\n"
     "\t\tParameters: '<iface> <ip6_next_hop>'\n"
     "\tEnd.DX2\t-> Endpoint with decapsulation and Layer-2 cross-connect.\n"
