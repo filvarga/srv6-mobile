@@ -65,16 +65,24 @@ DEB_DEPENDS  = curl build-essential autoconf automake ccache
 DEB_DEPENDS += debhelper dkms git libtool libapr1-dev dh-systemd
 DEB_DEPENDS += libconfuse-dev git-review exuberant-ctags cscope pkg-config
 DEB_DEPENDS += lcov chrpath autoconf indent clang-format libnuma-dev
-DEB_DEPENDS += python-all python3-all python3-setuptools python-dev
-DEB_DEPENDS += python-virtualenv python-pip libffi6 check
+DEB_DEPENDS += python-all python3-all python3-setuptools
+DEB_DEPENDS += python-virtualenv python-pip check
 DEB_DEPENDS += libboost-all-dev libffi-dev python3-ply libmbedtls-dev
 DEB_DEPENDS += cmake ninja-build uuid-dev python3-jsonschema python3-yaml
 DEB_DEPENDS += python3-venv  # ensurepip
 DEB_DEPENDS += python3-dev   # needed for python3 -m pip install psutil
 # python3.6 on 16.04 requires python36-dev
- 
-ifeq ($(OS_VERSION_ID),14.04)
+
+LIBFFI=libffi6 # works on all but 20.04
+
+ifeq ($(OS_VERSION_ID),16.04)
+	DEB_DEPENDS += python-dev
 	DEB_DEPENDS += libssl-dev
+else ifeq ($(OS_VERSION_ID),18.04)
+	DEB_DEPENDS += python-dev
+	DEB_DEPENDS += libssl-dev
+else ifeq ($(OS_VERSION_ID),20.04)
+	LIBFFI=libffi7
 else ifeq ($(OS_ID)-$(OS_VERSION_ID),debian-8)
 	DEB_DEPENDS += libssl-dev
 	APT_ARGS = -t jessie-backports
@@ -83,6 +91,8 @@ else ifeq ($(OS_ID)-$(OS_VERSION_ID),debian-9)
 else
 	DEB_DEPENDS += libssl-dev
 endif
+
+DEB_DEPENDS += $(LIBFFI)
 
 RPM_DEPENDS  = redhat-lsb glibc-static
 RPM_DEPENDS += apr-devel
@@ -93,20 +103,20 @@ RPM_DEPENDS += selinux-policy selinux-policy-devel
 RPM_DEPENDS += ninja-build
 RPM_DEPENDS += libuuid-devel
 RPM_DEPENDS += mbedtls-devel
-RPM_DEPENDS += python3-devel  # needed for python3 -m pip install psutil
 
 ifeq ($(OS_ID),fedora)
 	RPM_DEPENDS += dnf-utils
 	RPM_DEPENDS += subunit subunit-devel
 	RPM_DEPENDS += compat-openssl10-devel
+	RPM_DEPENDS += python3-devel  # needed for python3 -m pip install psutil
 	RPM_DEPENDS += python3-ply  # for vppapigen
 	RPM_DEPENDS += python3-virtualenv python3-jsonschema
 	RPM_DEPENDS += cmake
 	RPM_DEPENDS_GROUPS = 'C Development Tools and Libraries'
 else ifeq ($(OS_ID)-$(OS_VERSION_ID),centos-8)
-	RPM_DEPENDS += dnf-utils
+	RPM_DEPENDS += yum-utils
 	RPM_DEPENDS += compat-openssl10
-	RPM_DEPENDS += python3-devel python3-ply
+	RPM_DEPENDS += python36-devel python3-ply
 	RPM_DEPENDS += python3-virtualenv python3-jsonschema
 	RPM_DEPENDS += cmake
 	RPM_DEPENDS_GROUPS = 'Development Tools'
@@ -203,6 +213,8 @@ help:
 	@echo " run-vat              - run vpp-api-test tool"
 	@echo " pkg-deb              - build DEB packages"
 	@echo " pkg-deb-debug        - build DEB debug packages"
+	@echo " pkg-snap             - build SNAP package"
+	@echo " snap-clean           - clean up snap build environment"
 	@echo " vom-pkg-deb          - build vom DEB packages"
 	@echo " vom-pkg-deb-debug    - build vom DEB debug packages"
 	@echo " pkg-rpm              - build RPM packages"
@@ -573,6 +585,20 @@ run-vat:
 .PHONY: pkg-deb
 pkg-deb:
 	$(call make,$(PLATFORM),vpp-package-deb)
+
+.PHONY: pkg-snap
+pkg-snap:
+	cd extras/snap ;			\
+        ./prep ;				\
+	SNAPCRAFT_BUILD_ENVIRONMENT_MEMORY=8G 	\
+	SNAPCRAFT_BUILD_ENVIRONMENT_CPU=6 	\
+	snapcraft --debug
+
+.PHONY: snap-clean
+snap-clean:
+	cd extras/snap ;			\
+        snapcraft clean ;			\
+	rm -f *.snap *.tgz
 
 .PHONY: vom-pkg-deb
 vom-pkg-deb: pkg-deb

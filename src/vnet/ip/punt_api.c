@@ -89,7 +89,11 @@ vl_api_punt_l4_decode (const vl_api_punt_l4_t * in, punt_l4_t * out)
   int rv;
 
   rv = ip_address_family_decode (in->af, &out->af);
-  rv += ip_proto_decode (in->protocol, &out->protocol);
+  if (rv < 0)
+    return (rv);
+  rv = ip_proto_decode (in->protocol, &out->protocol);
+  if (rv < 0)
+    return (rv);
   out->port = clib_net_to_host_u16 (in->port);
 
   return (rv);
@@ -102,7 +106,9 @@ vl_api_punt_ip_proto_decode (const vl_api_punt_ip_proto_t * in,
   int rv;
 
   rv = ip_address_family_decode (in->af, &out->af);
-  rv += ip_proto_decode (in->protocol, &out->protocol);
+  if (rv < 0)
+    return (rv);
+  rv = ip_proto_decode (in->protocol, &out->protocol);
 
   return (rv);
 }
@@ -347,7 +353,7 @@ punt_reason_dump_walk_cb (vlib_punt_reason_t id, const u8 * name, void *args)
 
   mp->context = ctx->context;
   mp->reason.id = clib_host_to_net_u32 (id);
-  vl_api_to_api_string (vec_len (name), (char *) name, &mp->reason.name);
+  vl_api_vec_to_api_string (name, &mp->reason.name);
 
   vl_api_send_msg (ctx->reg, (u8 *) mp);
 
@@ -366,7 +372,7 @@ vl_api_punt_reason_dump_t_handler (vl_api_punt_reason_dump_t * mp)
   punt_reason_dump_walk_ctx_t ctx = {
     .reg = reg,
     .context = mp->context,
-    .name = vl_api_from_api_to_vec (&mp->reason.name),
+    .name = vl_api_from_api_to_new_vec (&mp->reason.name),
   };
 
   punt_reason_walk (punt_reason_dump_walk_cb, &ctx);

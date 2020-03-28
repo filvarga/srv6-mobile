@@ -761,7 +761,7 @@ class VPPAPI(object):
         for o in objs:
             tname = o.__class__.__name__
             try:
-                crc = binascii.crc32(o.crc, crc)
+                crc = binascii.crc32(o.crc, crc) & 0xffffffff
             except AttributeError:
                 pass
             if isinstance(o, Define):
@@ -769,7 +769,7 @@ class VPPAPI(object):
                 if o.autoreply:
                     s[tname].append(self.autoreply_block(o.name))
             elif isinstance(o, Option):
-                s[tname][o[1]] = o[2]
+                s[tname][o.option] = o.value
             elif type(o) is list:
                 for o2 in o:
                     if isinstance(o2, Service):
@@ -908,7 +908,7 @@ def foldup_blocks(block, crc):
 def foldup_crcs(s):
     for f in s:
         f.crc = foldup_blocks(f.block,
-                              binascii.crc32(f.crc))
+                              binascii.crc32(f.crc) & 0xffffffff)
 
 
 #

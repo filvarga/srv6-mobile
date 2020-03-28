@@ -83,6 +83,11 @@ I:	classify
 M:	Dave Barach <dave@barachs.net>
 F:	src/vnet/classify
 
+VNET Policer
+I:	policer
+M:	N/A
+F:	src/vnet/policer/
+
 VNET Device Drivers
 I:	devices
 Y:	src/vnet/devices/af_packet/FEATURE.yaml
@@ -180,10 +185,15 @@ I:	cop
 M:	Dave Barach <dave@barachs.net>
 F:	src/vnet/cop/
 
-VNET NHRP
-I:	nhrp
+VNET TEIB
+I:	teib
 M:	Neale Ranns <nranns@cisco.com>
-F:	src/vnet/nhrp/
+F:	src/vnet/teib/
+
+VNET SPAN
+I:	span
+M:	N/A
+F:	src/vnet/span
 
 Crypto native Plugin
 I:	crypto-native
@@ -614,10 +624,6 @@ I:	papi
 M:	Ole Troan <ot@cisco.com>
 F:	src/vpp-api/python
 
-Plugin - SCTP
-I:	sctp
-F:	src/plugins/sctp/
-
 Cisco Discovery Protocol
 I:	cdp
 F:	src/plugins/cdp/
@@ -648,6 +654,11 @@ F:	src/plugins/ioam
 Awkward chained buffer geometry tool
 I:	oddbuf
 F:	src/plugins/oddbuf
+
+Plugin - VRRP
+I:	vrrp
+M:	Matthew Smith <mgsmith@netgate.com>
+F:	src/plugins/vrrp
 
 VPP Config Tooling
 I:	vpp_config

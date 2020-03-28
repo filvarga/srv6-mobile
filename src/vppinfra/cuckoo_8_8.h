@@ -79,7 +79,7 @@ format_cuckoo_kvp_8_8 (u8 * s, va_list * args)
 
   if (clib_cuckoo_kv_is_free_8_8 (v))
     {
-      s = format (s, " -- empty -- ", v->key, v->value);
+      s = format (s, " -- empty -- ");
     }
   else
     {
@@ -108,10 +108,8 @@ clib_cuckoo_key_compare_8_8 (u64 a, u64 b)
   return a == b;
 }
 
-#if 0
 #undef __included_cuckoo_template_h__
 #include <vppinfra/cuckoo_template.h>
-#endif
 
 #endif /* __included_cuckoo_8_8_h__ */
 

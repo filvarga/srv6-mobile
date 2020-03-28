@@ -20,8 +20,10 @@
 #include <vppinfra/hash.h>
 #include <vppinfra/elf_clib.h>
 #include <vppinfra/sanitizer.h>
+#include <numaif.h>
 
 void *clib_per_cpu_mheaps[CLIB_MAX_MHEAPS];
+void *clib_per_numa_mheaps[CLIB_MAX_NUMAS];
 
 typedef struct
 {
@@ -29,11 +31,7 @@ typedef struct
   uword callers[12];
 
   /* Count of allocations with this traceback. */
-#if CLIB_VEC64 > 0
-  u64 n_allocations;
-#else
   u32 n_allocations;
-#endif
 
   /* Count of bytes allocated with this traceback. */
   u32 n_bytes;
@@ -202,8 +200,8 @@ mheap_trace_main_free (mheap_trace_main_t * tm)
 
 /* Initialize CLIB heap based on memory/size given by user.
    Set memory to 0 and CLIB will try to allocate its own heap. */
-void *
-clib_mem_init (void *memory, uword memory_size)
+static void *
+clib_mem_init_internal (void *memory, uword memory_size, int set_heap)
 {
   u8 *heap;
 
@@ -217,7 +215,8 @@ clib_mem_init (void *memory, uword memory_size)
 
   CLIB_MEM_POISON (mspace_least_addr (heap), mspace_footprint (heap));
 
-  clib_mem_set_heap (heap);
+  if (set_heap)
+    clib_mem_set_heap (heap);
 
   if (mheap_trace_main.lock == 0)
     clib_spinlock_init (&mheap_trace_main.lock);
@@ -226,9 +225,41 @@ clib_mem_init (void *memory, uword memory_size)
 }
 
 void *
+clib_mem_init (void *memory, uword memory_size)
+{
+  return clib_mem_init_internal (memory, memory_size,
+				 1 /* do clib_mem_set_heap */ );
+}
+
+void *
 clib_mem_init_thread_safe (void *memory, uword memory_size)
 {
-  return clib_mem_init (memory, memory_size);
+  return clib_mem_init_internal (memory, memory_size,
+				 1 /* do clib_mem_set_heap */ );
+}
+
+void *
+clib_mem_init_thread_safe_numa (void *memory, uword memory_size, u8 numa)
+{
+  clib_mem_vm_alloc_t alloc = { 0 };
+  clib_error_t *err;
+  void *heap;
+
+  alloc.size = memory_size;
+  alloc.flags = CLIB_MEM_VM_F_NUMA_FORCE;
+  alloc.numa_node = numa;
+  if ((err = clib_mem_vm_ext_alloc (&alloc)))
+    {
+      clib_error_report (err);
+      return 0;
+    }
+
+  heap = clib_mem_init_internal (memory, memory_size,
+				 0 /* do NOT clib_mem_set_heap */ );
+
+  ASSERT (heap);
+
+  return heap;
 }
 
 u8 *

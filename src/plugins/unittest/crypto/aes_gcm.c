@@ -244,6 +244,80 @@ UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_tc4) = {
   .aad = TEST_DATA(tc4_aad),
   .tag = TEST_DATA (tc4_tag256),
 };
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_tc4_chain) = {
+  .name = "256-GCM Spec. TC4 [chained]",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .iv = TEST_DATA (tc3_iv),
+  .key = TEST_DATA (tc3_key256),
+  .aad = TEST_DATA(tc4_aad),
+  .tag = TEST_DATA (tc4_tag256),
+  .is_chained = 1,
+  .pt_chunks = {
+    TEST_DATA_CHUNK (tc4_plaintext, 0, 20),
+    TEST_DATA_CHUNK (tc4_plaintext, 20, 20),
+    TEST_DATA_CHUNK (tc4_plaintext, 40, 20),
+  },
+  .ct_chunks = {
+    TEST_DATA_CHUNK (tc4_ciphertext256, 0, 20),
+    TEST_DATA_CHUNK (tc4_ciphertext256, 20, 20),
+    TEST_DATA_CHUNK (tc4_ciphertext256, 40, 20),
+  },
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc_1024) = {
+  .name = "256-GCM (incr 1024 B)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc1) = {
+  .name = "256-GCM (incr 1056 B)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024 + 32,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc2) = {
+  .name = "256-GCM (incr 1042 B)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024 + 8,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc3) = {
+  .name = "256-GCM (incr 1025 B)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024 + 1,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc4) = {
+  .name = "256-GCM (incr 1009 B)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024 - 15,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
+
+UNITTEST_REGISTER_CRYPTO_TEST (aes_gcm256_inc5) = {
+  .name = "256-GCM (incr 1008)",
+  .alg = VNET_CRYPTO_ALG_AES_256_GCM,
+  .plaintext_incremental = 1024 - 16,
+  .key.length = 32,
+  .aad.length = 20,
+  .tag.length = 16,
+};
 /* *INDENT-ON* */
 
 /*

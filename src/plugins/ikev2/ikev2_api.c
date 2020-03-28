@@ -111,7 +111,7 @@ static void
 static void
 vl_api_ikev2_profile_set_id_t_handler (vl_api_ikev2_profile_set_id_t * mp)
 {
-  vl_api_ikev2_profile_add_del_reply_t *rmp;
+  vl_api_ikev2_profile_set_id_reply_t *rmp;
   int rv = 0;
 
 #if WITH_LIBSSL > 0
@@ -131,6 +131,28 @@ vl_api_ikev2_profile_set_id_t_handler (vl_api_ikev2_profile_set_id_t * mp)
 #endif
 
   REPLY_MACRO (VL_API_IKEV2_PROFILE_SET_ID_REPLY);
+}
+
+static void
+  vl_api_ikev2_profile_set_udp_encap_t_handler
+  (vl_api_ikev2_profile_set_udp_encap_t * mp)
+{
+  vl_api_ikev2_profile_set_udp_encap_reply_t *rmp;
+  int rv = 0;
+
+#if WITH_LIBSSL > 0
+  vlib_main_t *vm = vlib_get_main ();
+  clib_error_t *error;
+  u8 *tmp = format (0, "%s", mp->name);
+  error = ikev2_set_profile_udp_encap (vm, tmp);
+  vec_free (tmp);
+  if (error)
+    rv = VNET_API_ERROR_UNSPECIFIED;
+#else
+  rv = VNET_API_ERROR_UNIMPLEMENTED;
+#endif
+
+  REPLY_MACRO (VL_API_IKEV2_PROFILE_SET_UDP_ENCAP);
 }
 
 static void
@@ -162,7 +184,7 @@ vl_api_ikev2_profile_set_ts_t_handler (vl_api_ikev2_profile_set_ts_t * mp)
 static void
 vl_api_ikev2_set_local_key_t_handler (vl_api_ikev2_set_local_key_t * mp)
 {
-  vl_api_ikev2_profile_set_ts_reply_t *rmp;
+  vl_api_ikev2_set_local_key_reply_t *rmp;
   int rv = 0;
 
 #if WITH_LIBSSL > 0
@@ -287,6 +309,57 @@ vl_api_ikev2_set_sa_lifetime_t_handler (vl_api_ikev2_set_sa_lifetime_t * mp)
 #endif
 
   REPLY_MACRO (VL_API_IKEV2_SET_SA_LIFETIME_REPLY);
+}
+
+static void
+  vl_api_ikev2_profile_set_ipsec_udp_port_t_handler
+  (vl_api_ikev2_profile_set_ipsec_udp_port_t * mp)
+{
+  vl_api_ikev2_profile_set_ipsec_udp_port_reply_t *rmp;
+  int rv = 0;
+
+#if WITH_LIBSSL > 0
+  vlib_main_t *vm = vlib_get_main ();
+
+  u8 *tmp = format (0, "%s", mp->name);
+
+  rv =
+    ikev2_set_profile_ipsec_udp_port (vm, tmp,
+				      clib_net_to_host_u16 (mp->port),
+				      mp->is_set);
+  vec_free (tmp);
+#else
+  rv = VNET_API_ERROR_UNIMPLEMENTED;
+#endif
+
+  REPLY_MACRO (VL_API_IKEV2_PROFILE_SET_IPSEC_UDP_PORT_REPLY);
+}
+
+static void
+  vl_api_ikev2_set_tunnel_interface_t_handler
+  (vl_api_ikev2_set_tunnel_interface_t * mp)
+{
+  vl_api_ikev2_set_tunnel_interface_reply_t *rmp;
+  int rv = 0;
+
+  VALIDATE_SW_IF_INDEX (mp);
+
+#if WITH_LIBSSL > 0
+  u8 *tmp = format (0, "%s", mp->name);
+  clib_error_t *error;
+
+  error = ikev2_set_profile_tunnel_interface (vlib_get_main (), tmp,
+					      ntohl (mp->sw_if_index));
+
+  if (error)
+    rv = VNET_API_ERROR_UNSPECIFIED;
+  vec_free (tmp);
+#else
+  rv = VNET_API_ERROR_UNIMPLEMENTED;
+#endif
+
+  BAD_SW_IF_INDEX_LABEL;
+  REPLY_MACRO (VL_API_IKEV2_SET_TUNNEL_INTERFACE_REPLY);
 }
 
 static void

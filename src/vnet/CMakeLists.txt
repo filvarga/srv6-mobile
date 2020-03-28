@@ -67,6 +67,9 @@ list(APPEND VNET_HEADERS
   vnet_msg_enum.h
   util/radix.h
   util/refcount.h
+  format_fns.h
+  ip/ip_format_fns.h
+  ethernet/ethernet_format_fns.h
 )
 
 list(APPEND VNET_API_FILES
@@ -95,7 +98,10 @@ list(APPEND VNET_HEADERS
   policer/xlate.h
 )
 
-list(APPEND VNET_API_FILES policer/policer.api)
+list(APPEND VNET_API_FILES
+  policer/policer.api
+  policer/policer_types.api
+)
 
 ##############################################################################
 # Cop - junk filter
@@ -460,6 +466,7 @@ list(APPEND VNET_SOURCES
   ip/punt_api.c
   ip/punt.c
   ip/punt_node.c
+  ip/vtep.c
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
@@ -939,7 +946,10 @@ list(APPEND VNET_HEADERS
   srv6/sr.h
 )
 
-list(APPEND VNET_API_FILES srv6/sr.api)
+list(APPEND VNET_API_FILES
+  srv6/sr.api
+  srv6/sr_types.api
+)
 
 ##############################################################################
 # mpls segment routing
@@ -955,7 +965,10 @@ list(APPEND VNET_HEADERS
   srmpls/sr_mpls.h
 )
 
-list(APPEND VNET_API_FILES srmpls/sr_mpls.api)
+list(APPEND VNET_API_FILES
+  srmpls/sr_mpls.api
+  srv6/sr_types.api
+)
 
 ##############################################################################
 # IPFIX / netflow v10
@@ -1517,20 +1530,20 @@ list(APPEND VNET_HEADERS
 list(APPEND VNET_API_FILES pci/pci_types.api)
 
 ##############################################################################
-# NHRP
+# Tunnel Endpoint Information Base
 ##############################################################################
 
 list (APPEND VNET_SOURCES
-  nhrp/nhrp_api.c
-  nhrp/nhrp_cli.c
-  nhrp/nhrp.c
+  teib/teib_api.c
+  teib/teib_cli.c
+  teib/teib.c
 )
 
 list(APPEND VNET_HEADERS
-  nhrp/nhrp.h
+  teib/teib.h
 )
 
-list(APPEND VNET_API_FILES nhrp/nhrp.api)
+list(APPEND VNET_API_FILES teib/teib.api)
 
 ##############################################################################
 # ARP/ND

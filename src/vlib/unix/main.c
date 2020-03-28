@@ -213,6 +213,7 @@ setup_signal_handlers (unix_main_t * um)
 	case SIGSTOP:
 	case SIGUSR1:
 	case SIGUSR2:
+	case SIGPROF:
 	  continue;
 
 	  /* ignore SIGPIPE, SIGCHLD */
@@ -684,6 +685,8 @@ vlib_unix_main (int argc, char *argv[])
   vm->heap_aligned_base = (void *)
     (((uword) vm->heap_base) & ~(VLIB_FRAME_ALIGN - 1));
   ASSERT (vm->heap_base);
+
+  clib_time_init (&vm->clib_time);
 
   unformat_init_command_line (&input, (char **) vm->argv);
   if ((e = vlib_plugin_config (vm, &input)))

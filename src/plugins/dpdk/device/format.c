@@ -544,6 +544,20 @@ ptr2sname (void *p)
   return info.dli_sname;
 }
 
+static u8 *
+format_switch_info (u8 * s, va_list * args)
+{
+  struct rte_eth_switch_info *si =
+    va_arg (*args, struct rte_eth_switch_info *);
+
+  if (si->name)
+    s = format (s, "name %s ", si->name);
+
+  s = format (s, "domain id %d port id %d", si->domain_id, si->port_id);
+
+  return s;
+}
+
 u8 *
 format_dpdk_device (u8 * s, va_list * args)
 {
@@ -554,6 +568,7 @@ format_dpdk_device (u8 * s, va_list * args)
   u32 indent = format_get_indent (s);
   f64 now = vlib_time_now (dm->vlib_main);
   struct rte_eth_dev_info di;
+  struct rte_eth_burst_mode mode;
 
   dpdk_update_counters (xd, now);
   dpdk_update_link_state (xd, now);
@@ -609,6 +624,13 @@ format_dpdk_device (u8 * s, va_list * args)
 	  vec_free (s2);
 	}
 
+      if (di.switch_info.domain_id != RTE_ETH_DEV_SWITCH_DOMAIN_ID_INVALID)
+	{
+	  s =
+	    format (s, "%Uswitch info: %U\n", format_white_space, indent + 2,
+		    format_switch_info, &di.switch_info);
+	}
+
       if (1 < verbose)
 	{
 	  s = format (s, "%Umodule: %U\n", format_white_space, indent + 2,
@@ -645,12 +667,36 @@ format_dpdk_device (u8 * s, va_list * args)
 		  format_dpdk_rss_hf_name, di.flow_type_rss_offloads,
 		  format_white_space, indent + 2,
 		  format_dpdk_rss_hf_name, rss_conf.rss_hf);
-      s = format (s, "%Utx burst function: %s\n",
-		  format_white_space, indent + 2,
-		  ptr2sname (rte_eth_devices[xd->port_id].tx_pkt_burst));
-      s = format (s, "%Urx burst function: %s\n",
-		  format_white_space, indent + 2,
-		  ptr2sname (rte_eth_devices[xd->port_id].rx_pkt_burst));
+
+      if (rte_eth_tx_burst_mode_get (xd->port_id, 0, &mode) == 0)
+	{
+	  s = format (s, "%Utx burst mode: %s%s\n",
+		      format_white_space, indent + 2,
+		      mode.info,
+		      mode.flags & RTE_ETH_BURST_FLAG_PER_QUEUE ?
+		      " (per queue)" : "");
+	}
+      else
+	{
+	  s = format (s, "%Utx burst function: %s\n",
+		      format_white_space, indent + 2,
+		      ptr2sname (rte_eth_devices[xd->port_id].tx_pkt_burst));
+	}
+
+      if (rte_eth_rx_burst_mode_get (xd->port_id, 0, &mode) == 0)
+	{
+	  s = format (s, "%Urx burst mode: %s%s\n",
+		      format_white_space, indent + 2,
+		      mode.info,
+		      mode.flags & RTE_ETH_BURST_FLAG_PER_QUEUE ?
+		      " (per queue)" : "");
+	}
+      else
+	{
+	  s = format (s, "%Urx burst function: %s\n",
+		      format_white_space, indent + 2,
+		      ptr2sname (rte_eth_devices[xd->port_id].rx_pkt_burst));
+	}
     }
 
   /* $$$ MIB counters  */

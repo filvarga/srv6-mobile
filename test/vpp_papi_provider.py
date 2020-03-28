@@ -96,7 +96,7 @@ defaultmapping = {
                                  'ip6_table_index': 4294967295,
                                  'l2_table_index': 4294967295, },
     'pppoe_add_del_session': {'is_add': 1, },
-    'policer_add_del': {'is_add': 1, 'conform_action_type': 1, },
+    'policer_add_del': {'is_add': 1, 'conform_action': {'type': 1}, },
     'proxy_arp_add_del': {'is_add': 1, },
     'proxy_arp_intfc_enable_disable': {'is_enable': 1, },
     'set_ip_flow_hash': {'src': 1, 'dst': 1, 'sport': 1, 'dport': 1,
@@ -126,7 +126,7 @@ defaultmapping = {
     'want_bfd_events': {'enable_disable': 1, },
     'want_igmp_events': {'enable': 1, },
     'want_interface_events': {'enable_disable': 1, },
-    'want_l2_macs_events': {'enable_disable': 1, },
+    'want_l2_macs_events': {'enable_disable': 1, 'pid': os.getpid(), },
 }
 
 
@@ -372,15 +372,6 @@ class VppPapiProvider(object):
     def want_interface_events(self, enable_disable=1):
         return self.api(self.papi.want_interface_events,
                         {'enable_disable': enable_disable,
-                         'pid': os.getpid(), })
-
-    def want_l2_macs_events(self, enable_disable=1, scan_delay=0,
-                            max_macs_in_event=0, learn_limit=0):
-        return self.api(self.papi.want_l2_macs_events,
-                        {'enable_disable': enable_disable,
-                         'scan_delay': scan_delay,
-                         'max_macs_in_event': max_macs_in_event,
-                         'learn_limit': learn_limit,
                          'pid': os.getpid(), })
 
     def sw_interface_set_mac_address(self, sw_if_index, mac):
@@ -926,134 +917,13 @@ class VppPapiProvider(object):
         return self.api(self.papi.sr_mpls_policy_add,
                         {'bsid': bsid,
                          'weight': weight,
-                         'type': type,
+                         'is_spray': type,
                          'n_segments': len(segments),
                          'segments': segments})
 
     def sr_mpls_policy_del(self, bsid):
         return self.api(self.papi.sr_mpls_policy_del,
                         {'bsid': bsid})
-
-    def sr_localsid_add_del(self,
-                            localsid,
-                            behavior,
-                            nh_addr4,
-                            nh_addr6,
-                            is_del=0,
-                            end_psp=0,
-                            sw_if_index=0xFFFFFFFF,
-                            vlan_index=0,
-                            fib_table=0,
-                            ):
-        """ Add/del IPv6 SR local-SID.
-
-        :param localsid:
-        :param behavior: END=1; END.X=2; END.DX2=4; END.DX6=5;
-        :param behavior: END.DX4=6; END.DT6=7; END.DT4=8
-        :param nh_addr4:
-        :param nh_addr6:
-        :param is_del:  (Default value = 0)
-        :param end_psp: (Default value = 0)
-        :param sw_if_index: (Default value = 0xFFFFFFFF)
-        :param vlan_index:  (Default value = 0)
-        :param fib_table:   (Default value = 0)
-        """
-        return self.api(
-            self.papi.sr_localsid_add_del,
-            {'is_del': is_del,
-             'localsid': localsid,
-             'end_psp': end_psp,
-             'behavior': behavior,
-             'sw_if_index': sw_if_index,
-             'vlan_index': vlan_index,
-             'fib_table': fib_table,
-             'nh_addr4': nh_addr4,
-             'nh_addr6': nh_addr6
-             }
-        )
-
-    def sr_policy_add(
-            self,
-            bsid_addr,
-            weight=1,
-            is_encap=1,
-            type=0,
-            fib_table=0,
-            n_segments=0,
-            segments=[]):
-        """
-        :param bsid_addr: bindingSID of the SR Policy
-        :param weight: weight of the sid list. optional. (default: 1)
-        :param is_encap: (bool) whether SR policy should Encap or SRH insert \
-            (default: Encap)
-        :param type: type/behavior of the SR policy. (default or spray) \
-            (default: default)
-        :param fib_table: VRF where to install the FIB entry for the BSID \
-            (default: 0)
-        :param n_segments: number of segments \
-            (default: 0)
-        :param segments: a vector of IPv6 address composing the segment list \
-            (default: [])
-        """
-        return self.api(
-            self.papi.sr_policy_add,
-            {'bsid_addr': bsid_addr,
-             'weight': weight,
-             'is_encap': is_encap,
-             'type': type,
-             'fib_table': fib_table,
-             'n_segments': n_segments,
-             'segments': segments
-             }
-        )
-
-    def sr_policy_del(
-            self,
-            bsid_addr,
-            sr_policy_index=0):
-        """
-        :param bsid: bindingSID of the SR Policy
-        :param sr_policy_index: index of the sr policy (default: 0)
-        """
-        return self.api(
-            self.papi.sr_policy_del,
-            {'bsid_addr': bsid_addr,
-             'sr_policy_index': sr_policy_index
-             })
-
-    def sr_steering_add_del(
-            self,
-            is_del,
-            bsid_addr,
-            sr_policy_index,
-            table_id,
-            prefix_addr,
-            mask_width,
-            sw_if_index,
-            traffic_type):
-        """
-        Steer traffic L2 and L3 traffic through a given SR policy
-
-        :param is_del: delete or add
-        :param bsid_addr: bindingSID of the SR Policy (alt to sr_policy_index)
-        :param sr_policy: is the index of the SR Policy (alt to bsid)
-        :param table_id: is the VRF where to install the FIB entry for the BSID
-        :param prefix_addr: is the IPv4/v6 address for L3 traffic type
-        :param mask_width: is the mask for L3 traffic type
-        :param sw_if_index: is the incoming interface for L2 traffic
-        :param traffic_type: type of traffic (IPv4: 4, IPv6: 6, L2: 2)
-        """
-        return self.api(
-            self.papi.sr_steering_add_del,
-            {'is_del': is_del,
-             'bsid_addr': bsid_addr,
-             'sr_policy_index': sr_policy_index,
-             'table_id': table_id,
-             'prefix_addr': prefix_addr,
-             'mask_width': mask_width,
-             'sw_if_index': sw_if_index,
-             'traffic_type': traffic_type
-             })
 
     def acl_add_replace(self, acl_index, r, tag='',
                         expected_retval=0):
@@ -1174,41 +1044,6 @@ class VppPapiProvider(object):
 
         return self.api(
             self.papi.macip_acl_dump, {'acl_index': acl_index})
-
-    def policer_add_del(self,
-                        name,
-                        cir,
-                        eir,
-                        cb,
-                        eb,
-                        is_add=1,
-                        rate_type=0,
-                        round_type=0,
-                        ptype=0,
-                        color_aware=0,
-                        conform_action_type=1,
-                        conform_dscp=0,
-                        exceed_action_type=0,
-                        exceed_dscp=0,
-                        violate_action_type=0,
-                        violate_dscp=0):
-        return self.api(self.papi.policer_add_del,
-                        {'name': name,
-                         'cir': cir,
-                         'eir': eir,
-                         'cb': cb,
-                         'eb': eb,
-                         'is_add': is_add,
-                         'rate_type': rate_type,
-                         'round_type': round_type,
-                         'type': ptype,
-                         'color_aware': color_aware,
-                         'conform_action_type': conform_action_type,
-                         'conform_dscp': conform_dscp,
-                         'exceed_action_type': exceed_action_type,
-                         'exceed_dscp': exceed_dscp,
-                         'violate_action_type': violate_action_type,
-                         'violate_dscp': violate_dscp})
 
     def ip_punt_police(self,
                        policer_index,
@@ -1564,8 +1399,7 @@ class VppPapiProvider(object):
              'sw_if_index': sw_if_index,
              'ip4_fib_id': ip4_fib_id,
              'ip6_fib_id': ip6_fib_id,
-             'namespace_id': namespace_id,
-             'namespace_id_len': len(namespace_id)})
+             'namespace_id': namespace_id})
 
     def punt_socket_register(self, reg, pathname,
                              header_version=1):

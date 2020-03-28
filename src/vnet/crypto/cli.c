@@ -54,6 +54,33 @@ VLIB_CLI_COMMAND (show_crypto_engines_command, static) =
 };
 
 static u8 *
+format_vnet_crypto_engine_candidates (u8 * s, va_list * args)
+{
+  vnet_crypto_engine_t *e;
+  vnet_crypto_main_t *cm = &crypto_main;
+
+  vnet_crypto_op_id_t id = va_arg (*args, vnet_crypto_op_id_t);
+  u32 ei = va_arg (*args, u32);
+  int is_chained = va_arg (*args, int);
+
+  vec_foreach (e, cm->engines)
+    {
+      void * h = is_chained ? (void *) e->chained_ops_handlers[id]
+        : (void *) e->ops_handlers[id];
+
+      if (h)
+        {
+          s = format (s, "%U", format_vnet_crypto_engine, e - cm->engines);
+          if (ei == e - cm->engines)
+            s = format (s, "%c ", '*');
+          else
+            s = format (s, " ");
+        }
+    }
+  return s;
+}
+
+static u8 *
 format_vnet_crypto_handlers (u8 * s, va_list * args)
 {
   vnet_crypto_alg_t alg = va_arg (*args, vnet_crypto_alg_t);
@@ -65,7 +92,6 @@ format_vnet_crypto_handlers (u8 * s, va_list * args)
   for (i = 0; i < VNET_CRYPTO_OP_N_TYPES; i++)
     {
       vnet_crypto_op_data_t *od;
-      vnet_crypto_engine_t *e;
       vnet_crypto_op_id_t id = d->op_by_type[i];
 
       if (id == 0)
@@ -74,14 +100,12 @@ format_vnet_crypto_handlers (u8 * s, va_list * args)
       od = cm->opt_data + id;
       if (first == 0)
         s = format (s, "\n%U", format_white_space, indent);
-      s = format (s, "%-20U%-20U", format_vnet_crypto_op_type, od->type,
-		  format_vnet_crypto_engine, od->active_engine_index,s);
+      s = format (s, "%-16U", format_vnet_crypto_op_type, od->type);
 
-      vec_foreach (e, cm->engines)
-	{
-	  if (e->ops_handlers[id] != 0)
-	    s = format (s, "%U ", format_vnet_crypto_engine, e - cm->engines);
-	}
+      s = format (s, "%-28U", format_vnet_crypto_engine_candidates, id,
+          od->active_engine_index_simple, 0);
+      s = format (s, "%U", format_vnet_crypto_engine_candidates, id,
+          od->active_engine_index_chained, 1);
       first = 0;
     }
   return s;
@@ -98,11 +122,11 @@ show_crypto_handlers_command_fn (vlib_main_t * vm,
   if (unformat_user (input, unformat_line_input, line_input))
     unformat_free (line_input);
 
-  vlib_cli_output (vm, "%-20s%-20s%-20s%s", "Algo", "Type", "Active",
-		   "Candidates");
+  vlib_cli_output (vm, "%-16s%-16s%-28s%s", "Algo", "Type", "Simple",
+      "Chained");
 
   for (i = 0; i < VNET_CRYPTO_N_ALGS; i++)
-    vlib_cli_output (vm, "%-20U%U", format_vnet_crypto_alg, i,
+    vlib_cli_output (vm, "%-16U%U", format_vnet_crypto_alg, i,
 		     format_vnet_crypto_handlers, i);
 
   return 0;
@@ -128,6 +152,7 @@ set_crypto_handler_command_fn (vlib_main_t * vm,
   char **args = 0, *s, **arg, *engine = 0;
   int all = 0;
   clib_error_t *error = 0;
+  crypto_op_class_type_t oct = CRYPTO_OP_BOTH;
 
   if (!unformat_user (input, unformat_line_input, line_input))
     return 0;
@@ -136,6 +161,12 @@ set_crypto_handler_command_fn (vlib_main_t * vm,
     {
       if (unformat (line_input, "all"))
 	all = 1;
+      else if (unformat (line_input, "simple"))
+	oct = CRYPTO_OP_SIMPLE;
+      else if (unformat (line_input, "chained"))
+	oct = CRYPTO_OP_CHAINED;
+      else if (unformat (line_input, "both"))
+	oct = CRYPTO_OP_BOTH;
       else if (unformat (line_input, "%s", &s))
 	vec_add1 (args, s);
       else
@@ -163,7 +194,7 @@ set_crypto_handler_command_fn (vlib_main_t * vm,
       hash_foreach_mem (key, value, cm->alg_index_by_name,
       ({
         (void) value;
-        rc += vnet_crypto_set_handler (key, engine);
+        rc += vnet_crypto_set_handler2 (key, engine, oct);
       }));
       /* *INDENT-ON* */
 
@@ -174,7 +205,7 @@ set_crypto_handler_command_fn (vlib_main_t * vm,
     {
       vec_foreach (arg, args)
       {
-	rc = vnet_crypto_set_handler (arg[0], engine);
+	rc = vnet_crypto_set_handler2 (arg[0], engine, oct);
 	if (rc)
 	  {
 	    vlib_cli_output (vm, "failed to set engine %s for %s!",
@@ -195,7 +226,8 @@ done:
 VLIB_CLI_COMMAND (set_crypto_handler_command, static) =
 {
   .path = "set crypto handler",
-  .short_help = "set crypto handler cipher [cipher2 cipher3 ...] engine",
+  .short_help = "set crypto handler cipher [cipher2 cipher3 ...] engine"
+    " [simple|chained]",
   .function = set_crypto_handler_command_fn,
 };
 /* *INDENT-ON* */

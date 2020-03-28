@@ -130,7 +130,8 @@ session_add_self_custom_tx_evt (transport_connection_t * tc, u8 has_prio)
   if (!(s->flags & SESSION_F_CUSTOM_TX))
     {
       s->flags |= SESSION_F_CUSTOM_TX;
-      if (svm_fifo_set_event (s->tx_fifo))
+      if (svm_fifo_set_event (s->tx_fifo)
+	  || transport_connection_is_descheduled (tc))
 	{
 	  session_worker_t *wrk;
 	  session_evt_elt_t *elt;
@@ -141,8 +142,22 @@ session_add_self_custom_tx_evt (transport_connection_t * tc, u8 has_prio)
 	    elt = session_evt_alloc_old (wrk);
 	  elt->evt.session_index = tc->s_index;
 	  elt->evt.event_type = SESSION_IO_EVT_TX;
+	  tc->flags &= ~TRANSPORT_CONNECTION_F_DESCHED;
 	}
     }
+}
+
+void
+sesssion_reschedule_tx (transport_connection_t * tc)
+{
+  session_worker_t *wrk = session_main_get_worker (tc->thread_index);
+  session_evt_elt_t *elt;
+
+  ASSERT (tc->thread_index == vlib_get_thread_index ());
+
+  elt = session_evt_alloc_new (wrk);
+  elt->evt.session_index = tc->s_index;
+  elt->evt.event_type = SESSION_IO_EVT_TX;
 }
 
 static void
@@ -268,7 +283,7 @@ session_delete (session_t * s)
   session_free_w_fifos (s);
 }
 
-static session_t *
+session_t *
 session_alloc_for_connection (transport_connection_t * tc)
 {
   session_t *s;
@@ -396,6 +411,24 @@ session_enqueue_chain_tail (session_t * s, vlib_buffer_t * b,
   return 0;
 }
 
+void
+session_fifo_tuning (session_t * s, svm_fifo_t * f,
+		     session_ft_action_t act, u32 len)
+{
+  if (s->flags & SESSION_F_CUSTOM_FIFO_TUNING)
+    {
+      app_worker_t *app_wrk = app_worker_get (s->app_wrk_index);
+      app_worker_session_fifo_tuning (app_wrk, s, f, act, len);
+      if (CLIB_ASSERT_ENABLE)
+	{
+	  segment_manager_t *sm;
+	  sm = segment_manager_get (f->segment_manager);
+	  ASSERT (f->size >= 4096);
+	  ASSERT (f->size <= sm->max_fifo_size);
+	}
+    }
+}
+
 /*
  * Enqueue data for delivery to session peer. Does not notify peer of enqueue
  * event but on request can queue notification events for later delivery by
@@ -458,6 +491,8 @@ session_enqueue_stream_connection (transport_connection_t * tc,
 	  s->flags |= SESSION_F_RX_EVT;
 	  vec_add1 (wrk->session_to_enqueue[tc->proto], s->session_index);
 	}
+
+      session_fifo_tuning (s, s->rx_fifo, SESSION_FT_ACTION_ENQUEUED, 0);
     }
 
   return enqueued;
@@ -495,6 +530,8 @@ session_enqueue_dgram_connection (session_t * s,
 	  s->flags |= SESSION_F_RX_EVT;
 	  vec_add1 (wrk->session_to_enqueue[proto], s->session_index);
 	}
+
+      session_fifo_tuning (s, s->rx_fifo, SESSION_FT_ACTION_ENQUEUED, 0);
     }
   return enqueued;
 }
@@ -514,6 +551,7 @@ session_tx_fifo_dequeue_drop (transport_connection_t * tc, u32 max_bytes)
   u32 rv;
 
   rv = svm_fifo_dequeue_drop (s->tx_fifo, max_bytes);
+  session_fifo_tuning (s, s->tx_fifo, SESSION_FT_ACTION_DEQUEUED, rv);
 
   if (svm_fifo_needs_deq_ntf (s->tx_fifo, max_bytes))
     session_dequeue_notify (s);
@@ -673,6 +711,9 @@ session_main_flush_enqueue_events (u8 transport_proto, u32 thread_index)
 	  errors++;
 	  continue;
 	}
+
+      session_fifo_tuning (s, s->rx_fifo, SESSION_FT_ACTION_ENQUEUED,
+			   0 /* TODO/not needed */ );
 
       if (PREDICT_FALSE (session_enqueue_notify_inline (s)))
 	errors++;
@@ -1003,7 +1044,14 @@ session_stream_accept_notify (transport_connection_t * tc)
   if (!app_wrk)
     return -1;
   s->session_state = SESSION_STATE_ACCEPTING;
-  return app_worker_accept_notify (app_wrk, s);
+  if (app_worker_accept_notify (app_wrk, s))
+    {
+      /* On transport delete, no notifications should be sent. Unless, the
+       * accept is retried and successful. */
+      s->session_state = SESSION_STATE_CREATED;
+      return -1;
+    }
+  return 0;
 }
 
 /**

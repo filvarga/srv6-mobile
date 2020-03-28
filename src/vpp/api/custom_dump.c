@@ -571,6 +571,8 @@ static void *vl_api_tap_create_v2_t_print
     s =
       format (s, "host-ip6-gw %U ", format_ip6_address,
 	      mp->host_ip6_prefix.address);
+  if (mp->num_rx_queues)
+    s = format (s, "num_rx_queues %u ", mp->num_rx_queues);
   if (mp->tx_ring_sz)
     s = format (s, "tx-ring-size %u ", (mp->tx_ring_sz));
   if (mp->rx_ring_sz)
@@ -580,7 +582,11 @@ static void *vl_api_tap_create_v2_t_print
   if ((mp->tap_flags) & 0x1)
     s = format (s, "gso-enabled ");
   if ((mp->tap_flags) & 0x2)
-    s = format (s, "csum-offload-enabled");
+    s = format (s, "csum-offload-enabled ");
+  if ((mp->tap_flags) & 0x4)
+    s = format (s, "persist ");
+  if ((mp->tap_flags) & 0x8)
+    s = format (s, "attach ");
   FINISH;
 }
 
@@ -865,7 +871,7 @@ static void *vl_api_sr_mpls_policy_add_t_print
   if (mp->weight != htonl ((u32) 1))
     s = format (s, "%d ", (mp->weight));
 
-  if (mp->type)
+  if (mp->is_spray)
     s = format (s, "spray ");
 
   if (mp->n_segments)
@@ -1072,7 +1078,7 @@ static void *vl_api_sr_localsid_add_del_t_print
     {
     case SR_BEHAVIOR_END:
       s = format (s, "Address: %U\nBehavior: End",
-		  format_ip6_address, (ip6_address_t *) mp->localsid.addr);
+		  format_ip6_address, (ip6_address_t *) mp->localsid);
       s = format (s, (mp->end_psp ? "End.PSP: True" : "End.PSP: False"));
       break;
     case SR_BEHAVIOR_X:
@@ -1080,9 +1086,9 @@ static void *vl_api_sr_localsid_add_del_t_print
 	format (s,
 		"Address: %U\nBehavior: X (Endpoint with Layer-3 cross-connect)"
 		"\nIface: %U\nNext hop: %U", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr,
+		(ip6_address_t *) mp->localsid,
 		format_vnet_sw_if_index_name, vnm, (mp->sw_if_index),
-		format_ip6_address, (ip6_address_t *) mp->nh_addr6);
+		format_ip6_address, (ip6_address_t *) mp->nh_addr.un.ip6);
       s = format (s, (mp->end_psp ? "End.PSP: True" : "End.PSP: False"));
       break;
     case SR_BEHAVIOR_DX4:
@@ -1090,25 +1096,25 @@ static void *vl_api_sr_localsid_add_del_t_print
 	format (s,
 		"Address: %U\nBehavior: DX4 (Endpoint with decapsulation with IPv4 cross-connect)"
 		"\nIface: %U\nNext hop: %U", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr,
+		(ip6_address_t *) mp->localsid,
 		format_vnet_sw_if_index_name, vnm, (mp->sw_if_index),
-		format_ip4_address, (ip4_address_t *) mp->nh_addr4);
+		format_ip4_address, (ip4_address_t *) mp->nh_addr.un.ip4);
       break;
     case SR_BEHAVIOR_DX6:
       s =
 	format (s,
 		"Address: %U\nBehavior: DX6 (Endpoint with decapsulation with IPv6 cross-connect)"
 		"\nIface: %UNext hop: %U", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr,
+		(ip6_address_t *) mp->localsid,
 		format_vnet_sw_if_index_name, vnm, (mp->sw_if_index),
-		format_ip6_address, (ip6_address_t *) mp->nh_addr6);
+		format_ip6_address, (ip6_address_t *) mp->nh_addr.un.ip6);
       break;
     case SR_BEHAVIOR_DX2:
       s =
 	format (s,
 		"Address: %U\nBehavior: DX2 (Endpoint with decapulation and Layer-2 cross-connect)"
 		"\nIface: %U", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr,
+		(ip6_address_t *) mp->localsid,
 		format_vnet_sw_if_index_name, vnm, (mp->sw_if_index));
       break;
     case SR_BEHAVIOR_DT6:
@@ -1116,20 +1122,20 @@ static void *vl_api_sr_localsid_add_del_t_print
 	format (s,
 		"Address: %U\nBehavior: DT6 (Endpoint with decapsulation and specific IPv6 table lookup)"
 		"\nTable: %u", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr, (mp->fib_table));
+		(ip6_address_t *) mp->localsid, (mp->fib_table));
       break;
     case SR_BEHAVIOR_DT4:
       s =
 	format (s,
 		"Address: %U\nBehavior: DT4 (Endpoint with decapsulation and specific IPv4 table lookup)"
 		"\nTable: %u", format_ip6_address,
-		(ip6_address_t *) mp->localsid.addr, (mp->fib_table));
+		(ip6_address_t *) mp->localsid, (mp->fib_table));
       break;
     default:
       if (mp->behavior >= SR_BEHAVIOR_LAST)
 	{
 	  s = format (s, "Address: %U\n Behavior: %u",
-		      format_ip6_address, (ip6_address_t *) mp->localsid.addr,
+		      format_ip6_address, (ip6_address_t *) mp->localsid,
 		      mp->behavior);
 	}
       else
@@ -1156,11 +1162,13 @@ static void *vl_api_sr_steering_add_del_t_print
       break;
     case SR_STEER_IPV4:
       s = format (s, "Traffic type: IPv4 %U/%u", format_ip4_address,
-		  (ip4_address_t *) mp->prefix_addr, (mp->mask_width));
+		  (ip4_address_t *) mp->prefix.address.un.ip4,
+		  (mp->prefix.len));
       break;
     case SR_STEER_IPV6:
       s = format (s, "Traffic type: IPv6 %U/%u", format_ip6_address,
-		  (ip6_address_t *) mp->prefix_addr, (mp->mask_width));
+		  (ip6_address_t *) mp->prefix.address.un.ip6,
+		  (mp->prefix.len));
       break;
     default:
       s = format (s, "Traffic type: Unknown(%u)", mp->traffic_type);
@@ -1204,7 +1212,7 @@ static void *vl_api_sr_policy_add_t_print
 
   s = format (s, "FIB_table: %u", (mp->fib_table));
 
-  s = format (s, (mp->type ? "Type: Default" : "Type: Spray"));
+  s = format (s, (mp->is_spray ? "Type: Default" : "Type: Spray"));
 
   s = format (s, "SID list weight: %u", (mp->weight));
 
@@ -1478,8 +1486,10 @@ static void *vl_api_vxlan_add_del_tunnel_t_print
   u8 *s;
   s = format (0, "SCRIPT: vxlan_add_del_tunnel ");
 
-  ip46_address_t src = to_ip46 (mp->is_ipv6, mp->src_address);
-  ip46_address_t dst = to_ip46 (mp->is_ipv6, mp->dst_address);
+  ip46_address_t src =
+    to_ip46 (mp->src_address.af, (u8 *) & mp->src_address.un);
+  ip46_address_t dst =
+    to_ip46 (mp->dst_address.af, (u8 *) & mp->dst_address.un);
 
   u8 is_grp = ip46_address_is_multicast (&dst);
   char *dst_name = is_grp ? "group" : "dst";
@@ -1781,7 +1791,7 @@ static void *vl_api_sw_interface_dump_t_print
 
   if (mp->name_filter_valid)
     {
-      u8 *v = vl_api_from_api_to_vec (&mp->name_filter);
+      u8 *v = vl_api_from_api_to_new_vec (&mp->name_filter);
       s = format (s, "name_filter %v ", v);
       vec_free (v);
     }
@@ -1839,10 +1849,8 @@ static void *vl_api_cli_inband_t_print
 {
   u8 *s;
   u8 *cmd = 0;
-  u32 length = vl_api_string_len (&mp->cmd);
 
-  vec_validate (cmd, length);
-  clib_memcpy (cmd, vl_api_from_api_string (&mp->cmd), length);
+  cmd = vl_api_from_api_to_new_vec (&mp->cmd);
 
   s = format (0, "SCRIPT: exec %v ", cmd);
 
@@ -1898,8 +1906,10 @@ static void *vl_api_vxlan_gpe_add_del_tunnel_t_print
 
   s = format (0, "SCRIPT: vxlan_gpe_add_del_tunnel ");
 
-  ip46_address_t local = to_ip46 (mp->is_ipv6, mp->local);
-  ip46_address_t remote = to_ip46 (mp->is_ipv6, mp->remote);
+  ip46_address_t local, remote;
+
+  ip_address_decode (&mp->local, &local);
+  ip_address_decode (&mp->remote, &remote);
 
   u8 is_grp = ip46_address_is_multicast (&remote);
   char *remote_name = is_grp ? "group" : "remote";
@@ -2183,11 +2193,11 @@ static void *vl_api_policer_add_del_t_print
     }
 
   s = format (s, "conform_action %U ", format_policer_action,
-	      mp->conform_action_type, mp->conform_dscp);
+	      mp->conform_action.type, mp->conform_action.dscp);
   s = format (s, "exceed_action %U ", format_policer_action,
-	      mp->exceed_action_type, mp->exceed_dscp);
+	      mp->exceed_action.type, mp->exceed_action.dscp);
   s = format (s, "violate_action %U ", format_policer_action,
-	      mp->violate_action_type, mp->violate_dscp);
+	      mp->violate_action.type, mp->violate_action.dscp);
 
   if (mp->color_aware)
     s = format (s, "color-aware ");
@@ -2531,8 +2541,10 @@ static void *vl_api_pg_enable_disable_t_print
   u8 *s;
 
   s = format (0, "SCRIPT: pg_enable_disable ");
-  if ((mp->stream_name_length) > 0)
-    s = format (s, "stream %s", mp->stream_name);
+  if (vl_api_string_len (&mp->stream_name) > 0)
+    s =
+      format (s, "stream %s",
+	      vl_api_from_api_to_new_c_string (&mp->stream_name));
   if (!mp->is_enabled)
     s = format (s, "disable");
 
@@ -3374,13 +3386,13 @@ static void *vl_api_app_namespace_add_del_t_print
   (vl_api_app_namespace_add_del_t * mp, void *handle)
 {
   u8 *s;
-  u8 len = clib_min (mp->namespace_id_len,
-		     ARRAY_LEN (mp->namespace_id) - 1);
-  mp->namespace_id[len] = 0;
+
   s = format (0, "SCRIPT: app_namespace_add_del ");
   s = format (s, "ns-id %s secret %lu sw_if_index %d ipv4_fib_id %d "
-	      "ipv6_fib_id %d", (char *) mp->namespace_id, mp->secret,
-	      (mp->sw_if_index), (mp->ip4_fib_id), (mp->ip6_fib_id));
+	      "ipv6_fib_id %d",
+	      vl_api_from_api_to_new_c_string (&mp->namespace_id),
+	      mp->secret, (mp->sw_if_index), (mp->ip4_fib_id),
+	      (mp->ip6_fib_id));
   FINISH;
 }
 
@@ -3395,7 +3407,7 @@ static void *vl_api_sw_interface_set_lldp_t_print
   s = format (0, "SCRIPT: sw_interface_set_lldp ");
   s = format (s, "sw_if_index %d ", (mp->sw_if_index));
 
-  if (memcmp (mp->port_desc, null_data, sizeof (mp->port_desc)))
+  if (memcmp (&mp->port_desc, null_data, sizeof (mp->port_desc)))
     s = format (s, "port_desc %s ", mp->port_desc);
 
   if (memcmp (mp->mgmt_ip4, null_data, sizeof (mp->mgmt_ip4)))
@@ -3429,21 +3441,25 @@ static void *vl_api_session_rule_add_del_t_print
   (vl_api_session_rule_add_del_t * mp, void *handle)
 {
   u8 *s;
+  fib_prefix_t lcl, rmt;
   char *proto = mp->transport_proto == 0 ? "tcp" : "udp";
   s = format (0, "SCRIPT: session_rule_add_del ");
   mp->tag[sizeof (mp->tag) - 1] = 0;
-  if (mp->is_ip4)
+  ip_prefix_decode (&mp->lcl, &lcl);
+  ip_prefix_decode (&mp->rmt, &rmt);
+
+  if (lcl.fp_proto == FIB_PROTOCOL_IP4)
     s = format (s, "appns %d scope %d %s %U/%d %d %U/%d %d action %u tag %s",
 		mp->appns_index, mp->scope, proto, format_ip4_address,
-		(ip4_address_t *) mp->lcl_ip, mp->lcl_plen,
-		format_ip4_address, (ip4_address_t *) mp->rmt_ip,
-		mp->rmt_plen, mp->action_index, mp->tag);
+		&lcl.fp_addr.ip4, lcl.fp_len,
+		format_ip4_address, &rmt.fp_addr.ip4,
+		rmt.fp_len, mp->action_index, mp->tag);
   else
     s = format (s, "appns %d scope %d %s %U/%d %d %U/%d %d action %u tag %s",
 		mp->appns_index, mp->scope, proto, format_ip6_address,
-		(ip6_address_t *) mp->lcl_ip, mp->lcl_plen,
-		format_ip6_address, (ip6_address_t *) mp->rmt_ip,
-		mp->rmt_plen, mp->action_index, mp->tag);
+		&lcl.fp_addr.ip6, lcl.fp_len,
+		format_ip6_address, &rmt.fp_addr.ip6,
+		rmt.fp_len, mp->action_index, mp->tag);
   FINISH;
 }
 

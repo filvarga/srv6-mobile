@@ -8,7 +8,7 @@ from framework import VppTestCase, VppTestRunner
 from vpp_ip import DpoProto
 from vpp_ip_route import VppIpRoute, VppRoutePath, VppIpTable, FibPathProto
 from vpp_ipip_tun_interface import VppIpIpTunInterface
-from vpp_nhrp import VppNhrp
+from vpp_teib import VppTeib
 from vpp_papi import VppEnum
 from socket import AF_INET, AF_INET6, inet_pton
 from util import reassemble4
@@ -528,12 +528,12 @@ class TestIPIP(VppTestCase):
                 route_via_tun.add_vpp_config()
 
                 #
-                # Add a NHRP entry resolves the peer
+                # Add a TEIB entry resolves the peer
                 #
-                nhrp = VppNhrp(self, ipip_if,
+                teib = VppTeib(self, ipip_if,
                                ipip_if._remote_hosts[ii].ip4,
                                itf._remote_hosts[ii].ip4)
-                nhrp.add_vpp_config()
+                teib.add_vpp_config()
                 self.logger.info(self.vapi.cli("sh adj nbr ipip0 %s" %
                                                ipip_if._remote_hosts[ii].ip4))
 
@@ -566,13 +566,13 @@ class TestIPIP(VppTestCase):
                 rx = self.send_and_expect(self.pg0, tx_i, self.pg0)
 
                 #
-                # delete and re-add the NHRP
+                # delete and re-add the TEIB
                 #
-                nhrp.remove_vpp_config()
+                teib.remove_vpp_config()
                 self.send_and_assert_no_replies(self.pg0, tx_e)
                 self.send_and_assert_no_replies(self.pg0, tx_i)
 
-                nhrp.add_vpp_config()
+                teib.add_vpp_config()
                 rx = self.send_and_expect(self.pg0, tx_e, itf)
                 for rx in rxs:
                     self.assertEqual(rx[IP].src, itf.local_ip4)

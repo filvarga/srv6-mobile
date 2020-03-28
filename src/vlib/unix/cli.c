@@ -2557,6 +2557,9 @@ more:
 		   format_timeval, 0 /* current bat-time */ ,
 		   0 /* current bat-format */ ,
 		   cli_file_index, cf->current_command);
+      if ((vec_len (cf->current_command) > 0) &&
+	  (cf->current_command[vec_len (cf->current_command) - 1] != '\n'))
+	lv = format (lv, "\n");
       int rv __attribute__ ((unused)) = write (um->log_fd, lv, vec_len (lv));
     }
 
@@ -3089,9 +3092,11 @@ unix_cli_config (vlib_main_t * vm, unformat_input_t * input)
 	    clib_panic ("sigaction");
 
 	  /* Retrieve the current terminal size */
-	  ioctl (STDIN_FILENO, TIOCGWINSZ, &ws);
-	  cf->width = ws.ws_col;
-	  cf->height = ws.ws_row;
+	  if (ioctl (STDIN_FILENO, TIOCGWINSZ, &ws) == 0)
+	    {
+	      cf->width = ws.ws_col;
+	      cf->height = ws.ws_row;
+	    }
 
 	  if (cf->width == 0 || cf->height == 0)
 	    {
@@ -3328,7 +3333,7 @@ unix_cli_exec (vlib_main_t * vm,
   unformat_free (&sub_input);
 
 done:
-  if (fd > 0)
+  if (fd >= 0)
     close (fd);
   vec_free (file_name);
 

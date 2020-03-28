@@ -130,6 +130,15 @@ enum nat_log_level : u8
   NAT_LOG_DEBUG = 0x05,
 };
 
+/** \brief Run nat44 garbage collection
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+*/
+autoreply define nat44_session_cleanup {
+  u32 client_index;
+  u32 context;
+};
+
 /** \brief Set NAT logging level
     @param client_index - opaque cookie to identify the sender
     @param context - sender context, to match reply w/ request
@@ -446,6 +455,19 @@ service {
 /*
  * NAT44 APIs
  */
+
+/** \brief Del NAT44 user
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param ip_address - IPv4 address
+    @param fib_index - FIB index
+*/
+autoreply define nat44_del_user {
+  u32 client_index;
+  u32 context;
+  vl_api_ip4_address_t ip_address;
+  u32 fib_index;
+};
 
 /** \brief Add/del NAT44 address range
     @param client_index - opaque cookie to identify the sender
@@ -1362,113 +1384,6 @@ autoreply define nat64_add_del_interface_addr {
   u32 context;
   bool is_add;
   vl_api_interface_index_t sw_if_index;
-};
-
-/*
- * DS-Lite APIs
- */
-
-/** \brief Add/delete address range to DS-Lite pool
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-    @param start_addr - start IPv4 address of the range
-    @param end_addr - end IPv4 address of the range
-    @param is_add - true if add, false if delete
-*/
-autoreply define dslite_add_del_pool_addr_range {
-  u32 client_index;
-  u32 context;
-  vl_api_ip4_address_t start_addr;
-  vl_api_ip4_address_t end_addr;
-  bool is_add;
-};
-
-/** \brief Dump DS-Lite addresses
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-*/
-define dslite_address_dump {
-  u32 client_index;
-  u32 context;
-};
-
-/** \brief DS-Lite address details response
-    @param context - sender context, to match reply w/ request
-    @param ip_address - IPv4 address
-*/
-define dslite_address_details {
-  u32 context;
-  vl_api_ip4_address_t ip_address;
-};
-
-/** \brief Set AFTR IPv6 and IPv4 addresses
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-    @param ip4_addr - IPv4 address
-    @param ip6_addr - IPv6 address
-*/
-autoreply define dslite_set_aftr_addr {
-  u32 client_index;
-  u32 context;
-  vl_api_ip4_address_t ip4_addr;
-  vl_api_ip6_address_t ip6_addr;
-};
-
-/** \brief Get AFTR IPv6 and IPv4 addresses
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-*/
-define dslite_get_aftr_addr {
-  u32 client_index;
-  u32 context;
-};
-
-/** \brief Response to get AFTR IPv6 and IPv4 addresses
-    @param context - sender context, to match reply w/ request
-    @param retval - return code
-    @param ip4_addr - IPv4 address
-    @param ip6_addr - IPv6 address
-*/
-define dslite_get_aftr_addr_reply {
-  u32 context;
-  i32 retval;
-  vl_api_ip4_address_t ip4_addr;
-  vl_api_ip6_address_t ip6_addr;
-};
-
-/** \brief Set B4 IPv6 and IPv4 addresses
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-    @param ip4_addr - IPv4 address
-    @param ip6_addr - IPv6 address
-*/
-autoreply define dslite_set_b4_addr {
-  u32 client_index;
-  u32 context;
-  vl_api_ip4_address_t ip4_addr;
-  vl_api_ip6_address_t ip6_addr;
-};
-
-/** \brief Get B4 IPv6 and IPv4 addresses
-    @param client_index - opaque cookie to identify the sender
-    @param context - sender context, to match reply w/ request
-*/
-define dslite_get_b4_addr {
-  u32 client_index;
-  u32 context;
-};
-
-/** \brief Response to get B4 IPv6 and IPv4 addresses
-    @param context - sender context, to match reply w/ request
-    @param retval - return code
-    @param ip4_addr - IPv4 address
-    @param ip6_addr - IPv6 address
-*/
-define dslite_get_b4_addr_reply {
-  u32 context;
-  i32 retval;
-  vl_api_ip4_address_t ip4_addr;
-  vl_api_ip6_address_t ip6_addr;
 };
 
 /*

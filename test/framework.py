@@ -217,6 +217,13 @@ def _running_extended_tests():
 running_extended_tests = _running_extended_tests()
 
 
+def _running_gcov_tests():
+    return BoolEnvironmentVariable("GCOV_TESTS")
+
+
+running_gcov_tests = _running_gcov_tests()
+
+
 def _running_on_centos():
     os_id = os.getenv("OS_ID", "")
     return True if "centos" in os_id.lower() else False
@@ -446,8 +453,7 @@ class VppTestCase(unittest.TestCase):
         try:
             cls.vpp = subprocess.Popen(cmdline,
                                        stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE,
-                                       bufsize=1)
+                                       stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
             cls.logger.critical("Subprocess returned with non-0 return code: ("
                                 "%s)", e.returncode)
@@ -752,7 +758,12 @@ class VppTestCase(unittest.TestCase):
 
     @classmethod
     def get_vpp_time(cls):
-        return float(cls.vapi.cli('show clock').replace("Time now ", ""))
+        # processes e.g. "Time now 2.190522, Wed, 11 Mar 2020 17:29:54 GMT"
+        # returns float("2.190522")
+        timestr = cls.vapi.cli('show clock')
+        head, sep, tail = timestr.partition(',')
+        head, sep, tail = head.partition('Time now')
+        return float(tail)
 
     @classmethod
     def sleep_on_vpp_time(cls, sec):

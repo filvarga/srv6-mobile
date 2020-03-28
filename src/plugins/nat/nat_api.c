@@ -22,8 +22,8 @@
 #include <nat/nat_det.h>
 #include <nat/nat64.h>
 #include <nat/nat66.h>
-#include <nat/dslite.h>
 #include <nat/nat_inlines.h>
+#include <nat/nat44/inlines.h>
 #include <nat/nat_ha.h>
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
@@ -96,7 +96,7 @@ vl_api_nat_show_config_t_handler (vl_api_nat_show_config_t * mp)
 {
   vl_api_nat_show_config_reply_t *rmp;
   snat_main_t *sm = &snat_main;
-  dslite_main_t *dm = &dslite_main;
+  //dslite_main_t *dm = &dslite_main;
   nat64_main_t *n64m = &nat64_main;
   int rv = 0;
 
@@ -116,7 +116,7 @@ vl_api_nat_show_config_t_handler (vl_api_nat_show_config_t * mp)
     rmp->deterministic = sm->deterministic;
     rmp->endpoint_dependent = sm->endpoint_dependent;
     rmp->out2in_dpo = sm->out2in_dpo;
-    rmp->dslite_ce = dm->is_ce;
+    //rmp->dslite_ce = dm->is_ce;
     rmp->nat64_bib_buckets = n64m->bib_buckets;
     rmp->nat64_bib_memory_size = n64m->bib_memory_size;
     rmp->nat64_st_buckets = n64m->st_buckets;
@@ -242,6 +242,28 @@ vl_api_nat_worker_dump_t_print (vl_api_nat_worker_dump_t * mp, void *handle)
 }
 
 static void
+vl_api_nat44_session_cleanup_t_handler (vl_api_nat44_session_cleanup_t * mp)
+{
+  snat_main_t *sm = &snat_main;
+  vl_api_nat44_session_cleanup_reply_t *rmp;
+  int rv = 0;
+  nat44_force_users_cleanup ();
+  REPLY_MACRO (VL_API_NAT44_SESSION_CLEANUP_REPLY);
+}
+
+static void *
+vl_api_nat44_session_cleanup_t_print (vl_api_nat44_session_cleanup_t * mp,
+				      void *handle)
+{
+  u8 *s;
+
+  s = format (0, "SCRIPT: nat44_session_cleanup");
+
+  FINISH;
+}
+
+
+static void
 vl_api_nat_set_log_level_t_handler (vl_api_nat_set_log_level_t * mp)
 {
   snat_main_t *sm = &snat_main;
@@ -313,6 +335,8 @@ vl_api_nat_set_timeouts_t_handler (vl_api_nat_set_timeouts_t * mp)
   sm->tcp_established_timeout = ntohl (mp->tcp_established);
   sm->tcp_transitory_timeout = ntohl (mp->tcp_transitory);
   sm->icmp_timeout = ntohl (mp->icmp);
+
+  sm->min_timeout = nat44_minimal_timeout (sm);
 
   rv = nat64_set_icmp_timeout (ntohl (mp->icmp));
   if (rv)
@@ -716,6 +740,28 @@ vl_api_nat_ha_resync_t_print (vl_api_nat_ha_resync_t * mp, void *handle)
 /*************/
 /*** NAT44 ***/
 /*************/
+static void
+vl_api_nat44_del_user_t_handler (vl_api_nat44_del_user_t * mp)
+{
+  snat_main_t *sm = &snat_main;
+  vl_api_nat44_del_user_reply_t *rmp;
+  ip4_address_t addr;
+  int rv;
+  memcpy (&addr.as_u8, mp->ip_address, 4);
+  rv = nat44_user_del (&addr, ntohl (mp->fib_index));
+  REPLY_MACRO (VL_API_NAT44_DEL_USER_REPLY);
+}
+
+static void *vl_api_nat44_del_user_t_print
+  (vl_api_nat44_del_user_t * mp, void *handle)
+{
+  u8 *s;
+  s = format (0, "SCRIPT: nat44_del_user ");
+  s = format (s, "ip_address %U fib_index %U ",
+	      format_ip4_address, mp->ip_address, ntohl (mp->fib_index));
+  FINISH;
+}
+
 static void
   vl_api_nat44_add_del_address_range_t_handler
   (vl_api_nat44_add_del_address_range_t * mp)
@@ -2901,229 +2947,6 @@ static void *vl_api_nat64_add_del_interface_addr_t_print
   FINISH;
 }
 
-/***************/
-/*** DS-Lite ***/
-/***************/
-
-static void
-vl_api_dslite_set_aftr_addr_t_handler (vl_api_dslite_set_aftr_addr_t * mp)
-{
-  vl_api_dslite_set_aftr_addr_reply_t *rmp;
-  snat_main_t *sm = &snat_main;
-  dslite_main_t *dm = &dslite_main;
-  int rv = 0;
-  ip6_address_t ip6_addr;
-  ip4_address_t ip4_addr;
-
-  memcpy (&ip6_addr.as_u8, mp->ip6_addr, 16);
-  memcpy (&ip4_addr.as_u8, mp->ip4_addr, 4);
-
-  rv = dslite_set_aftr_ip6_addr (dm, &ip6_addr);
-  if (rv == 0)
-    rv = dslite_set_aftr_ip4_addr (dm, &ip4_addr);
-
-  REPLY_MACRO (VL_API_DSLITE_SET_AFTR_ADDR_REPLY);
-}
-
-static void *
-vl_api_dslite_set_aftr_addr_t_print (vl_api_dslite_set_aftr_addr_t * mp,
-				     void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_set_aftr_addr ");
-  s = format (s, "ip6_addr %U ip4_addr %U\n",
-	      format_ip6_address, mp->ip6_addr,
-	      format_ip4_address, mp->ip4_addr);
-
-  FINISH;
-}
-
-static void
-vl_api_dslite_get_aftr_addr_t_handler (vl_api_dslite_get_aftr_addr_t * mp)
-{
-  snat_main_t *sm = &snat_main;
-  vl_api_dslite_get_aftr_addr_reply_t *rmp;
-  dslite_main_t *dm = &dslite_main;
-  int rv = 0;
-
-  /* *INDENT-OFF* */
-  REPLY_MACRO2 (VL_API_DSLITE_GET_AFTR_ADDR_REPLY,
-  ({
-    memcpy (rmp->ip4_addr, &dm->aftr_ip4_addr.as_u8, 4);
-    memcpy (rmp->ip6_addr, &dm->aftr_ip6_addr.as_u8, 16);
-  }))
-  /* *INDENT-ON* */
-}
-
-static void *
-vl_api_dslite_get_aftr_addr_t_print (vl_api_dslite_get_aftr_addr_t * mp,
-				     void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_get_aftr_addr");
-
-  FINISH;
-}
-
-static void
-vl_api_dslite_set_b4_addr_t_handler (vl_api_dslite_set_b4_addr_t * mp)
-{
-  vl_api_dslite_set_b4_addr_reply_t *rmp;
-  snat_main_t *sm = &snat_main;
-  dslite_main_t *dm = &dslite_main;
-  int rv = 0;
-  ip6_address_t ip6_addr;
-  ip4_address_t ip4_addr;
-
-  memcpy (&ip6_addr.as_u8, mp->ip6_addr, 16);
-  memcpy (&ip4_addr.as_u8, mp->ip4_addr, 4);
-
-  rv = dslite_set_b4_ip6_addr (dm, &ip6_addr);
-  if (rv == 0)
-    rv = dslite_set_b4_ip4_addr (dm, &ip4_addr);
-
-  REPLY_MACRO (VL_API_DSLITE_SET_B4_ADDR_REPLY);
-}
-
-static void *
-vl_api_dslite_set_b4_addr_t_print (vl_api_dslite_set_b4_addr_t * mp,
-				   void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_set_b4_addr ");
-  s = format (s, "ip6_addr %U ip4_addr %U\n",
-	      format_ip6_address, mp->ip6_addr,
-	      format_ip6_address, mp->ip4_addr);
-
-  FINISH;
-}
-
-static void
-vl_api_dslite_get_b4_addr_t_handler (vl_api_dslite_get_b4_addr_t * mp)
-{
-  snat_main_t *sm = &snat_main;
-  vl_api_dslite_get_b4_addr_reply_t *rmp;
-  dslite_main_t *dm = &dslite_main;
-  int rv = 0;
-
-  /* *INDENT-OFF* */
-  REPLY_MACRO2 (VL_API_DSLITE_GET_B4_ADDR_REPLY,
-  ({
-    memcpy (rmp->ip4_addr, &dm->b4_ip4_addr.as_u8, 4);
-    memcpy (rmp->ip6_addr, &dm->b4_ip6_addr.as_u8, 16);
-  }))
-  /* *INDENT-ON* */
-}
-
-static void *
-vl_api_dslite_get_b4_addr_t_print (vl_api_dslite_get_b4_addr_t * mp,
-				   void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_get_b4_addr");
-
-  FINISH;
-}
-
-static void
-  vl_api_dslite_add_del_pool_addr_range_t_handler
-  (vl_api_dslite_add_del_pool_addr_range_t * mp)
-{
-  vl_api_dslite_add_del_pool_addr_range_reply_t *rmp;
-  snat_main_t *sm = &snat_main;
-  dslite_main_t *dm = &dslite_main;
-  int rv = 0;
-  ip4_address_t this_addr;
-  u32 start_host_order, end_host_order;
-  int i, count;
-  u32 *tmp;
-
-  tmp = (u32 *) mp->start_addr;
-  start_host_order = clib_host_to_net_u32 (tmp[0]);
-  tmp = (u32 *) mp->end_addr;
-  end_host_order = clib_host_to_net_u32 (tmp[0]);
-
-  count = (end_host_order - start_host_order) + 1;
-  memcpy (&this_addr.as_u8, mp->start_addr, 4);
-
-  for (i = 0; i < count; i++)
-    {
-      if ((rv = dslite_add_del_pool_addr (dm, &this_addr, mp->is_add)))
-	goto send_reply;
-
-      increment_v4_address (&this_addr);
-    }
-
-send_reply:
-  REPLY_MACRO (VL_API_DSLITE_ADD_DEL_POOL_ADDR_RANGE_REPLY);
-}
-
-static void
-send_dslite_address_details (snat_address_t * ap,
-			     vl_api_registration_t * reg, u32 context)
-{
-  vl_api_dslite_address_details_t *rmp;
-  snat_main_t *sm = &snat_main;
-
-  rmp = vl_msg_api_alloc (sizeof (*rmp));
-
-  clib_memset (rmp, 0, sizeof (*rmp));
-
-  rmp->_vl_msg_id = ntohs (VL_API_DSLITE_ADDRESS_DETAILS + sm->msg_id_base);
-  clib_memcpy (rmp->ip_address, &(ap->addr), 4);
-  rmp->context = context;
-
-  vl_api_send_msg (reg, (u8 *) rmp);
-}
-
-static void
-vl_api_dslite_address_dump_t_handler (vl_api_dslite_address_dump_t * mp)
-{
-  vl_api_registration_t *reg;
-  dslite_main_t *dm = &dslite_main;
-  snat_address_t *ap;
-
-  reg = vl_api_client_index_to_registration (mp->client_index);
-  if (!reg)
-    return;
-
-  /* *INDENT-OFF* */
-  vec_foreach (ap, dm->addr_pool)
-    {
-      send_dslite_address_details (ap, reg, mp->context);
-    }
-  /* *INDENT-ON* */
-}
-
-static void *
-vl_api_dslite_address_dump_t_print (vl_api_dslite_address_dump_t * mp,
-				    void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_address_dump ");
-
-  FINISH;
-}
-
-static void *vl_api_dslite_add_del_pool_addr_range_t_print
-  (vl_api_dslite_add_del_pool_addr_range_t * mp, void *handle)
-{
-  u8 *s;
-
-  s = format (0, "SCRIPT: dslite_add_del_pool_addr_range ");
-  s = format (s, "%U - %U\n",
-	      format_ip4_address, mp->start_addr,
-	      format_ip4_address, mp->end_addr);
-
-  FINISH;
-}
-
-
 /*************/
 /*** NAT66 ***/
 /*************/
@@ -3318,6 +3141,8 @@ _(NAT_CONTROL_PING, nat_control_ping)                                   \
 _(NAT_SHOW_CONFIG, nat_show_config)                                     \
 _(NAT_SET_WORKERS, nat_set_workers)                                     \
 _(NAT_WORKER_DUMP, nat_worker_dump)                                     \
+_(NAT44_DEL_USER, nat44_del_user)                                       \
+_(NAT44_SESSION_CLEANUP, nat44_session_cleanup)                         \
 _(NAT_SET_LOG_LEVEL, nat_set_log_level)                                 \
 _(NAT_IPFIX_ENABLE_DISABLE, nat_ipfix_enable_disable)                   \
 _(NAT_SET_TIMEOUTS, nat_set_timeouts)                                   \
@@ -3372,12 +3197,6 @@ _(NAT64_ST_DUMP, nat64_st_dump)                                         \
 _(NAT64_ADD_DEL_PREFIX, nat64_add_del_prefix)                           \
 _(NAT64_PREFIX_DUMP, nat64_prefix_dump)                                 \
 _(NAT64_ADD_DEL_INTERFACE_ADDR, nat64_add_del_interface_addr)           \
-_(DSLITE_ADD_DEL_POOL_ADDR_RANGE, dslite_add_del_pool_addr_range)       \
-_(DSLITE_ADDRESS_DUMP, dslite_address_dump)				\
-_(DSLITE_SET_AFTR_ADDR, dslite_set_aftr_addr)                           \
-_(DSLITE_GET_AFTR_ADDR, dslite_get_aftr_addr)                           \
-_(DSLITE_SET_B4_ADDR, dslite_set_b4_addr)                               \
-_(DSLITE_GET_B4_ADDR, dslite_get_b4_addr)                               \
 _(NAT66_ADD_DEL_INTERFACE, nat66_add_del_interface)                     \
 _(NAT66_INTERFACE_DUMP, nat66_interface_dump)                           \
 _(NAT66_ADD_DEL_STATIC_MAPPING, nat66_add_del_static_mapping)           \

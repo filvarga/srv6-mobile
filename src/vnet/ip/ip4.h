@@ -178,6 +178,7 @@ typedef struct ip4_main_t
 
 /** Global ip4 main structure. */
 extern ip4_main_t ip4_main;
+extern char *ip4_error_strings[];
 
 /** Global ip4 input node.  Errors get attached to ip4 input node. */
 extern vlib_node_registration_t ip4_input_node;
@@ -189,6 +190,7 @@ extern vlib_node_registration_t ip4_rewrite_local_node;
 extern vlib_node_registration_t ip4_arp_node;
 extern vlib_node_registration_t ip4_glean_node;
 extern vlib_node_registration_t ip4_midchain_node;
+extern vlib_node_registration_t ip4_punt_node;
 
 always_inline uword
 ip4_destination_matches_route (const ip4_main_t * im,
@@ -408,6 +410,16 @@ vlib_buffer_push_ip4 (vlib_main_t * vm, vlib_buffer_t * b,
     ih->checksum = ip4_header_checksum (ih);
 
   return ih;
+}
+
+always_inline u32
+vlib_buffer_get_ip4_fib_index (vlib_buffer_t * b)
+{
+  u32 fib_index, sw_if_index;
+  sw_if_index = vnet_buffer (b)->sw_if_index[VLIB_RX];
+  fib_index = vnet_buffer (b)->sw_if_index[VLIB_TX];
+  return (fib_index == (u32) ~ 0) ?
+    vec_elt (ip4_main.fib_index_by_sw_if_index, sw_if_index) : fib_index;
 }
 #endif /* included_ip_ip4_h */
 

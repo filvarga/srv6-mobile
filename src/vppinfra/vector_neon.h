@@ -103,6 +103,12 @@ u16x8_byte_swap (u16x8 v)
   return (u16x8) vrev16q_u8 ((u8x16) v);
 }
 
+static_always_inline u32x4
+u32x4_byte_swap (u32x4 v)
+{
+  return vrev64q_u32 (v);
+}
+
 static_always_inline u8x16
 u8x16_shuffle (u8x16 v, u8x16 m)
 {
@@ -174,6 +180,35 @@ u32x4_scatter (u32x4 r, void *p0, void *p1, void *p2, void *p3)
   *(u32 *) p1 = vgetq_lane_u32 (r, 1);
   *(u32 *) p2 = vgetq_lane_u32 (r, 2);
   *(u32 *) p3 = vgetq_lane_u32 (r, 3);
+}
+
+static_always_inline u32
+u32x4_min_scalar (u32x4 v)
+{
+  return vminvq_u32 (v);
+}
+
+#define u8x16_word_shift_left(x,n)  vextq_u8(u8x16_splat (0), x, 16 - n)
+#define u8x16_word_shift_right(x,n) vextq_u8(x, u8x16_splat (0), n)
+
+static_always_inline u8x16
+u8x16_reflect (u8x16 v)
+{
+  u8x16 mask = {
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+  };
+  return (u8x16) vqtbl1q_u8 (v, mask);
+}
+
+static_always_inline u8x16
+u8x16_xor3 (u8x16 a, u8x16 b, u8x16 c)
+{
+#if __GNUC__ == 8 && __ARM_FEATURE_SHA3 == 1
+  u8x16 r;
+__asm__ ("eor3 %0.16b,%1.16b,%2.16b,%3.16b": "=w" (r): "0" (a), "w" (b), "w" (c):);
+  return r;
+#endif
+  return a ^ b ^ c;
 }
 
 #define CLIB_HAVE_VEC128_MSB_MASK

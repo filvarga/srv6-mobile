@@ -64,13 +64,13 @@ typedef enum
 
 typedef enum
 {
-  STATE_START = 0,
+  STATE_CLOSED = 0,
   STATE_CONNECT = 0x01,
   STATE_LISTEN = 0x02,
   STATE_ACCEPT = 0x04,
   STATE_VPP_CLOSING = 0x08,
   STATE_DISCONNECT = 0x10,
-  STATE_FAILED = 0x20,
+  STATE_DETACHED = 0x20,
   STATE_UPDATED = 0x40,
   STATE_LISTEN_NO_MQ = 0x80,
 } vcl_session_state_t;
@@ -108,7 +108,6 @@ typedef struct
 
 typedef struct vcl_session_msg
 {
-  u32 next;
   union
   {
     session_accepted_msg_t accepted_msg;
@@ -375,7 +374,8 @@ vcl_session_alloc (vcl_worker_t * wrk)
 static inline void
 vcl_session_free (vcl_worker_t * wrk, vcl_session_t * s)
 {
-  VDBG (0, "session %u [0x%llx] removed", s->session_index, s->vpp_handle);
+  /* Debug level set to 1 to avoid debug messages while ldp is cleaning up */
+  VDBG (1, "session %u [0x%llx] removed", s->session_index, s->vpp_handle);
   pool_put (wrk->sessions, s);
 }
 
@@ -544,6 +544,7 @@ vcl_session_is_closing (vcl_session_t * s)
 static inline int
 vcl_session_closing_error (vcl_session_t * s)
 {
+  /* Return 0 on closing sockets */
   return s->session_state == STATE_DISCONNECT ? VPPCOM_ECONNRESET : 0;
 }
 

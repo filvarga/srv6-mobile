@@ -349,6 +349,8 @@ typedef struct
   u32 sessions_per_user_list_head_index;
   u32 nsessions;
   u32 nstaticsessions;
+  /* discovered minimum session timeout time */
+  u64 min_session_timeout;
 } snat_user_t;
 
 typedef struct
@@ -516,6 +518,15 @@ typedef struct
 
   /* real thread index */
   u32 thread_index;
+
+  /* discovered minimum session timeout time */
+  u64 min_session_timeout;
+
+  /* session scavenging */
+  u32 cleared;
+  u32 cleanup_runs;
+  f64 cleanup_timeout;
+
 } snat_main_per_thread_data_t;
 
 struct snat_main_s;
@@ -673,10 +684,14 @@ typedef struct snat_main_s
   u32 inside_fib_index;
 
   /* values of various timeouts */
+
+  // min timeout of all proto timeouts
+  u32 min_timeout;
+  // proto timeouts
   u32 udp_timeout;
-  u32 icmp_timeout;
   u32 tcp_transitory_timeout;
   u32 tcp_established_timeout;
+  u32 icmp_timeout;
 
   /* TCP MSS clamping */
   u16 mss_clamping;
@@ -700,6 +715,7 @@ typedef struct snat_main_s
   ip4_main_t *ip4_main;
   ip_lookup_main_t *ip4_lookup_main;
   api_main_t *api_main;
+
 } snat_main_t;
 
 typedef struct
@@ -747,6 +763,7 @@ extern fib_source_t nat_fib_src_low;
 
 /* format functions */
 format_function_t format_snat_user;
+format_function_t format_snat_user_v2;
 format_function_t format_snat_static_mapping;
 format_function_t format_snat_static_map_to_resolve;
 format_function_t format_snat_session;
@@ -1120,11 +1137,6 @@ int nat44_i2o_is_idle_session_cb (clib_bihash_kv_8_8_t * kv, void *arg);
 int nat44_o2i_is_idle_session_cb (clib_bihash_kv_8_8_t * kv, void *arg);
 
 /**
- * @brief Increment IPv4 address
- */
-void increment_v4_address (ip4_address_t * a);
-
-/**
  * @brief Add external address to NAT44 pool
  *
  * @param addr      IPv4 address
@@ -1296,6 +1308,16 @@ void nat_free_session_data (snat_main_t * sm, snat_session_t * s,
 			    u32 thread_index, u8 is_ha);
 
 /**
+ * @brief Free NAT44 ED session data (lookup keys, external addrres port)
+ *
+ * @param s            NAT session
+ * @param thread_index thread index
+ * @param is_ha        is HA event
+ */
+void
+nat44_free_session_data (snat_main_t * sm, snat_session_t * s,
+			 u32 thread_index, u8 is_ha);
+/**
  * @brief Find or create NAT user
  *
  * @param addr         IPv4 address
@@ -1304,8 +1326,9 @@ void nat_free_session_data (snat_main_t * sm, snat_session_t * s,
  *
  * @return NAT user data structure on success otherwise zero value
  */
-snat_user_t *nat_user_get_or_create (snat_main_t * sm, ip4_address_t * addr,
-				     u32 fib_index, u32 thread_index);
+snat_user_t *nat_user_get_or_create (snat_main_t * sm,
+				     ip4_address_t * addr, u32 fib_index,
+				     u32 thread_index);
 
 /**
  * @brief Allocate new NAT session or recycle last used
@@ -1440,7 +1463,6 @@ typedef struct
 } tcp_udp_header_t;
 
 #endif /* __included_nat_h__ */
-
 /*
  * fd.io coding-style-patch-verification: ON
  *

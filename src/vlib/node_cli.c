@@ -442,11 +442,12 @@ show_node_runtime (vlib_main_t * vm,
 	  dt = time_now - nm->time_last_runtime_stats_clear;
 	  vlib_cli_output
 	    (vm,
-	     "Time %.1f, %f sec internal node vector rate %.2f \n"
+	     "Time %.1f, %f sec internal node vector rate %.2f loops/sec %.2f\n"
 	     "  vector rates in %.4e, out %.4e, drop %.4e, punt %.4e",
 	     dt,
 	     vlib_get_stat_segment_update_rate (),
 	     internal_node_vector_rates[j],
+	     stat_vm->loops_per_second,
 	     (f64) n_input / dt,
 	     (f64) n_output / dt, (f64) n_drop / dt, (f64) n_punt / dt);
 
@@ -549,9 +550,10 @@ show_node (vlib_main_t * vm, unformat_input_t * input,
   vlib_node_main_t *nm = &vm->node_main;
   vlib_node_t *n;
   u8 *s = 0, *s2 = 0;
-  u32 i, node_index = ~0;
+  u32 i, node_index = ~0, verbose = 0;
   char *type_str;
   u8 valid_node_name = 0;
+  u64 cl, ca, v;
 
   if (!unformat_user (input, unformat_line_input, line_input))
     return 0;
@@ -560,6 +562,8 @@ show_node (vlib_main_t * vm, unformat_input_t * input,
     {
       if (unformat (line_input, "index %u", &node_index))
 	;
+      else if (unformat (line_input, "verbose"))
+	verbose = 1;
       else
 	if (unformat (line_input, "%U", unformat_vlib_node, vm, &node_index))
 	valid_node_name = 1;
@@ -641,7 +645,7 @@ show_node (vlib_main_t * vm, unformat_input_t * input,
 	s = format (s, "\n    %10s  %10s  %=30s %8s",
 		    "next-index", "node-index", "Node", "Vectors");
 
-      s = format (s, "\n    %=10u  %=10u  %-30v %=8llu", i, n->next_nodes[i],
+      s = format (s, "\n    %=10u  %=10u  %=30v %=8llu", i, n->next_nodes[i],
 		  pn->name, vec_elt (n->n_vectors_by_next_node, i));
     }
 
@@ -668,10 +672,32 @@ show_node (vlib_main_t * vm, unformat_input_t * input,
 	s = format (s, "\n    none");
       vlib_cli_output (vm, "\n  known previous nodes:%v\n", s);
       vec_reset_length (s);
+      vec_free (s2);
     }
 
+  if (!verbose)
+    goto done;
+
+  s = format (s, "\n%8s %=12s %=12s %=12s %=12s %=12s\n", "Thread", "Calls",
+	      "Clocks", "Vectors", "Max Clock", "Max Vectors");
+  for (i = 0; i < vec_len (vlib_mains); i++)
+    {
+      n = vlib_get_node (vlib_mains[i], node_index);
+      vlib_node_sync_stats (vlib_mains[i], n);
+
+      cl = n->stats_total.clocks - n->stats_last_clear.clocks;
+      ca = n->stats_total.calls - n->stats_last_clear.calls;
+      v = n->stats_total.vectors - n->stats_last_clear.vectors;
+
+      s = format (s, "%=8u %=12lu %=12lu %=12lu %=12u %=12u\n", i, ca, cl, v,
+		  n->stats_total.max_clock, n->stats_total.max_clock_n);
+    }
+
+  vlib_cli_output (vm, "%v", s);
+
+done:
+
   vec_free (s);
-  vec_free (s2);
   return 0;
 }
 

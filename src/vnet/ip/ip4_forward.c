@@ -49,6 +49,7 @@
 #include <vnet/fib/fib_entry.h>	/* for FIB table and entry creation */
 #include <vnet/fib/fib_urpf_list.h>	/* for FIB uRPF check */
 #include <vnet/fib/ip4_fib.h>
+#include <vnet/mfib/ip4_mfib.h>
 #include <vnet/dpo/load_balance.h>
 #include <vnet/dpo/load_balance_map.h>
 #include <vnet/dpo/classify_dpo.h>
@@ -761,6 +762,7 @@ ip4_add_del_interface_address_internal (vlib_main_t * vm,
     goto done;
 
   ip4_sw_interface_enable_disable (sw_if_index, !is_del);
+  ip4_mfib_interface_enable_disable (sw_if_index, !is_del);
 
   /* intf addr routes are added/deleted on admin up/down */
   if (vnet_sw_interface_is_admin_up (vnm, sw_if_index))
@@ -1061,6 +1063,7 @@ ip4_sw_interface_add_del (vnet_main_t * vnm, u32 sw_if_index, u32 is_add)
         ip4_add_del_interface_address(vm, sw_if_index, address, ia->address_length, 1);
       }));
       /* *INDENT-ON* */
+      ip4_mfib_interface_enable_disable (sw_if_index, 0);
     }
 
   vnet_feature_enable_disable ("ip4-unicast", "ip4-not-enabled", sw_if_index,
@@ -1696,7 +1699,7 @@ ip4_local_inline (vlib_main_t * vm,
 {
   u32 *from, n_left_from;
   vlib_node_runtime_t *error_node =
-    vlib_node_get_runtime (vm, ip4_input_node.index);
+    vlib_node_get_runtime (vm, ip4_local_node.index);
   u16 nexts[VLIB_FRAME_SIZE], *next;
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
   ip4_header_t *ip[2];
@@ -1825,6 +1828,8 @@ VLIB_REGISTER_NODE (ip4_local_node) =
   .name = "ip4-local",
   .vector_size = sizeof (u32),
   .format_trace = format_ip4_forward_next_trace,
+  .n_errors = IP4_N_ERROR,
+  .error_strings = ip4_error_strings,
   .n_next_nodes = IP_LOCAL_N_NEXT,
   .next_nodes =
   {

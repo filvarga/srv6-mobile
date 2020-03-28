@@ -32,6 +32,11 @@
 #define FLOW_IS_L2_LAYER(f) \
   (f->type == VNET_FLOW_TYPE_ETHERNET)
 
+/* check if flow is VLAN sensitive */
+#define FLOW_IS_VLAN_TAGGED(f) \
+  ((f->type == VNET_FLOW_TYPE_IP4_N_TUPLE_TAGGED) || \
+   (f->type == VNET_FLOW_TYPE_IP6_N_TUPLE_TAGGED))
+
 /* check if flow is L4 type */
 #define FLOW_IS_L4_LAYER(f) \
   ((f->type == VNET_FLOW_TYPE_IP4_N_TUPLE) || \
@@ -134,9 +139,7 @@ dpdk_flow_add (dpdk_device_t * xd, vnet_flow_t * f, dpdk_flow_entry_t * fe)
       item->mask = NULL;
     }
 
-  /* VLAN */
-  if ((f->type == VNET_FLOW_TYPE_IP4_N_TUPLE) ||
-      (f->type == VNET_FLOW_TYPE_IP6_N_TUPLE))
+  if (FLOW_IS_VLAN_TAGGED (f))
     {
       vec_add2 (items, item, 1);
       item->type = RTE_FLOW_ITEM_TYPE_VLAN;
@@ -573,7 +576,7 @@ dpdk_flow_ops_fn (vnet_main_t * vnm, vnet_flow_dev_op_t op, u32 dev_instance,
 
       vec_foreach (fl_index, xd->parked_lookup_indexes)
 	pool_put_index (xd->flow_lookup_entries, *fl_index);
-      vec_reset_length (xd->flow_lookup_entries);
+      vec_reset_length (xd->parked_lookup_indexes);
     }
 
   if (op == VNET_FLOW_DEV_OP_DEL_FLOW)

@@ -53,6 +53,7 @@ rb_node_index_t rb_tree_add2 (rb_tree_t * rt, u32 key, uword opaque);
 rb_node_index_t rb_tree_add_custom (rb_tree_t * rt, u32 key, uword opaque,
 				    rb_tree_lt_fn ltfn);
 void rb_tree_del (rb_tree_t * rt, u32 key);
+void rb_tree_del_node (rb_tree_t * rt, rb_node_t * z);
 void rb_tree_del_custom (rb_tree_t * rt, u32 key, rb_tree_lt_fn ltfn);
 void rb_tree_free_nodes (rb_tree_t * rt);
 u32 rb_tree_n_nodes (rb_tree_t * rt);
@@ -63,6 +64,7 @@ rb_node_t *rb_tree_search_subtree_custom (rb_tree_t * rt, rb_node_t * x,
 					  u32 key, rb_tree_lt_fn ltfn);
 rb_node_t *rb_tree_successor (rb_tree_t * rt, rb_node_t * x);
 rb_node_t *rb_tree_predecessor (rb_tree_t * rt, rb_node_t * x);
+int rb_tree_is_init (rb_tree_t * rt);
 
 static inline rb_node_index_t
 rb_node_index (rb_tree_t * rt, rb_node_t * n)

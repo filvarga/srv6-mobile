@@ -10,7 +10,8 @@ from scapy.contrib.mpls import MPLS
 from scapy.layers.inet6 import IPv6, ICMPv6ND_NS, ICMPv6ND_RS, \
     ICMPv6ND_RA, ICMPv6NDOptMTU, ICMPv6NDOptSrcLLAddr, ICMPv6NDOptPrefixInfo, \
     ICMPv6ND_NA, ICMPv6NDOptDstLLAddr, ICMPv6DestUnreach, icmp6types, \
-    ICMPv6TimeExceeded, ICMPv6EchoRequest, ICMPv6EchoReply, IPv6ExtHdrHopByHop
+    ICMPv6TimeExceeded, ICMPv6EchoRequest, ICMPv6EchoReply, \
+    IPv6ExtHdrHopByHop, ICMPv6MLReport2, ICMPv6MLDMultAddrRec
 from scapy.layers.l2 import Ether, Dot1Q
 from scapy.packet import Raw
 from scapy.utils6 import in6_getnsma, in6_getnsmac, in6_ptop, in6_islladdr, \
@@ -27,6 +28,7 @@ from vpp_ip_route import VppIpRoute, VppRoutePath, find_route, VppIpMRoute, \
 from vpp_neighbor import find_nbr, VppNeighbor
 from vpp_pg_interface import is_ipv6_misc
 from vpp_sub_interface import VppSubInterface, VppDot1QSubint
+from vpp_policer import VppPolicer
 from ipaddress import IPv6Network, IPv6Address
 
 AF_INET6 = socket.AF_INET6
@@ -945,6 +947,35 @@ class TestIPv6(TestIPv6ND):
         #
         self.pg0.ip6_ra_config(no=1, suppress=1, send_unicast=0)
 
+    def test_mld(self):
+        """ MLD Report """
+        #
+        # test one MLD is sent after applying an IPv6 Address on an interface
+        #
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+
+        subitf = VppDot1QSubint(self, self.pg1, 99)
+
+        subitf.admin_up()
+        subitf.config_ip6()
+
+        rxs = self.pg1._get_capture(timeout=4, filter_out_fn=None)
+
+        #
+        # hunt for the MLD on vlan 99
+        #
+        for rx in rxs:
+            # make sure ipv6 packets with hop by hop options have
+            # correct checksums
+            self.assert_packet_checksums_valid(rx)
+            if rx.haslayer(IPv6ExtHdrHopByHop) and \
+               rx.haslayer(Dot1Q) and \
+               rx[Dot1Q].vlan == 99:
+                mld = rx[ICMPv6MLReport2]
+
+        self.assertEqual(mld.records_number, 4)
+
 
 class TestIPv6IfAddrRoute(VppTestCase):
     """ IPv6 Interface Addr Route Test Case """
@@ -1278,7 +1309,7 @@ class TestIPv6RDControlPlane(TestIPv6ND):
         while (n_tries):
             fib = self.vapi.ip_route_dump(0, True)
             default_routes = self.get_default_routes(fib)
-            if 0 is len(default_routes):
+            if 0 == len(default_routes):
                 return True
             n_tries = n_tries - 1
             self.sleep(s_time)
@@ -2088,8 +2119,8 @@ class TestIP6Punt(VppTestCase):
         #
         # add a policer
         #
-        policer = self.vapi.policer_add_del(b"ip6-punt", 400, 0, 10, 0,
-                                            rate_type=1)
+        policer = VppPolicer(self, "ip6-punt", 400, 0, 10, 0, rate_type=1)
+        policer.add_vpp_config()
         self.vapi.ip_punt_police(policer.policer_index, is_ip6=1)
 
         self.vapi.cli("clear trace")
@@ -2109,8 +2140,7 @@ class TestIP6Punt(VppTestCase):
         # remove the policer. back to full rx
         #
         self.vapi.ip_punt_police(policer.policer_index, is_add=0, is_ip6=1)
-        self.vapi.policer_add_del(b"ip6-punt", 400, 0, 10, 0,
-                                  rate_type=1, is_add=0)
+        policer.remove_vpp_config()
         self.send_and_expect(self.pg0, pkts, self.pg1)
 
         #

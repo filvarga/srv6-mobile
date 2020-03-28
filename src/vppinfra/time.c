@@ -165,7 +165,7 @@ os_cpu_clock_frequency (void)
 
       clib_get_cpuid (0x15, &eax, &ebx, &ecx, &edx);
       if (ebx && ecx)
-	return ecx * ebx / eax;
+	return (u64) ecx *ebx / eax;
 
       if (max_leaf >= 0x16)
 	{
@@ -208,6 +208,22 @@ clib_time_init (clib_time_t * c)
 {
   clib_memset (c, 0, sizeof (c[0]));
   c->clocks_per_second = os_cpu_clock_frequency ();
+  /*
+   * Sporadic reports of os_cpu_clock_frequency() returning 0.0
+   * in highly parallel container environments.
+   * To avoid immediate division by zero:
+   *   Step 1: try estimate_clock_frequency().
+   *   Step 2: give up. Pretend we have a 2gHz clock.
+   */
+  if (PREDICT_FALSE (c->clocks_per_second == 0.0))
+    {
+      c->clocks_per_second = estimate_clock_frequency (1e-3);
+      if (c->clocks_per_second == 0.0)
+	{
+	  clib_warning ("os_cpu_clock_frequency() returned 0.0, use 2e9...");
+	  c->clocks_per_second = 2e9;
+	}
+    }
   c->seconds_per_clock = 1 / c->clocks_per_second;
   c->log2_clocks_per_second = min_log2_u64 ((u64) c->clocks_per_second);
 
@@ -235,15 +251,32 @@ void
 clib_time_verify_frequency (clib_time_t * c)
 {
   f64 now_reference, delta_reference, delta_reference_max;
-  u64 delta_clock;
+  f64 delta_clock_in_seconds;
+  u64 now_clock, delta_clock;
   f64 new_clocks_per_second, delta;
 
   /* Ask the kernel and the CPU what time it is... */
   now_reference = unix_time_now ();
-  c->last_cpu_time = clib_cpu_time_now ();
+  now_clock = clib_cpu_time_now ();
+
+  /* Compute change in the reference clock */
+  delta_reference = now_reference - c->last_verify_reference_time;
+
+  /* And change in the CPU clock */
+  delta_clock_in_seconds = (f64) (now_clock - c->last_verify_cpu_time) *
+    c->seconds_per_clock;
+
+  /*
+   * Recompute vpp start time reference, and total clocks
+   * using the current clock rate
+   */
+  c->init_reference_time += (delta_reference - delta_clock_in_seconds);
+  c->total_cpu_time = (now_reference - c->init_reference_time)
+    * c->clocks_per_second;
+
+  c->last_cpu_time = now_clock;
 
   /* Calculate a new clock rate sample */
-  delta_reference = now_reference - c->last_verify_reference_time;
   delta_clock = c->last_cpu_time - c->last_verify_cpu_time;
 
   c->last_verify_cpu_time = c->last_cpu_time;
