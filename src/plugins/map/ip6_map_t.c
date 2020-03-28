@@ -24,12 +24,14 @@ typedef enum
   IP6_MAPT_NEXT_MAPT_ICMP,
   IP6_MAPT_NEXT_MAPT_FRAGMENTED,
   IP6_MAPT_NEXT_DROP,
+  IP6_MAPT_NEXT_ICMP,
   IP6_MAPT_N_NEXT
 } ip6_mapt_next_t;
 
 typedef enum
 {
   IP6_MAPT_ICMP_NEXT_IP4_LOOKUP,
+  IP6_MAPT_ICMP_NEXT_IP4_REWRITE,
   IP6_MAPT_ICMP_NEXT_IP4_FRAG,
   IP6_MAPT_ICMP_NEXT_DROP,
   IP6_MAPT_ICMP_N_NEXT
@@ -38,6 +40,7 @@ typedef enum
 typedef enum
 {
   IP6_MAPT_TCP_UDP_NEXT_IP4_LOOKUP,
+  IP6_MAPT_TCP_UDP_NEXT_IP4_REWRITE,
   IP6_MAPT_TCP_UDP_NEXT_IP4_FRAG,
   IP6_MAPT_TCP_UDP_NEXT_DROP,
   IP6_MAPT_TCP_UDP_N_NEXT
@@ -46,6 +49,7 @@ typedef enum
 typedef enum
 {
   IP6_MAPT_FRAGMENTED_NEXT_IP4_LOOKUP,
+  IP6_MAPT_FRAGMENTED_NEXT_IP4_REWRITE,
   IP6_MAPT_FRAGMENTED_NEXT_IP4_FRAG,
   IP6_MAPT_FRAGMENTED_NEXT_DROP,
   IP6_MAPT_FRAGMENTED_N_NEXT
@@ -173,6 +177,11 @@ ip6_map_t_icmp (vlib_main_t * vm,
 	      vnet_buffer (p0)->ip_frag.next_index = IP_FRAG_NEXT_IP4_LOOKUP;
 	      next0 = IP6_MAPT_ICMP_NEXT_IP4_FRAG;
 	    }
+	  else
+	    {
+	      next0 = ip6_map_ip4_lookup_bypass (p0, NULL) ?
+		IP6_MAPT_ICMP_NEXT_IP4_REWRITE : next0;
+	    }
 	err0:
 	  if (PREDICT_TRUE (error0 == MAP_ERROR_NONE))
 	    {
@@ -273,8 +282,7 @@ ip6_map_t_fragmented (vlib_main_t * vm,
 	  n_left_from -= 1;
 	  to_next += 1;
 	  n_left_to_next -= 1;
-
-	  next0 = IP6_MAPT_TCP_UDP_NEXT_IP4_LOOKUP;
+	  next0 = IP6_MAPT_FRAGMENTED_NEXT_IP4_LOOKUP;
 	  p0 = vlib_get_buffer (vm, pi0);
 
 	  if (map_ip6_to_ip4_fragmented (vm, p0))
@@ -291,6 +299,11 @@ ip6_map_t_fragmented (vlib_main_t * vm,
 		  vnet_buffer (p0)->ip_frag.next_index =
 		    IP_FRAG_NEXT_IP4_LOOKUP;
 		  next0 = IP6_MAPT_FRAGMENTED_NEXT_IP4_FRAG;
+		}
+	      else
+		{
+		  next0 = ip6_map_ip4_lookup_bypass (p0, NULL) ?
+		    IP6_MAPT_FRAGMENTED_NEXT_IP4_REWRITE : next0;
 		}
 	    }
 
@@ -332,7 +345,7 @@ map_ip6_to_ip4_tcp_udp (vlib_main_t * vm, vlib_buffer_t * p,
 
   if (l4_protocol == IP_PROTOCOL_TCP)
     {
-      tcp_header_t *tcp = ip6_next_header (ip6);
+      tcp_header_t *tcp = (tcp_header_t *) u8_ptr_add (ip6, l4_offset);
       if (mm->tcp_mss > 0)
 	{
 	  csum = tcp->checksum;
@@ -343,7 +356,7 @@ map_ip6_to_ip4_tcp_udp (vlib_main_t * vm, vlib_buffer_t * p,
     }
   else
     {
-      udp_header_t *udp = ip6_next_header (ip6);
+      udp_header_t *udp = (udp_header_t *) u8_ptr_add (ip6, l4_offset);
       checksum = &udp->checksum;
     }
 
@@ -458,6 +471,11 @@ ip6_map_t_tcp_udp (vlib_main_t * vm,
 		    IP_FRAG_NEXT_IP4_LOOKUP;
 		  next0 = IP6_MAPT_TCP_UDP_NEXT_IP4_FRAG;
 		}
+	      else
+		{
+		  next0 = ip6_map_ip4_lookup_bypass (p0, NULL) ?
+		    IP6_MAPT_TCP_UDP_NEXT_IP4_REWRITE : next0;
+		}
 	    }
 
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
@@ -475,6 +493,7 @@ ip6_map_t (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
   u32 n_left_from, *from, next_index, *to_next, n_left_to_next;
   vlib_node_runtime_t *error_node =
     vlib_node_get_runtime (vm, ip6_map_t_node.index);
+  map_main_t *mm = &map_main;
   vlib_combined_counter_main_t *cm = map_main.domain_counters;
   u32 thread_index = vm->thread_index;
 
@@ -584,12 +603,12 @@ ip6_map_t (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 	      next0 = IP6_MAPT_NEXT_MAPT_ICMP;
 	      if (((icmp46_header_t *)
 		   u8_ptr_add (ip60,
-			       vnet_buffer (p0)->map_t.v6.l4_offset))->code ==
+			       vnet_buffer (p0)->map_t.v6.l4_offset))->type ==
 		  ICMP6_echo_reply
 		  || ((icmp46_header_t *)
 		      u8_ptr_add (ip60,
 				  vnet_buffer (p0)->map_t.v6.l4_offset))->
-		  code == ICMP6_echo_request)
+		  type == ICMP6_echo_request)
 		map_port0 = l4_src_port;
 	    }
 	  else
@@ -626,7 +645,19 @@ ip6_map_t (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
 								     payload_length));
 	    }
 
-	  next0 = (error0 != MAP_ERROR_NONE) ? IP6_MAPT_NEXT_DROP : next0;
+	  if (PREDICT_FALSE
+	      (error0 == MAP_ERROR_SEC_CHECK && mm->icmp6_enabled))
+	    {
+	      icmp6_error_set_vnet_buffer (p0, ICMP6_destination_unreachable,
+					   ICMP6_destination_unreachable_source_address_failed_policy,
+					   0);
+	      next0 = IP6_MAPT_NEXT_ICMP;
+	    }
+	  else
+	    {
+	      next0 = (error0 != MAP_ERROR_NONE) ? IP6_MAPT_NEXT_DROP : next0;
+	    }
+
 	  p0->error = error_node->errors[error0];
 	  if (PREDICT_FALSE (p0->flags & VLIB_BUFFER_IS_TRACED))
 	    {
@@ -665,6 +696,7 @@ VLIB_REGISTER_NODE(ip6_map_t_fragmented_node) = {
   .next_nodes =
   {
     [IP6_MAPT_FRAGMENTED_NEXT_IP4_LOOKUP] = "ip4-lookup",
+    [IP6_MAPT_FRAGMENTED_NEXT_IP4_REWRITE] = "ip4-load-balance",
     [IP6_MAPT_FRAGMENTED_NEXT_IP4_FRAG] = IP4_FRAG_NODE_NAME,
     [IP6_MAPT_FRAGMENTED_NEXT_DROP] = "error-drop",
   },
@@ -686,6 +718,7 @@ VLIB_REGISTER_NODE(ip6_map_t_icmp_node) = {
   .next_nodes =
   {
     [IP6_MAPT_ICMP_NEXT_IP4_LOOKUP] = "ip4-lookup",
+    [IP6_MAPT_ICMP_NEXT_IP4_REWRITE] = "ip4-load-balance",
     [IP6_MAPT_ICMP_NEXT_IP4_FRAG] = IP4_FRAG_NODE_NAME,
     [IP6_MAPT_ICMP_NEXT_DROP] = "error-drop",
   },
@@ -707,6 +740,7 @@ VLIB_REGISTER_NODE(ip6_map_t_tcp_udp_node) = {
   .next_nodes =
   {
     [IP6_MAPT_TCP_UDP_NEXT_IP4_LOOKUP] = "ip4-lookup",
+    [IP6_MAPT_TCP_UDP_NEXT_IP4_REWRITE] = "ip4-load-balance",
     [IP6_MAPT_TCP_UDP_NEXT_IP4_FRAG] = IP4_FRAG_NODE_NAME,
     [IP6_MAPT_TCP_UDP_NEXT_DROP] = "error-drop",
   },
@@ -738,6 +772,7 @@ VLIB_REGISTER_NODE(ip6_map_t_node) = {
     [IP6_MAPT_NEXT_MAPT_ICMP] = "ip6-map-t-icmp",
     [IP6_MAPT_NEXT_MAPT_FRAGMENTED] = "ip6-map-t-fragmented",
     [IP6_MAPT_NEXT_DROP] = "error-drop",
+    [IP6_MAPT_NEXT_ICMP] = "ip6-icmp-error",
   },
 };
 /* *INDENT-ON* */

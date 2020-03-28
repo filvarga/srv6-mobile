@@ -149,7 +149,8 @@ ipsec_sa_add_del_command_fn (vlib_main_t * vm,
     rv = ipsec_sa_add_and_lock (id, spi, proto, crypto_alg,
 				&ck, integ_alg, &ik, flags,
 				0, clib_host_to_net_u32 (salt),
-				&tun_src, &tun_dst, NULL);
+				&tun_src, &tun_dst, NULL,
+				IPSEC_UDP_PORT_NONE);
   else
     rv = ipsec_sa_unlock_id (id);
 
@@ -391,7 +392,7 @@ ipsec_spd_bindings_show_all (vlib_main_t * vm, ipsec_main_t * im)
 static walk_rc_t
 ipsec_tun_protect_show_one (index_t itpi, void *ctx)
 {
-  vlib_cli_output (ctx, "%U", format_ipsec_tun_protect, itpi);
+  vlib_cli_output (ctx, "%U", format_ipsec_tun_protect_index, itpi);
 
   return (WALK_CONTINUE);
 }
@@ -728,8 +729,9 @@ create_ipsec_tunnel_command_fn (vlib_main_t * vm,
   unformat_input_t _line_input, *line_input = &_line_input;
   ip46_address_t local_ip = ip46_address_initializer;
   ip46_address_t remote_ip = ip46_address_initializer;
-  ipsec_crypto_alg_t crypto_alg;
-  ipsec_integ_alg_t integ_alg;
+  ip_address_t nh = IP_ADDRESS_V4_ALL_0S;
+  ipsec_crypto_alg_t crypto_alg = IPSEC_CRYPTO_ALG_NONE;
+  ipsec_integ_alg_t integ_alg = IPSEC_INTEG_ALG_NONE;
   ipsec_sa_flags_t flags;
   u32 local_spi, remote_spi, salt, table_id, fib_index;
   u32 instance = ~0;
@@ -808,6 +810,8 @@ create_ipsec_tunnel_command_fn (vlib_main_t * vm,
 	;
       else if (unformat (line_input, "del"))
 	is_add = 0;
+      else if (unformat (line_input, "nh &U", unformat_ip_address, &nh))
+	;
       else
 	{
 	  error = clib_error_return (0, "unknown input `%U'",
@@ -849,16 +853,16 @@ create_ipsec_tunnel_command_fn (vlib_main_t * vm,
 			       local_spi, IPSEC_PROTOCOL_ESP, crypto_alg,
 			       &lck, integ_alg, &lik, flags, table_id,
 			       clib_host_to_net_u32 (salt), &local_ip,
-			       &remote_ip, NULL);
+			       &remote_ip, NULL, IPSEC_UDP_PORT_NONE);
       rv |=
 	ipsec_sa_add_and_lock (ipsec_tun_mk_remote_sa_id (sw_if_index),
 			       remote_spi, IPSEC_PROTOCOL_ESP, crypto_alg,
 			       &rck, integ_alg, &rik,
 			       (flags | IPSEC_SA_FLAG_IS_INBOUND), table_id,
 			       clib_host_to_net_u32 (salt), &remote_ip,
-			       &local_ip, NULL);
+			       &local_ip, NULL, IPSEC_UDP_PORT_NONE);
       rv |=
-	ipsec_tun_protect_update_one (sw_if_index,
+	ipsec_tun_protect_update_one (sw_if_index, &nh,
 				      ipsec_tun_mk_local_sa_id (sw_if_index),
 				      ipsec_tun_mk_remote_sa_id
 				      (sw_if_index));
@@ -902,6 +906,7 @@ ipsec_tun_protect_cmd (vlib_main_t * vm,
 {
   unformat_input_t _line_input, *line_input = &_line_input;
   u32 sw_if_index, is_del, sa_in, sa_out, *sa_ins = NULL;
+  ip_address_t peer = { };
   vnet_main_t *vnm;
 
   is_del = 0;
@@ -924,13 +929,15 @@ ipsec_tun_protect_cmd (vlib_main_t * vm,
       else if (unformat (line_input, "%U",
 			 unformat_vnet_sw_interface, vnm, &sw_if_index))
 	;
+      else if (unformat (line_input, "%U", unformat_ip_address, &peer))
+	;
       else
 	return (clib_error_return (0, "unknown input '%U'",
 				   format_unformat_error, line_input));
     }
 
   if (!is_del)
-    ipsec_tun_protect_update (sw_if_index, sa_out, sa_ins);
+    ipsec_tun_protect_update (sw_if_index, &peer, sa_out, sa_ins);
 
   unformat_free (line_input);
   return NULL;

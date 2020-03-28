@@ -80,7 +80,7 @@ _(SR_POLICY_NAME_NOT_PRESENT, -84, "Segment routing policy name required") \
 _(NOT_RUNNING_AS_ROOT, -85, "Not running as root") \
 _(ALREADY_CONNECTED, -86, "Connection to the data plane already exists") \
 _(UNSUPPORTED_JNI_VERSION, -87, "Unsupported JNI version") \
-_(FAILED_TO_ATTACH_TO_JAVA_THREAD, -88, "Failed to attach to Java thread") \
+_(IP_PREFIX_INVALID, -88, "IP prefix invalid (masked bits set in address") \
 _(INVALID_WORKER, -89, "Invalid worker thread")                         \
 _(LISP_DISABLED, -90, "LISP is disabled")                               \
 _(CLASSIFY_TABLE_NOT_FOUND, -91, "Classify table not found")            \
@@ -153,7 +153,9 @@ _(FIB_PATH_UNSUPPORTED_NH_PROTO, -157, "Unsupported FIB Path protocol") \
 _(API_ENDIAN_FAILED, -159, "Endian mismatch detected")			\
 _(NO_CHANGE, -160, "No change in table")				\
 _(MISSING_CERT_KEY, -161, "Missing certifcate or key")                  \
-_(LIMIT_EXCEEDED, -162, "limit exceeded")
+_(LIMIT_EXCEEDED, -162, "limit exceeded")                               \
+_(IKE_NO_PORT, -163, "port not managed by IKE")                         \
+_(UDP_PORT_TAKEN, -164, "UDP port already taken")                       \
 
 typedef enum
 {

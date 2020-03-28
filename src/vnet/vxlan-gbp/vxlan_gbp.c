@@ -291,7 +291,7 @@ vtep_addr_unref (ip46_address_t * ip)
   uword *vtep = ip46_address_is_ip4 (ip) ?
     hash_get (vxlan_gbp_main.vtep4, ip->ip4.as_u32) :
     hash_get_mem (vxlan_gbp_main.vtep6, &ip->ip6);
-  ASSERT (vtep);
+  ALWAYS_ASSERT (vtep);
   if (--(*vtep) != 0)
     return *vtep;
   ip46_address_is_ip4 (ip) ?
@@ -317,7 +317,7 @@ mcast_shared_get (ip46_address_t * ip)
 {
   ASSERT (ip46_address_is_multicast (ip));
   uword *p = hash_get_mem (vxlan_gbp_main.mcast_shared, ip);
-  ASSERT (p);
+  ALWAYS_ASSERT (p);
   mcast_shared_t ret = {.as_u64 = *p };
   return ret;
 }
@@ -1165,9 +1165,11 @@ vxlan_gbp_init (vlib_main_t * vm)
 
   vlib_punt_reason_alloc (punt_hdl,
 			  "VXLAN-GBP-no-such-v4-tunnel",
+			  NULL, NULL,
 			  &vxm->punt_no_such_tunnel[FIB_PROTOCOL_IP4]);
   vlib_punt_reason_alloc (punt_hdl,
 			  "VXLAN-GBP-no-such-v6-tunnel",
+			  NULL, NULL,
 			  &vxm->punt_no_such_tunnel[FIB_PROTOCOL_IP6]);
 
   return (0);

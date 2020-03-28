@@ -17,6 +17,7 @@
 #include <signal.h>
 #include <math.h>
 #include <vppinfra/format.h>
+#include <vppinfra/time_range.h>
 #include <vppinfra/linux/sysfs.h>
 #include <vlib/vlib.h>
 
@@ -255,21 +256,6 @@ vlib_thread_init (vlib_main_t * vm)
     }
   avail_cpu = clib_bitmap_set (avail_cpu, tm->main_lcore, 0);
 
-  /*
-   * Determine if the number of workers is greater than 0.
-   * If so, mark CPU 0 unavailable so workers will be numbered after main.
-   */
-  u32 n_workers = 0;
-  uword *p = hash_get_mem (tm->thread_registrations_by_name, "workers");
-  if (p != 0)
-    {
-      vlib_thread_registration_t *tr = (vlib_thread_registration_t *) p[0];
-      int worker_thread_count = tr->count;
-      n_workers = worker_thread_count;
-    }
-  if (tm->skip_cores == 0 && n_workers)
-    avail_cpu = clib_bitmap_set (avail_cpu, 0, 0);
-
   /* assume that there is socket 0 only if there is no data from sysfs */
   if (!tm->cpu_socket_bitmap)
     tm->cpu_socket_bitmap = clib_bitmap_set (0, 0, 1);
@@ -351,12 +337,24 @@ vlib_thread_init (vlib_main_t * vm)
 	{
 	  for (j = 0; j < tr->count; j++)
 	    {
+	      /* Do not use CPU 0 by default - leave it to the host and IRQs */
+	      uword avail_c0 = clib_bitmap_get (avail_cpu, 0);
+	      avail_cpu = clib_bitmap_set (avail_cpu, 0, 0);
+
 	      uword c = clib_bitmap_first_set (avail_cpu);
+	      /* Use CPU 0 as a last resort */
+	      if (c == ~0 && avail_c0)
+		{
+		  c = 0;
+		  avail_c0 = 0;
+		}
+
 	      if (c == ~0)
 		return clib_error_return (0,
 					  "no available cpus to be used for"
 					  " the '%s' thread", tr->name);
 
+	      avail_cpu = clib_bitmap_set (avail_cpu, 0, avail_c0);
 	      avail_cpu = clib_bitmap_set (avail_cpu, c, 0);
 	      tr->coremask = clib_bitmap_set (tr->coremask, c, 1);
 	    }
@@ -598,15 +596,30 @@ void
 vlib_get_thread_core_numa (vlib_worker_thread_t * w, unsigned cpu_id)
 {
   const char *sys_cpu_path = "/sys/devices/system/cpu/cpu";
+  const char *sys_node_path = "/sys/devices/system/node/node";
+  clib_bitmap_t *nbmp = 0, *cbmp = 0;
+  u32 node;
   u8 *p = 0;
   int core_id = -1, numa_id = -1;
 
   p = format (p, "%s%u/topology/core_id%c", sys_cpu_path, cpu_id, 0);
   clib_sysfs_read ((char *) p, "%d", &core_id);
   vec_reset_length (p);
-  p = format (p, "%s%u/topology/physical_package_id%c", sys_cpu_path,
-	      cpu_id, 0);
-  clib_sysfs_read ((char *) p, "%d", &numa_id);
+
+  /* *INDENT-OFF* */
+  clib_sysfs_read ("/sys/devices/system/node/online", "%U",
+        unformat_bitmap_list, &nbmp);
+  clib_bitmap_foreach (node, nbmp, ({
+    p = format (p, "%s%u/cpulist%c", sys_node_path, node, 0);
+    clib_sysfs_read ((char *) p, "%U", unformat_bitmap_list, &cbmp);
+    if (clib_bitmap_get (cbmp, cpu_id))
+      numa_id = node;
+    vec_reset_length (cbmp);
+    vec_reset_length (p);
+  }));
+  /* *INDENT-ON* */
+  vec_free (nbmp);
+  vec_free (cbmp);
   vec_free (p);
 
   w->core_id = core_id;
@@ -1283,6 +1296,10 @@ cpu_config (vlib_main_t * vm, unformat_input_t * input)
 	    return clib_error_return (0,
 				      "corelist cannot be set for '%s' threads",
 				      name);
+	  if (tr->count)
+	    return clib_error_return
+	      (0, "core placement of '%s' threads is already configured",
+	       name);
 
 	  tr->coremask = bitmap;
 	  tr->count = clib_bitmap_count_set_bits (tr->coremask);
@@ -1301,9 +1318,14 @@ cpu_config (vlib_main_t * vm, unformat_input_t * input)
 	    return clib_error_return (0, "no such thread type 3 '%s'", name);
 
 	  tr = (vlib_thread_registration_t *) p[0];
+
 	  if (tr->fixed_count)
 	    return clib_error_return
-	      (0, "number of %s threads not configurable", tr->name);
+	      (0, "number of '%s' threads not configurable", name);
+	  if (tr->count)
+	    return clib_error_return
+	      (0, "number of '%s' threads is already configured", name);
+
 	  tr->count = count;
 	}
       else
@@ -1875,10 +1897,16 @@ show_clock_command_fn (vlib_main_t * vm,
 {
   int i;
   int verbose = 0;
+  clib_timebase_t _tb, *tb = &_tb;
 
   (void) unformat (input, "verbose %=", &verbose, 1);
 
-  vlib_cli_output (vm, "%U", format_clib_time, &vm->clib_time, verbose);
+  clib_timebase_init (tb, 0 /* GMT */ , CLIB_TIMEBASE_DAYLIGHT_NONE,
+		      &vm->clib_time);
+
+  vlib_cli_output (vm, "%U, %U GMT", format_clib_time, &vm->clib_time,
+		   verbose, format_clib_timebase_time,
+		   clib_timebase_now (tb));
 
   if (vec_len (vlib_mains) == 1)
     return 0;

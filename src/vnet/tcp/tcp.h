@@ -82,13 +82,6 @@ typedef enum _tcp_timers
   TCP_N_TIMERS
 } tcp_timers_e;
 
-typedef void (timer_expiration_handler) (u32 index, u32 thread_index);
-
-extern timer_expiration_handler tcp_timer_delack_handler;
-extern timer_expiration_handler tcp_timer_retransmit_handler;
-extern timer_expiration_handler tcp_timer_persist_handler;
-extern timer_expiration_handler tcp_timer_retransmit_syn_handler;
-
 #define TCP_TIMER_HANDLE_INVALID ((u32) ~0)
 
 #define TCP_TIMER_TICK		0.1		/**< Timer tick in seconds */
@@ -478,6 +471,13 @@ struct _tcp_cc_algorithm
 
 #define tcp_csum_offload(tc) (!((tc)->cfg_flags & TCP_CFG_F_NO_CSUM_OFFLOAD))
 
+typedef void (timer_expiration_handler) (tcp_connection_t * tc);
+
+extern timer_expiration_handler tcp_timer_delack_handler;
+extern timer_expiration_handler tcp_timer_retransmit_handler;
+extern timer_expiration_handler tcp_timer_persist_handler;
+extern timer_expiration_handler tcp_timer_retransmit_syn_handler;
+
 always_inline void
 tcp_cong_recovery_off (tcp_connection_t * tc)
 {
@@ -507,6 +507,7 @@ typedef struct _tcp_lookup_dispatch
   _(rxt_segs, u64, "segments retransmitted")			\
   _(tr_events, u32, "timer retransmit events")			\
   _(to_closewait, u32, "timeout close-wait")			\
+  _(to_closewait2, u32, "timeout close-wait w/data")		\
   _(to_finwait1, u32, "timeout fin-wait-1")			\
   _(to_finwait2, u32, "timeout fin-wait-2")			\
   _(to_lastack, u32, "timeout last-ack")			\
@@ -520,6 +521,12 @@ typedef struct tcp_wrk_stats_
   foreach_tcp_wrk_stat
 #undef _
 } tcp_wrk_stats_t;
+
+typedef struct tcp_free_req_
+{
+  clib_time_type_t free_time;
+  u32 connection_index;
+} tcp_cleanup_req_t;
 
 typedef struct tcp_worker_ctx_
 {
@@ -543,6 +550,9 @@ typedef struct tcp_worker_ctx_
   /** worker time */
   u32 time_now;
 
+  /* Max timers to be handled per dispatch loop */
+  u32 max_timers_per_loop;
+
   /** tx frames for ip 4/6 lookup nodes */
   vlib_frame_t *ip_lookup_tx_frames[2];
 
@@ -553,6 +563,12 @@ typedef struct tcp_worker_ctx_
 
   /** tx buffer free list */
   u32 *tx_buffers;
+
+  /* Fifo of pending timer expirations */
+  u32 *pending_timers;
+
+  /* fifo of pending free requests */
+  tcp_cleanup_req_t *pending_cleanups;
 
   /** worker timer wheel */
   tw_timer_wheel_16t_2w_512sl_t timer_wheel;
@@ -627,8 +643,8 @@ typedef struct tcp_configuration_
   /** Timer ticks to wait in closing for fin ack */
   u16 closing_time;
 
-  /** Timer ticks to wait before cleaning up the connection */
-  u16 cleanup_time;
+  /** Time to wait (sec) before cleaning up the connection */
+  f32 cleanup_time;
 
   /** Number of preallocated connections */
   u32 preallocated_connections;
@@ -831,7 +847,6 @@ void tcp_send_fin (tcp_connection_t * tc);
 void tcp_send_ack (tcp_connection_t * tc);
 void tcp_update_burst_snd_vars (tcp_connection_t * tc);
 void tcp_update_rto (tcp_connection_t * tc);
-void tcp_flush_frames_to_output (tcp_worker_ctx_t * wrk);
 void tcp_send_window_update_ack (tcp_connection_t * tc);
 
 void tcp_program_ack (tcp_connection_t * tc);
@@ -1021,6 +1036,12 @@ tcp_available_cc_snd_space (const tcp_connection_t * tc)
   return available_wnd - flight_size;
 }
 
+static inline u8
+tcp_is_descheduled (tcp_connection_t * tc)
+{
+  return (transport_connection_is_descheduled (&tc->connection) ? 1 : 0);
+}
+
 always_inline u8
 tcp_is_lost_fin (tcp_connection_t * tc)
 {
@@ -1031,6 +1052,7 @@ tcp_is_lost_fin (tcp_connection_t * tc)
 
 u32 tcp_snd_space (tcp_connection_t * tc);
 int tcp_fastrecovery_prr_snd_space (tcp_connection_t * tc);
+void tcp_reschedule (tcp_connection_t * tc);
 
 fib_node_index_t tcp_lookup_rmt_in_fib (tcp_connection_t * tc);
 
@@ -1084,6 +1106,7 @@ void tcp_connection_init_vars (tcp_connection_t * tc);
 void tcp_connection_tx_pacer_update (tcp_connection_t * tc);
 void tcp_connection_tx_pacer_reset (tcp_connection_t * tc, u32 window,
 				    u32 start_bucket);
+void tcp_program_cleanup (tcp_worker_ctx_t * wrk, tcp_connection_t * tc);
 
 always_inline void
 tcp_cc_rcv_ack (tcp_connection_t * tc, tcp_rate_sample_t * rs)
@@ -1278,6 +1301,14 @@ tcp_cc_data (tcp_connection_t * tc)
 
 void newreno_rcv_cong_ack (tcp_connection_t * tc, tcp_cc_ack_t ack_type,
 			   tcp_rate_sample_t * rs);
+/**
+ * Initialize connection by gleaning network and rcv params from buffer
+ *
+ * @param tc		connection to initialize
+ * @param b		buffer whose current data is pointing at ip
+ * @param is_ip4	flag set to 1 if using ip4
+ */
+void tcp_init_w_buffer (tcp_connection_t * tc, vlib_buffer_t * b, u8 is_ip4);
 
 /**
  * Push TCP header to buffer

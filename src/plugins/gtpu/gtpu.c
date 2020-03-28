@@ -31,7 +31,7 @@
 #include <vnet/plugin/plugin.h>
 #include <vpp/app/version.h>
 #include <gtpu/gtpu.h>
-
+#include <vnet/flow/flow.h>
 
 gtpu_main_t gtpu_main;
 
@@ -87,12 +87,19 @@ format_gtpu_tunnel (u8 * s, va_list * args)
 {
   gtpu_tunnel_t *t = va_arg (*args, gtpu_tunnel_t *);
   gtpu_main_t *ngm = &gtpu_main;
+  ip4_main_t *im4 = &ip4_main;
+  ip6_main_t *im6 = &ip6_main;
+  u8 is_ipv6 = !ip46_address_is_ip4 (&t->dst);
 
-  s = format (s, "[%d] src %U dst %U teid %d fib-idx %d sw-if-idx %d ",
+  u32 encap_vrf_id =
+    is_ipv6 ? im6->fibs[t->encap_fib_index].ft_table_id :
+    im4->fibs[t->encap_fib_index].ft_table_id;
+
+  s = format (s, "[%d] src %U dst %U teid %d encap-vrf-id %d sw-if-idx %d ",
 	      t - ngm->tunnels,
 	      format_ip46_address, &t->src, IP46_TYPE_ANY,
 	      format_ip46_address, &t->dst, IP46_TYPE_ANY,
-	      t->teid,  t->encap_fib_index, t->sw_if_index);
+	      t->teid,  encap_vrf_id, t->sw_if_index);
 
   s = format (s, "encap-dpo-idx %d ", t->next_dpo.dpoi_index);
   s = format (s, "decap-next-%U ", format_decap_next, t->decap_next_index);
@@ -298,35 +305,6 @@ gtpu_decap_next_is_valid (gtpu_main_t * gtm, u32 is_ip6, u32 decap_next_index)
   return decap_next_index < r->n_next_nodes;
 }
 
-static uword
-vtep_addr_ref (ip46_address_t * ip)
-{
-  uword *vtep = ip46_address_is_ip4 (ip) ?
-    hash_get (gtpu_main.vtep4, ip->ip4.as_u32) :
-    hash_get_mem (gtpu_main.vtep6, &ip->ip6);
-  if (vtep)
-    return ++(*vtep);
-  ip46_address_is_ip4 (ip) ?
-    hash_set (gtpu_main.vtep4, ip->ip4.as_u32, 1) :
-    hash_set_mem_alloc (&gtpu_main.vtep6, &ip->ip6, 1);
-  return 1;
-}
-
-static uword
-vtep_addr_unref (ip46_address_t * ip)
-{
-  uword *vtep = ip46_address_is_ip4 (ip) ?
-    hash_get (gtpu_main.vtep4, ip->ip4.as_u32) :
-    hash_get_mem (gtpu_main.vtep6, &ip->ip6);
-  ASSERT (vtep);
-  if (--(*vtep) != 0)
-    return *vtep;
-  ip46_address_is_ip4 (ip) ?
-    hash_unset (gtpu_main.vtep4, ip->ip4.as_u32) :
-    hash_unset_mem_free (&gtpu_main.vtep6, &ip->ip6);
-  return 0;
-}
-
 typedef CLIB_PACKED (union
 		     {
 		     struct
@@ -341,7 +319,7 @@ mcast_shared_get (ip46_address_t * ip)
 {
   ASSERT (ip46_address_is_multicast (ip));
   uword *p = hash_get_mem (gtpu_main.mcast_shared, ip);
-  ASSERT (p);
+  ALWAYS_ASSERT (p);
   return (mcast_shared_t)
   {
   .as_u64 = *p};
@@ -419,6 +397,9 @@ int vnet_gtpu_add_del_tunnel
 
       ip_udp_gtpu_rewrite (t, is_ip6);
 
+      /* clear the flow index */
+      t->flow_index = ~0;
+
       /* copy the key */
       if (is_ip6)
 	hash_set_mem_alloc (&gtm->gtpu6_tunnel_by_key, &key6,
@@ -495,7 +476,7 @@ int vnet_gtpu_add_del_tunnel
 	   * when the forwarding for the entry updates, and the tunnel can
 	   * re-stack accordingly
 	   */
-	  vtep_addr_ref (&t->src);
+	  vtep_addr_ref (&gtm->vtep_table, t->encap_fib_index, &t->src);
 	  t->fib_entry_index = fib_entry_track (t->encap_fib_index,
 						&tun_dst_pfx,
 						gtm->fib_node_type,
@@ -512,7 +493,8 @@ int vnet_gtpu_add_del_tunnel
 	   */
 	  fib_protocol_t fp = fib_ip_proto (is_ip6);
 
-	  if (vtep_addr_ref (&t->dst) == 1)
+	  if (vtep_addr_ref (&gtm->vtep_table,
+			     t->encap_fib_index, &t->dst) == 1)
 	    {
 	      fib_node_index_t mfei;
 	      adj_index_t ai;
@@ -602,10 +584,14 @@ int vnet_gtpu_add_del_tunnel
 
       if (!ip46_address_is_multicast (&t->dst))
 	{
-	  vtep_addr_unref (&t->src);
+	  if (t->flow_index != ~0)
+	    vnet_flow_del (vnm, t->flow_index);
+
+	  vtep_addr_unref (&gtm->vtep_table, t->encap_fib_index, &t->src);
 	  fib_entry_untrack (t->fib_entry_index, t->sibling_index);
 	}
-      else if (vtep_addr_unref (&t->dst) == 0)
+      else if (vtep_addr_unref (&gtm->vtep_table,
+				t->encap_fib_index, &t->dst) == 0)
 	{
 	  mcast_shared_remove (&t->dst);
 	}
@@ -1093,6 +1079,135 @@ VLIB_CLI_COMMAND (set_interface_ip6_gtpu_bypass_command, static) = {
 };
 /* *INDENT-ON* */
 
+int
+vnet_gtpu_add_del_rx_flow (u32 hw_if_index, u32 t_index, int is_add)
+{
+  gtpu_main_t *gtm = &gtpu_main;
+  gtpu_tunnel_t *t = pool_elt_at_index (gtm->tunnels, t_index);
+  vnet_main_t *vnm = vnet_get_main ();
+  if (is_add)
+    {
+      if (t->flow_index == ~0)
+	{
+	  vnet_flow_t flow = {
+	    .actions =
+	      VNET_FLOW_ACTION_REDIRECT_TO_NODE | VNET_FLOW_ACTION_MARK |
+	      VNET_FLOW_ACTION_BUFFER_ADVANCE,
+	    .mark_flow_id = t_index + gtm->flow_id_start,
+	    .redirect_node_index = gtpu4_flow_input_node.index,
+	    .buffer_advance = sizeof (ethernet_header_t)
+	      + sizeof (ip4_header_t) + sizeof (udp_header_t),
+	    .type = VNET_FLOW_TYPE_IP4_GTPU_IP4,
+	    .ip4_gtpu = {
+			 .protocol = IP_PROTOCOL_UDP,
+			 .src_addr.addr = t->dst.ip4,
+			 .src_addr.mask.as_u32 = ~0,
+			 .dst_addr.addr = t->src.ip4,
+			 .dst_addr.mask.as_u32 = ~0,
+			 .teid = t->teid,
+			 }
+	    ,
+	  };
+	  vnet_flow_add (vnm, &flow, &t->flow_index);
+	}
+
+      return vnet_flow_enable (vnm, t->flow_index, hw_if_index);
+    }
+
+  /* flow index is removed when the tunnel is deleted */
+  return vnet_flow_disable (vnm, t->flow_index, hw_if_index);
+}
+
+u32
+vnet_gtpu_get_tunnel_index (u32 sw_if_index)
+{
+  gtpu_main_t *gtm = &gtpu_main;
+
+  if (sw_if_index >= vec_len (gtm->tunnel_index_by_sw_if_index))
+    return ~0;
+  return gtm->tunnel_index_by_sw_if_index[sw_if_index];
+}
+
+static clib_error_t *
+gtpu_offload_command_fn (vlib_main_t * vm,
+			 unformat_input_t * input, vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+
+  /* Get a line of input. */
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  vnet_main_t *vnm = vnet_get_main ();
+  u32 rx_sw_if_index = ~0;
+  u32 hw_if_index = ~0;
+  int is_add = 1;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "hw %U", unformat_vnet_hw_interface, vnm,
+		    &hw_if_index))
+	continue;
+      if (unformat (line_input, "rx %U", unformat_vnet_sw_interface, vnm,
+		    &rx_sw_if_index))
+	continue;
+      if (unformat (line_input, "del"))
+	{
+	  is_add = 0;
+	  continue;
+	}
+      return clib_error_return (0, "unknown input `%U'",
+				format_unformat_error, line_input);
+    }
+
+  if (rx_sw_if_index == ~0)
+    return clib_error_return (0, "missing rx interface");
+  if (hw_if_index == ~0)
+    return clib_error_return (0, "missing hw interface");
+
+  u32 t_index = vnet_gtpu_get_tunnel_index (rx_sw_if_index);;
+  if (t_index == ~0)
+    return clib_error_return (0, "%U is not a gtpu tunnel",
+			      format_vnet_sw_if_index_name, vnm,
+			      rx_sw_if_index);
+
+  gtpu_main_t *gtm = &gtpu_main;
+  gtpu_tunnel_t *t = pool_elt_at_index (gtm->tunnels, t_index);
+
+  /* first support ipv4 hw offload */
+  if (!ip46_address_is_ip4 (&t->dst))
+    return clib_error_return (0, "currently only IPV4 tunnels are supported");
+
+  /* inner protocol should be IPv4 */
+  if (t->decap_next_index != GTPU_INPUT_NEXT_IP4_INPUT)
+    return clib_error_return (0,
+			      "currently only inner IPV4 protocol is supported");
+
+  vnet_hw_interface_t *hw_if = vnet_get_hw_interface (vnm, hw_if_index);
+  ip4_main_t *im = &ip4_main;
+  u32 rx_fib_index =
+    vec_elt (im->fib_index_by_sw_if_index, hw_if->sw_if_index);
+
+  if (t->encap_fib_index != rx_fib_index)
+    return clib_error_return (0, "interface/tunnel fib mismatch");
+
+  if (vnet_gtpu_add_del_rx_flow (hw_if_index, t_index, is_add))
+    return clib_error_return (0, "error %s flow",
+			      is_add ? "enabling" : "disabling");
+
+  return 0;
+}
+
+
+/* *INDENT-OFF* */
+VLIB_CLI_COMMAND (gtpu_offload_command, static) = {
+    .path = "set flow-offload gtpu",
+    .short_help =
+    "set flow-offload gtpu hw <inerface-name> rx <tunnel-name> [del]",
+    .function = gtpu_offload_command_fn,
+};
+/* *INDENT-ON* */
+
 clib_error_t *
 gtpu_init (vlib_main_t * vm)
 {
@@ -1101,11 +1216,14 @@ gtpu_init (vlib_main_t * vm)
   gtm->vnet_main = vnet_get_main ();
   gtm->vlib_main = vm;
 
+  vnet_flow_get_range (gtm->vnet_main, "gtpu", 1024 * 1024,
+		       &gtm->flow_id_start);
+
   /* initialize the ip6 hash */
   gtm->gtpu6_tunnel_by_key = hash_create_mem (0,
 					      sizeof (gtpu6_tunnel_key_t),
 					      sizeof (uword));
-  gtm->vtep6 = hash_create_mem (0, sizeof (ip6_address_t), sizeof (uword));
+  gtm->vtep_table = vtep_table_create ();
   gtm->mcast_shared = hash_create_mem (0,
 				       sizeof (ip46_address_t),
 				       sizeof (mcast_shared_t));
