@@ -195,19 +195,6 @@ sr_cli_localsid (char is_del, ip6_address_t * localsid_addr,
   switch (behavior)
     {
     case SR_BEHAVIOR_END:
-      if (usid_len)
-	{
-	  int usid_width;
-	  clib_memcpy (&ls->usid_block, localsid_addr,
-		       sizeof (ip6_address_t));
-
-	  usid_width = pref_length - usid_len;
-	  ip6_address_mask_from_width (&ls->usid_block_mask, usid_width);
-
-	  ls->usid_index = usid_width / 8;
-	  ls->usid_len = usid_len / 8;
-	  ls->usid_next_index = ls->usid_index + ls->usid_len;
-	}
       break;
     case SR_BEHAVIOR_END_UN:
     case SR_BEHAVIOR_END_UN_PERF:
@@ -371,10 +358,6 @@ sr_cli_localsid_command_fn (vlib_main_t * vm, unformat_input_t * input,
       else if (!address_set
 	       && unformat (input, "addr %U", unformat_ip6_address,
 			    &resulting_address))
-	address_set = 1;
-      else if (!address_set
-	       && unformat (input, "prefix %U/%u", unformat_ip6_address,
-			    &resulting_address, &prefix_len))
 	address_set = 1;
       else if (unformat (input, "fib-table %u", &fib_index));
       else if (vlan_index == (u32) ~ 0
@@ -860,47 +843,6 @@ end_srh_processing (vlib_node_runtime_t * node,
 
   if (PREDICT_TRUE (sr0 && sr0->type == ROUTING_HEADER_TYPE_SR))
     {
-      if (ls0->behavior == SR_BEHAVIOR_END
-	  && ls0->usid_index
-	  && ip6_address_is_equal_masked (&ip0->dst_address,
-					  &ls0->usid_block,
-					  &ls0->usid_block_mask))
-	{
-	  bool next_usid = false;
-	  u8 index;
-
-	  /* uSID */
-	  for (index = 0; index < ls0->usid_len; index++)
-	    {
-	      if (ip0->dst_address.as_u8[ls0->usid_next_index + index] != 0)
-		{
-		  next_usid = true;
-		  break;
-		}
-	    }
-
-	  if (next_usid)
-	    {
-	      u8 index, offset;
-	      index = ls0->usid_index;
-	      offset = ls0->usid_len;
-
-	      /* advance next usid */
-	      for (; index < 16 - offset; index++)
-		{
-		  ip0->dst_address.as_u8[index] =
-		    ip0->dst_address.as_u8[index + offset];
-		}
-
-	      for (; index < 16; index++)
-		{
-		  ip0->dst_address.as_u8[index] = 0;
-		}
-
-	      return;
-	    }
-	}
-
       if (sr0->segments_left == 1 && psp)
 	{
 	  u32 new_l0, sr_len;
