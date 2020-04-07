@@ -476,6 +476,24 @@ dpdk_lib_init (dpdk_main_t * dm)
 		}
 	      break;
 
+	      /* iAVF */
+	    case VNET_DPDK_PMD_IAVF:
+        xd->port_type = VNET_DPDK_PORT_TYPE_ETH_VF;
+	      xd->supported_flow_actions = VNET_FLOW_ACTION_MARK |
+		VNET_FLOW_ACTION_REDIRECT_TO_NODE |
+		VNET_FLOW_ACTION_REDIRECT_TO_QUEUE |
+		VNET_FLOW_ACTION_BUFFER_ADVANCE |
+		VNET_FLOW_ACTION_COUNT | VNET_FLOW_ACTION_DROP;
+
+	      if (dm->conf->no_tx_checksum_offload == 0)
+		{
+      xd->port_conf.txmode.offloads |= DEV_TX_OFFLOAD_TCP_CKSUM;
+      xd->port_conf.txmode.offloads |= DEV_TX_OFFLOAD_UDP_CKSUM;
+		  xd->flags |=
+		    DPDK_DEVICE_FLAG_TX_OFFLOAD |
+		    DPDK_DEVICE_FLAG_INTEL_PHDR_CKSUM;
+		}
+
 	    case VNET_DPDK_PMD_THUNDERX:
 	      xd->port_type = VNET_DPDK_PORT_TYPE_ETH_VF;
 
@@ -510,6 +528,7 @@ dpdk_lib_init (dpdk_main_t * dm)
 
 	      /* virtio */
 	    case VNET_DPDK_PMD_VIRTIO:
+	      xd->port_conf.rxmode.mq_mode = ETH_MQ_RX_NONE;
 	      xd->port_type = VNET_DPDK_PORT_TYPE_ETH_1G;
 	      xd->nb_rx_desc = DPDK_NB_RX_DESC_VIRTIO;
 	      xd->nb_tx_desc = DPDK_NB_TX_DESC_VIRTIO;

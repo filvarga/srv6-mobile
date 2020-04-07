@@ -50,6 +50,8 @@ session_mq_listen_handler (void *data)
   clib_memset (a, 0, sizeof (*a));
   a->sep.is_ip4 = mp->is_ip4;
   clib_memcpy_fast (&a->sep.ip, &mp->ip, sizeof (mp->ip));
+  if (mp->is_ip4)
+    ip46_address_mask_ip4 (&a->sep.ip);
   a->sep.port = mp->port;
   a->sep.fib_index = mp->vrf;
   a->sep.sw_if_index = ENDPOINT_INVALID_INDEX;
@@ -113,11 +115,17 @@ session_mq_connect_handler (void *data)
   a->sep.transport_proto = mp->proto;
   a->sep.peer.fib_index = mp->vrf;
   clib_memcpy_fast (&a->sep.peer.ip, &mp->lcl_ip, sizeof (mp->lcl_ip));
+  if (mp->is_ip4)
+    {
+      ip46_address_mask_ip4 (&a->sep.ip);
+      ip46_address_mask_ip4 (&a->sep.peer.ip);
+    }
+  a->sep.peer.port = mp->lcl_port;
   a->sep.peer.sw_if_index = ENDPOINT_INVALID_INDEX;
   a->sep_ext.parent_handle = mp->parent_handle;
   a->sep_ext.ckpair_index = mp->ckpair_index;
   a->sep_ext.crypto_engine = mp->crypto_engine;
-  a->sep_ext.flags = mp->flags;
+  a->sep_ext.transport_flags = mp->flags;
   if (mp->hostname_len)
     {
       vec_validate (a->sep_ext.hostname, mp->hostname_len - 1);
@@ -129,10 +137,9 @@ session_mq_connect_handler (void *data)
 
   if ((rv = vnet_connect (a)))
     {
-      clib_warning ("connect returned: %U", format_vnet_api_errno, rv);
+      clib_warning ("connect returned: %U", format_session_error, rv);
       app_wrk = application_get_worker (app, mp->wrk_index);
-      mq_send_session_connected_cb (app_wrk->wrk_index, mp->context, 0,
-				    /* is_fail */ 1);
+      mq_send_session_connected_cb (app_wrk->wrk_index, mp->context, 0, rv);
     }
 
   vec_free (a->sep_ext.hostname);
@@ -161,8 +168,7 @@ session_mq_connect_uri_handler (void *data)
     {
       clib_warning ("connect_uri returned: %d", rv);
       app_wrk = application_get_worker (app, 0 /* default wrk only */ );
-      mq_send_session_connected_cb (app_wrk->wrk_index, mp->context, 0,
-				    /* is_fail */ 1);
+      mq_send_session_connected_cb (app_wrk->wrk_index, mp->context, 0, rv);
     }
 }
 
@@ -866,7 +872,8 @@ session_tx_fifo_read_and_snd_i (session_worker_t * wrk,
     {
       u32 n_custom_tx;
       ctx->s->flags &= ~SESSION_F_CUSTOM_TX;
-      n_custom_tx = ctx->transport_vft->custom_tx (ctx->tc, max_burst);
+      ctx->sp.max_burst_size = max_burst;
+      n_custom_tx = ctx->transport_vft->custom_tx (ctx->tc, &ctx->sp);
       *n_tx_packets += n_custom_tx;
       if (PREDICT_FALSE
 	  (ctx->s->session_state >= SESSION_STATE_TRANSPORT_CLOSED))
@@ -1023,18 +1030,13 @@ session_tx_fifo_read_and_snd_i (session_worker_t * wrk,
   else
     session_tx_maybe_reschedule (wrk, ctx, elt);
 
-  if (!peek_data
-      && ctx->transport_vft->transport_options.tx_type == TRANSPORT_TX_DGRAM)
+  if (!peek_data)
     {
       /* Fix dgram pre header */
-      if (ctx->max_len_to_snd < ctx->max_dequeue)
+      if (ctx->transport_vft->transport_options.tx_type == TRANSPORT_TX_DGRAM
+	  && ctx->max_len_to_snd < ctx->max_dequeue)
 	svm_fifo_overwrite_head (ctx->s->tx_fifo, (u8 *) & ctx->hdr,
 				 sizeof (session_dgram_pre_hdr_t));
-      /* More data needs to be read */
-      else if (svm_fifo_max_dequeue_cons (ctx->s->tx_fifo) > 0)
-	if (svm_fifo_set_event (ctx->s->tx_fifo))
-	  session_evt_add_old (wrk, elt);
-
       if (svm_fifo_needs_deq_ntf (ctx->s->tx_fifo, ctx->max_len_to_snd))
 	session_dequeue_notify (ctx->s);
     }
@@ -1060,15 +1062,37 @@ session_tx_fifo_dequeue_and_snd (session_worker_t * wrk,
 int
 session_tx_fifo_dequeue_internal (session_worker_t * wrk,
 				  vlib_node_runtime_t * node,
-				  session_evt_elt_t * e, int *n_tx_packets)
+				  session_evt_elt_t * elt, int *n_tx_packets)
 {
+  transport_send_params_t *sp = &wrk->ctx.sp;
   session_t *s = wrk->ctx.s;
+  u32 n_packets;
 
   if (PREDICT_FALSE (s->session_state >= SESSION_STATE_TRANSPORT_CLOSED))
     return 0;
-  svm_fifo_unset_event (s->tx_fifo);
-  return transport_custom_tx (session_get_transport_proto (s), s,
-			      VLIB_FRAME_SIZE - *n_tx_packets);
+
+  /* Clear custom-tx flag used to request reschedule for tx */
+  s->flags &= ~SESSION_F_CUSTOM_TX;
+
+  sp->max_burst_size = clib_min (VLIB_FRAME_SIZE - *n_tx_packets,
+				 TRANSPORT_PACER_MAX_BURST_PKTS);
+
+  n_packets = transport_custom_tx (session_get_transport_proto (s), s, sp);
+  *n_tx_packets += n_packets;
+
+  if (s->flags & SESSION_F_CUSTOM_TX)
+    {
+      session_evt_add_old (wrk, elt);
+    }
+  else if (!(sp->flags & TRANSPORT_SND_F_DESCHED))
+    {
+      svm_fifo_unset_event (s->tx_fifo);
+      if (svm_fifo_max_dequeue_cons (s->tx_fifo))
+	if (svm_fifo_set_event (s->tx_fifo))
+	  session_evt_add_head_old (wrk, elt);
+    }
+
+  return n_packets;
 }
 
 always_inline session_t *
@@ -1564,32 +1588,39 @@ session_queue_exit (vlib_main_t * vm)
 VLIB_MAIN_LOOP_EXIT_FUNCTION (session_queue_exit);
 
 static uword
+session_queue_run_on_main (vlib_main_t * vm)
+{
+  vlib_node_runtime_t *node;
+
+  node = vlib_node_get_runtime (vm, session_queue_node.index);
+  return session_queue_node_fn (vm, node, 0);
+}
+
+static uword
 session_queue_process (vlib_main_t * vm, vlib_node_runtime_t * rt,
 		       vlib_frame_t * f)
 {
-  f64 now, timeout = 1.0;
   uword *event_data = 0;
+  f64 timeout = 1.0;
   uword event_type;
 
   while (1)
     {
       vlib_process_wait_for_event_or_clock (vm, timeout);
-      now = vlib_time_now (vm);
       event_type = vlib_process_get_events (vm, (uword **) & event_data);
 
       switch (event_type)
 	{
-	case SESSION_Q_PROCESS_FLUSH_FRAMES:
-	  /* Flush the frames by updating all transports times */
-	  transport_update_time (now, 0);
+	case SESSION_Q_PROCESS_RUN_ON_MAIN:
+	  /* Run session queue node on main thread */
+	  session_queue_run_on_main (vm);
 	  break;
 	case SESSION_Q_PROCESS_STOP:
 	  timeout = 100000.0;
 	  break;
 	case ~0:
-	  /* Timed out. Update time for all transports to trigger all
-	   * outstanding retransmits. */
-	  transport_update_time (now, 0);
+	  /* Timed out. Run on main to ensure all events are handled */
+	  session_queue_run_on_main (vm);
 	  break;
 	}
       vec_reset_length (event_data);

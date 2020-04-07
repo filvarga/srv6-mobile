@@ -282,6 +282,7 @@ slow_path_ed (snat_main_t * sm,
       if (!is_sm)
 	snat_free_outside_address_and_port (sm->addresses,
 					    thread_index, &key1);
+      b->error = node->errors[NAT_IN2OUT_ED_ERROR_CANNOT_CREATE_USER];
       return NAT_NEXT_DROP;
     }
 
@@ -293,6 +294,7 @@ slow_path_ed (snat_main_t * sm,
       if (!is_sm)
 	snat_free_outside_address_and_port (sm->addresses,
 					    thread_index, &key1);
+      b->error = node->errors[NAT_IN2OUT_ED_ERROR_MAX_USER_SESS_EXCEEDED];
       return NAT_NEXT_DROP;
     }
 
@@ -453,7 +455,8 @@ nat_not_translate_output_feature_fwd (snat_main_t * sm, ip4_header_t * ip,
 	{
 	  if (ip->protocol == IP_PROTOCOL_TCP)
 	    {
-	      if (nat44_set_tcp_session_state_i2o (sm, s, b, thread_index))
+	      if (nat44_set_tcp_session_state_i2o
+		  (sm, now, s, b, thread_index))
 		return 1;
 	    }
 	  /* Accounting */
@@ -712,6 +715,7 @@ nat44_ed_in2out_unknown_proto (snat_main_t * sm,
 				  thread_index);
       if (!u)
 	{
+	  b->error = node->errors[NAT_IN2OUT_ED_ERROR_CANNOT_CREATE_USER];
 	  nat_elog_warn ("create NAT user failed");
 	  return 0;
 	}
@@ -780,6 +784,7 @@ nat44_ed_in2out_unknown_proto (snat_main_t * sm,
       s = nat_ed_session_alloc (sm, u, thread_index, now);
       if (!s)
 	{
+	  b->error = node->errors[NAT_IN2OUT_ED_ERROR_MAX_USER_SESS_EXCEEDED];
 	  nat44_delete_user_with_no_session (sm, u, thread_index);
 	  nat_elog_warn ("create NAT session failed");
 	  return 0;
@@ -846,6 +851,7 @@ nat44_ed_in2out_fast_path_node_fn_inline (vlib_main_t * vm,
   snat_main_per_thread_data_t *tsm = &sm->per_thread_data[thread_index];
   u32 tcp_packets = 0, udp_packets = 0, icmp_packets = 0, other_packets =
     0, def_slow;
+  u32 tcp_closed_drops = 0;
 
   def_slow = is_output_feature ? NAT_NEXT_IN2OUT_ED_OUTPUT_SLOW_PATH :
     NAT_NEXT_IN2OUT_ED_SLOW_PATH;
@@ -949,6 +955,23 @@ nat44_ed_in2out_fast_path_node_fn_inline (vlib_main_t * vm,
 	    }
 	  s0 = pool_elt_at_index (tsm->sessions, value0.value);
 
+	  if (s0->tcp_close_timestamp)
+	    {
+	      if (now >= s0->tcp_close_timestamp)
+		{
+		  // session is closed, go slow path
+		  next0 = def_slow;
+		}
+	      else
+		{
+		  // session in transitory timeout, drop
+		  ++tcp_closed_drops;
+		  b0->error = node->errors[NAT_IN2OUT_ED_ERROR_TCP_CLOSED];
+		  next0 = NAT_NEXT_DROP;
+		}
+	      goto trace0;
+	    }
+
 	  // drop if session expired
 	  u64 sess_timeout_time;
 	  sess_timeout_time = s0->last_heard +
@@ -959,10 +982,10 @@ nat44_ed_in2out_fast_path_node_fn_inline (vlib_main_t * vm,
 	      nat_free_session_data (sm, s0, thread_index, 0);
 	      nat44_delete_session (sm, s0, thread_index);
 
+	      b0->error = node->errors[NAT_IN2OUT_ED_ERROR_SESS_EXPIRED];
 	      next0 = NAT_NEXT_DROP;
 	      goto trace0;
 	    }
-	  //
 
 	  b0->flags |= VNET_BUFFER_F_IS_NATED;
 
@@ -1012,7 +1035,8 @@ nat44_ed_in2out_fast_path_node_fn_inline (vlib_main_t * vm,
 		  tcp0->checksum = ip_csum_fold (sum0);
 		}
 	      tcp_packets++;
-	      if (nat44_set_tcp_session_state_i2o (sm, s0, b0, thread_index))
+	      if (nat44_set_tcp_session_state_i2o
+		  (sm, now, s0, b0, thread_index))
 		goto trace0;
 	    }
 	  else if (!vnet_buffer (b0)->ip.reass.is_non_first_fragment
@@ -1211,9 +1235,20 @@ nat44_ed_in2out_slow_path_node_fn_inline (vlib_main_t * vm,
 		      vnet_buffer (b0)->ip.reass.l4_src_port,
 		      vnet_buffer (b0)->ip.reass.l4_dst_port);
 
-	  if (clib_bihash_search_16_8 (&tsm->in2out_ed, &kv0, &value0))
+	  if (!clib_bihash_search_16_8 (&tsm->in2out_ed, &kv0, &value0))
 	    {
+	      s0 = pool_elt_at_index (tsm->sessions, value0.value);
 
+	      if (s0->tcp_close_timestamp && now >= s0->tcp_close_timestamp)
+		{
+		  nat_free_session_data (sm, s0, thread_index, 0);
+		  nat44_delete_session (sm, s0, thread_index);
+		  s0 = NULL;
+		}
+	    }
+
+	  if (!s0)
+	    {
 	      if (is_output_feature)
 		{
 		  if (PREDICT_FALSE
@@ -1255,11 +1290,6 @@ nat44_ed_in2out_slow_path_node_fn_inline (vlib_main_t * vm,
 		goto trace0;
 
 	    }
-	  else
-	    {
-	      s0 = pool_elt_at_index (tsm->sessions, value0.value);
-	    }
-
 
 	  b0->flags |= VNET_BUFFER_F_IS_NATED;
 
@@ -1309,7 +1339,8 @@ nat44_ed_in2out_slow_path_node_fn_inline (vlib_main_t * vm,
 		  tcp0->checksum = ip_csum_fold (sum0);
 		}
 	      tcp_packets++;
-	      if (nat44_set_tcp_session_state_i2o (sm, s0, b0, thread_index))
+	      if (nat44_set_tcp_session_state_i2o
+		  (sm, now, s0, b0, thread_index))
 		goto trace0;
 	    }
 	  else if (!vnet_buffer (b0)->ip.reass.is_non_first_fragment

@@ -89,7 +89,7 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
   while (n_left_from > 0)
     {
-      u32 bi0, fib_index0;
+      u32 bi0, fib_index0, data_len;
       vlib_buffer_t *b0;
       u32 error0 = UDP_ERROR_ENQUEUED;
       udp_header_t *udp0;
@@ -125,7 +125,8 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 				     udp0->src_port, TRANSPORT_PROTO_UDP);
 	  lcl_addr = &ip40->dst_address;
 	  rmt_addr = &ip40->src_address;
-
+	  data_len = clib_net_to_host_u16 (ip40->length);
+	  data_len -= sizeof (ip4_header_t) + sizeof (udp_header_t);
 	}
       else
 	{
@@ -135,6 +136,8 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 				     udp0->src_port, TRANSPORT_PROTO_UDP);
 	  lcl_addr = &ip60->dst_address;
 	  rmt_addr = &ip60->src_address;
+	  data_len = clib_net_to_host_u16 (ip60->payload_length);
+	  data_len -= sizeof (udp_header_t);
 	}
 
       if (PREDICT_FALSE (!s0))
@@ -205,6 +208,7 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      child0->c_rmt_port = udp0->src_port;
 	      child0->c_is_ip4 = is_ip4;
 	      child0->c_fib_index = tc0->fib_index;
+	      child0->mss = uc0->mss;
 	      child0->flags |= UDP_CONN_F_CONNECTED;
 
 	      if (session_stream_accept (&child0->connection,
@@ -217,6 +221,8 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      s0->session_state = SESSION_STATE_READY;
 	      tc0 = &child0->connection;
 	      uc0 = udp_get_connection_from_transport (tc0);
+	      udp_connection_share_port (clib_net_to_host_u16
+					 (uc0->c_lcl_port), uc0->c_is_ip4);
 	      error0 = UDP_ERROR_LISTENER;
 	    }
 	}
@@ -228,12 +234,19 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 
       if (svm_fifo_max_enqueue_prod (s0->rx_fifo)
-	  < b0->current_length + sizeof (session_dgram_hdr_t))
+	  < data_len + sizeof (session_dgram_hdr_t))
 	{
 	  error0 = UDP_ERROR_FIFO_FULL;
 	  goto trace0;
 	}
-      hdr0.data_length = b0->current_length;
+
+      hdr0.data_length = data_len;
+      if (PREDICT_TRUE (!(b0->flags & VLIB_BUFFER_NEXT_PRESENT)))
+	b0->current_length = data_len;
+      else
+	b0->total_length_not_including_first_buffer = data_len
+	  - b0->current_length;
+
       hdr0.data_offset = 0;
       ip_set (&hdr0.lcl_ip, lcl_addr, is_ip4);
       ip_set (&hdr0.rmt_ip, rmt_addr, is_ip4);
@@ -286,7 +299,6 @@ udp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   udp_input_inc_counter (vm, is_ip4, UDP_ERROR_EVENT_FIFO_FULL, errors);
   return frame->n_vectors;
 }
-
 
 static uword
 udp4_input (vlib_main_t * vm, vlib_node_runtime_t * node,

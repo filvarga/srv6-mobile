@@ -478,6 +478,7 @@ esp_decrypt_inline (vlib_main_t * vm,
 			   * the length (second buffer contains only ICV) */
 			  integ_ops = &ptd->integ_ops;
 			  crypto_ops = &ptd->crypto_ops;
+			  len = b[0]->current_length;
 			  goto out;
 			}
 		    }

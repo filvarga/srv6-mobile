@@ -33,6 +33,7 @@ from scapy.all import bind_layers, Packet, ByteEnumField, ShortField, \
 from ipaddress import IPv6Network
 from util import ppc, ppp
 from socket import inet_pton, AF_INET
+from vpp_acl import AclRule, VppAcl, VppAclInterface
 
 
 # NAT HA protocol event data
@@ -1155,12 +1156,8 @@ class MethodHolder(VppTestCase):
         self.port_in = random.randint(1025, 65535)
 
         # in2out
-        pkts = self.create_stream_frag(self.pg0,
-                                       self.pg1.remote_ip4,
-                                       self.port_in,
-                                       20,
-                                       data,
-                                       proto)
+        pkts = self.create_stream_frag(self.pg0, self.pg1.remote_ip4,
+                                       self.port_in, 20, data, proto)
         self.pg0.add_stream(pkts)
         self.pg_enable_capture(self.pg_interfaces)
         self.pg_start()
@@ -1197,13 +1194,8 @@ class MethodHolder(VppTestCase):
         else:
             sport = p[layer].id
             dport = 0
-        pkts = self.create_stream_frag(self.pg1,
-                                       dst_addr,
-                                       sport,
-                                       dport,
-                                       data,
-                                       proto,
-                                       echo_reply=True)
+        pkts = self.create_stream_frag(self.pg1, dst_addr, sport, dport, data,
+                                       proto, echo_reply=True)
         self.pg1.add_stream(pkts)
         self.pg_enable_capture(self.pg_interfaces)
         self.pg_start()
@@ -1229,12 +1221,9 @@ class MethodHolder(VppTestCase):
 
         for i in range(2):
             # out2in
-            pkts = self.create_stream_frag(self.pg0,
-                                           self.server_out_addr,
-                                           self.port_in,
-                                           self.server_out_port,
-                                           data,
-                                           proto)
+            pkts = self.create_stream_frag(self.pg0, self.server_out_addr,
+                                           self.port_in, self.server_out_port,
+                                           data, proto)
             self.pg0.add_stream(pkts)
             self.pg_enable_capture(self.pg_interfaces)
             self.pg_start()
@@ -1251,19 +1240,12 @@ class MethodHolder(VppTestCase):
 
             # in2out
             if proto != IP_PROTOS.icmp:
-                pkts = self.create_stream_frag(self.pg1,
-                                               self.pg0.remote_ip4,
+                pkts = self.create_stream_frag(self.pg1, self.pg0.remote_ip4,
                                                self.server_in_port,
-                                               p[layer].sport,
-                                               data,
-                                               proto)
+                                               p[layer].sport, data, proto)
             else:
-                pkts = self.create_stream_frag(self.pg1,
-                                               self.pg0.remote_ip4,
-                                               p[layer].id,
-                                               0,
-                                               data,
-                                               proto,
+                pkts = self.create_stream_frag(self.pg1, self.pg0.remote_ip4,
+                                               p[layer].id, 0, data, proto,
                                                echo_reply=True)
             self.pg1.add_stream(pkts)
             self.pg_enable_capture(self.pg_interfaces)
@@ -1319,12 +1301,8 @@ class MethodHolder(VppTestCase):
 
         for i in range(2):
             # in2out
-            pkts = self.create_stream_frag(self.pg0,
-                                           self.pg1.remote_ip4,
-                                           self.port_in,
-                                           20,
-                                           data,
-                                           proto)
+            pkts = self.create_stream_frag(self.pg0, self.pg1.remote_ip4,
+                                           self.port_in, 20, data, proto)
             pkts.reverse()
             self.pg0.add_stream(pkts)
             self.pg_enable_capture(self.pg_interfaces)
@@ -1362,13 +1340,8 @@ class MethodHolder(VppTestCase):
             else:
                 sport = p[layer].id
                 dport = 0
-            pkts = self.create_stream_frag(self.pg1,
-                                           dst_addr,
-                                           sport,
-                                           dport,
-                                           data,
-                                           proto,
-                                           echo_reply=True)
+            pkts = self.create_stream_frag(self.pg1, dst_addr, sport, dport,
+                                           data, proto, echo_reply=True)
             pkts.reverse()
             self.pg1.add_stream(pkts)
             self.pg_enable_capture(self.pg_interfaces)
@@ -1395,12 +1368,9 @@ class MethodHolder(VppTestCase):
 
         for i in range(2):
             # out2in
-            pkts = self.create_stream_frag(self.pg0,
-                                           self.server_out_addr,
-                                           self.port_in,
-                                           self.server_out_port,
-                                           data,
-                                           proto)
+            pkts = self.create_stream_frag(self.pg0, self.server_out_addr,
+                                           self.port_in, self.server_out_port,
+                                           data, proto)
             pkts.reverse()
             self.pg0.add_stream(pkts)
             self.pg_enable_capture(self.pg_interfaces)
@@ -1419,19 +1389,12 @@ class MethodHolder(VppTestCase):
 
             # in2out
             if proto != IP_PROTOS.icmp:
-                pkts = self.create_stream_frag(self.pg1,
-                                               self.pg0.remote_ip4,
+                pkts = self.create_stream_frag(self.pg1, self.pg0.remote_ip4,
                                                self.server_in_port,
-                                               p[layer].sport,
-                                               data,
-                                               proto)
+                                               p[layer].sport, data, proto)
             else:
-                pkts = self.create_stream_frag(self.pg1,
-                                               self.pg0.remote_ip4,
-                                               p[layer].id,
-                                               0,
-                                               data,
-                                               proto,
+                pkts = self.create_stream_frag(self.pg1, self.pg0.remote_ip4,
+                                               p[layer].id, 0, data, proto,
                                                echo_reply=True)
             pkts.reverse()
             self.pg1.add_stream(pkts)
@@ -4425,6 +4388,11 @@ class TestNAT44EndpointDependent(MethodHolder):
         cls.pg8.config_ip4()
         cls.pg8.resolve_arp()
 
+    def setUp(self):
+        super(TestNAT44EndpointDependent, self).setUp()
+        self.vapi.nat_set_timeouts(
+            udp=300, tcp_established=7440, tcp_transitory=240, icmp=60)
+
     @classmethod
     def tearDownClass(cls):
         super(TestNAT44EndpointDependent, cls).tearDownClass()
@@ -5979,6 +5947,9 @@ class TestNAT44EndpointDependent(MethodHolder):
         sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         start_sessnum = len(sessions)
 
+        self.vapi.nat_set_timeouts(udp=300, tcp_established=7440,
+                                   tcp_transitory=2, icmp=5)
+
         self.initiate_tcp_session(self.pg0, self.pg1)
 
         # FIN packet in -> out
@@ -6022,8 +5993,55 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.pg_start()
         self.pg1.get_capture(1)
 
-        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4,
-                                                     0)
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
+        self.assertEqual(len(sessions) - start_sessnum, 1)
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        out2in_drops = stats[0]
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        in2out_drops = stats[0]
+
+        # extra FIN packet out -> in - this should be dropped
+        p = (Ether(src=self.pg1.remote_mac, dst=self.pg1.local_mac) /
+             IP(src=self.pg1.remote_ip4, dst=self.nat_addr) /
+             TCP(sport=self.tcp_external_port, dport=self.tcp_port_out,
+                 flags="FA", seq=300, ack=101))
+
+        self.pg1.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg0.assert_nothing_captured()
+
+        # extra ACK packet in -> out - this should be dropped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - out2in_drops, 1)
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - in2out_drops, 1)
+
+        self.sleep(3)
+        # extra ACK packet in -> out - this will cause session to be wiped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         self.assertEqual(len(sessions) - start_sessnum, 0)
 
     def test_tcp_session_close_out(self):
@@ -6047,6 +6065,9 @@ class TestNAT44EndpointDependent(MethodHolder):
 
         sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         start_sessnum = len(sessions)
+
+        self.vapi.nat_set_timeouts(udp=300, tcp_established=7440,
+                                   tcp_transitory=2, icmp=5)
 
         self.initiate_tcp_session(self.pg0, self.pg1)
 
@@ -6081,8 +6102,55 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.pg_start()
         self.pg0.get_capture(1)
 
-        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4,
-                                                     0)
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
+        self.assertEqual(len(sessions) - start_sessnum, 1)
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        out2in_drops = stats[0]
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        in2out_drops = stats[0]
+
+        # extra FIN packet out -> in - this should be dropped
+        p = (Ether(src=self.pg1.remote_mac, dst=self.pg1.local_mac) /
+             IP(src=self.pg1.remote_ip4, dst=self.nat_addr) /
+             TCP(sport=self.tcp_external_port, dport=self.tcp_port_out,
+                 flags="FA", seq=300, ack=101))
+
+        self.pg1.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg0.assert_nothing_captured()
+
+        # extra ACK packet in -> out - this should be dropped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - out2in_drops, 1)
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - in2out_drops, 1)
+
+        self.sleep(3)
+        # extra ACK packet in -> out - this will cause session to be wiped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         self.assertEqual(len(sessions) - start_sessnum, 0)
 
     def test_tcp_session_close_simultaneous(self):
@@ -6106,6 +6174,9 @@ class TestNAT44EndpointDependent(MethodHolder):
 
         sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         start_sessnum = len(sessions)
+
+        self.vapi.nat_set_timeouts(udp=300, tcp_established=7440,
+                                   tcp_transitory=2, icmp=5)
 
         self.initiate_tcp_session(self.pg0, self.pg1)
 
@@ -6149,8 +6220,55 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.pg_start()
         self.pg0.get_capture(1)
 
-        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4,
-                                                     0)
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
+        self.assertEqual(len(sessions) - start_sessnum, 1)
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        out2in_drops = stats[0]
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        in2out_drops = stats[0]
+
+        # extra FIN packet out -> in - this should be dropped
+        p = (Ether(src=self.pg1.remote_mac, dst=self.pg1.local_mac) /
+             IP(src=self.pg1.remote_ip4, dst=self.nat_addr) /
+             TCP(sport=self.tcp_external_port, dport=self.tcp_port_out,
+                 flags="FA", seq=300, ack=101))
+
+        self.pg1.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg0.assert_nothing_captured()
+
+        # extra ACK packet in -> out - this should be dropped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-out2in/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - out2in_drops, 1)
+        stats = self.statistics.get_counter(
+            '/err/nat44-ed-in2out/drops due to TCP in transitory timeout')
+        self.assertEqual(stats[0] - in2out_drops, 1)
+
+        self.sleep(3)
+        # extra ACK packet in -> out - this will cause session to be wiped
+        p = (Ether(src=self.pg0.remote_mac, dst=self.pg0.local_mac) /
+             IP(src=self.pg0.remote_ip4, dst=self.pg1.remote_ip4) /
+             TCP(sport=self.tcp_port_in, dport=self.tcp_external_port,
+                 flags="A", seq=101, ack=301))
+        self.pg0.add_stream(p)
+        self.pg_enable_capture(self.pg_interfaces)
+        self.pg_start()
+        self.pg1.assert_nothing_captured()
+        sessions = self.vapi.nat44_user_session_dump(self.pg0.remote_ip4, 0)
         self.assertEqual(len(sessions) - start_sessnum, 0)
 
     def test_one_armed_nat44_static(self):
@@ -6408,53 +6526,24 @@ class TestNAT44EndpointDependent(MethodHolder):
         self.verify_capture_in(capture, self.pg0)
 
         # Create an ACL blocking everything
-        out2in_deny_rule = {
-            'is_permit': 0,
-            'is_ipv6': 0,
-            'src_ip_addr': inet_pton(AF_INET, "0.0.0.0"),
-            'src_ip_prefix_len': 0,
-            'dst_ip_addr':  inet_pton(AF_INET, "0.0.0.0"),
-            'dst_ip_prefix_len': 0,
-            'srcport_or_icmptype_first': 0,
-            'srcport_or_icmptype_last': 65535,
-            'dstport_or_icmpcode_first': 0,
-            'dstport_or_icmpcode_last': 65535,
-            'proto': 0,
-        }
-        out2in_rules = [out2in_deny_rule]
-        res = self.vapi.acl_add_replace(0xffffffff, out2in_rules)
-        self.assertEqual(res.retval, 0, "error adding out2in ACL")
-        out2in_acl = res.acl_index
-
-        # apply as input acl on interface and confirm it blocks everything
-        self.vapi.acl_interface_set_acl_list(sw_if_index=self.pg1.sw_if_index,
-                                             n_input=1,
-                                             acls=[out2in_acl])
-        self.send_and_assert_no_replies(self.pg1, pkts_out2in)
+        out2in_deny_rule = AclRule(is_permit=0)
+        out2in_acl = VppAcl(self, rules=[out2in_deny_rule])
+        out2in_acl.add_vpp_config()
 
         # create an ACL to permit/reflect everything
-        in2out_reflect_rule = {
-            'is_permit': 2,
-            'is_ipv6': 0,
-            'src_ip_addr': inet_pton(AF_INET, "0.0.0.0"),
-            'src_ip_prefix_len': 0,
-            'dst_ip_addr':  inet_pton(AF_INET, "0.0.0.0"),
-            'dst_ip_prefix_len': 0,
-            'srcport_or_icmptype_first': 0,
-            'srcport_or_icmptype_last': 65535,
-            'dstport_or_icmpcode_first': 0,
-            'dstport_or_icmpcode_last': 65535,
-            'proto': 0,
-        }
-        in2out_rules = [in2out_reflect_rule]
-        res = self.vapi.acl_add_replace(0xffffffff, in2out_rules)
-        self.assertEqual(res.retval, 0, "error adding in2out ACL")
-        in2out_acl = res.acl_index
+        in2out_reflect_rule = AclRule(is_permit=2)
+        in2out_acl = VppAcl(self, rules=[in2out_reflect_rule])
+        in2out_acl.add_vpp_config()
+
+        # apply as input acl on interface and confirm it blocks everything
+        acl_if = VppAclInterface(self, sw_if_index=self.pg1.sw_if_index,
+                                 n_input=1, acls=[out2in_acl])
+        acl_if.add_vpp_config()
+        self.send_and_assert_no_replies(self.pg1, pkts_out2in)
 
         # apply output acl
-        self.vapi.acl_interface_set_acl_list(sw_if_index=self.pg1.sw_if_index,
-                                             n_input=1,
-                                             acls=[out2in_acl, in2out_acl])
+        acl_if.acls = [out2in_acl, in2out_acl]
+        acl_if.add_vpp_config()
         # send in2out to generate ACL state (NAT state was created earlier)
         capture = self.send_and_expect(self.pg0, pkts_in2out, self.pg1,
                                        len(pkts_in2out))
@@ -6469,15 +6558,6 @@ class TestNAT44EndpointDependent(MethodHolder):
                                        len(pkts_out2in))
         self.verify_capture_in(capture, self.pg0)
         self.logger.info(self.vapi.cli("show trace"))
-
-        # Clean up
-        # Remove ACLs from interface
-        self.vapi.acl_interface_set_acl_list(sw_if_index=self.pg1.sw_if_index,
-                                             n_input=0,
-                                             acls=[])
-        # delete ACLs
-        self.vapi.acl_del(acl_index=out2in_acl, expected_retval=0)
-        self.vapi.acl_del(acl_index=in2out_acl, expected_retval=0)
 
     def test_multiple_vrf(self):
         """ Multiple VRF setup """

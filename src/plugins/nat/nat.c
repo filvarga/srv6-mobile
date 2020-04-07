@@ -490,7 +490,11 @@ nat_user_get_or_create (snat_main_t * sm, ip4_address_t * addr, u32 fib_index,
 
       /* add user */
       if (clib_bihash_add_del_8_8 (&tsm->user_hash, &kv, 1))
-	nat_elog_warn ("user_hash keay add failed");
+	{
+	  nat_elog_warn ("user_hash key add failed");
+	  nat44_delete_user_with_no_session (sm, u, thread_index);
+	  return NULL;
+	}
 
       vlib_set_simple_counter (&sm->total_users, thread_index, 0,
 			       pool_elts (tsm->users));
@@ -615,7 +619,8 @@ nat_ed_session_alloc (snat_main_t * sm, snat_user_t * u, u32 thread_index,
   s = pool_elt_at_index (tsm->sessions, oldest_elt->value);
 
   sess_timeout_time = s->last_heard + (f64) nat44_session_get_timeout (sm, s);
-  if (now >= sess_timeout_time)
+  if (now >= sess_timeout_time ||
+      (s->tcp_close_timestamp && now >= s->tcp_close_timestamp))
     {
       // reuse old session
       clib_dlist_addtail (tsm->list_pool,
