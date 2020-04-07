@@ -43,7 +43,9 @@
 #define SR_BEHAVIOR_DX4 7
 #define SR_BEHAVIOR_DT6 8
 #define SR_BEHAVIOR_DT4 9
-#define SR_BEHAVIOR_LAST 10	/* Must always be the last one */
+#define SR_BEHAVIOR_END_UN_PERF 10
+#define SR_BEHAVIOR_END_UN 11
+#define SR_BEHAVIOR_LAST 12	/* Must always be the last one */
 
 #define SR_STEER_L2 2
 #define SR_STEER_IPV4 4
@@ -143,8 +145,10 @@ typedef struct
   ip6_address_t usid_block_mask;
 
   u8 usid_index;
-  u8 usid_next_index;
   u8 usid_len;
+
+  u8 usid_next_index;
+  u8 usid_next_len;
 
   void *plugin_mem;				/**< Memory to be used by the plugin callback functions */
 } ip6_sr_localsid_t;
@@ -237,6 +241,13 @@ typedef struct
   sr_steering_key_t classify;		/**< Traffic classification */
   u32 sr_policy;					/**< SR Policy index */
 } ip6_sr_steering_policy_t;
+
+typedef struct
+{
+  ip6_address_t address;
+  u16 pref_len;
+  u8 padding[2];
+} sr_localsid_key_t;
 
 /**
  * @brief Segment Routing main datastructure

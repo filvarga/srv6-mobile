@@ -75,6 +75,7 @@ set(VPPINFRA_SRCS
   time.c
   time_range.c
   timing_wheel.c
+  tw_timer_2t_2w_512sl.c
   tw_timer_16t_1w_2048sl.c
   tw_timer_16t_2w_512sl.c
   tw_timer_1t_3w_1024sl_ov.c

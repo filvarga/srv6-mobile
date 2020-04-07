@@ -431,8 +431,12 @@ typedef struct
   u32 current_remote_id_mask;
   u32 old_remote_id;
   u8 old_remote_id_present;
+  u8 init_response_received;
 
   ikev2_child_sa_t *childs;
+
+  u8 liveness_retries;
+  f64 liveness_period_check;
 } ikev2_sa_t;
 
 
@@ -486,6 +490,12 @@ typedef struct
 
   /* custom ipsec-over-udp ports managed by ike */
   uword *udp_ports;
+
+  /* how often a liveness check will be performed */
+  u32 liveness_period;
+
+  /* max number of retries before considering peer dead */
+  u32 liveness_max_retries;
 } ikev2_main_t;
 
 extern ikev2_main_t ikev2_main;

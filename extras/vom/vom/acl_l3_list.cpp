@@ -15,6 +15,7 @@
 
 #include "vom/acl_l3_list.hpp"
 #include "vom/acl_list_cmds.hpp"
+#include "vom/api_types.hpp"
 #include "vom/logger.hpp"
 #include "vom/singular_db_funcs.hpp"
 
@@ -42,28 +43,24 @@ l3_list::event_handler::event_handler()
 l3_list::l3_list(const key_t& key)
   : m_hdl(handle_t::INVALID)
   , m_key(key)
-{
-}
+{}
 
 l3_list::l3_list(const handle_t& hdl, const key_t& key)
   : m_hdl(hdl)
   , m_key(key)
-{
-}
+{}
 
 l3_list::l3_list(const key_t& key, const rules_t& rules)
   : m_hdl(handle_t::INVALID)
   , m_key(key)
   , m_rules(rules)
-{
-}
+{}
 
 l3_list::l3_list(const l3_list& o)
   : m_hdl(o.m_hdl)
   , m_key(o.m_key)
   , m_rules(o.m_rules)
-{
-}
+{}
 
 l3_list::~l3_list()
 {
@@ -199,12 +196,8 @@ l3_list::event_handler::handle_populate(const client_db::key_t& key)
     l3_list acl(hdl, std::string(reinterpret_cast<const char*>(payload.tag)));
 
     for (unsigned int ii = 0; ii < payload.count; ii++) {
-      const route::prefix_t src(payload.r[ii].is_ipv6,
-                                payload.r[ii].src_ip_addr,
-                                payload.r[ii].src_ip_prefix_len);
-      const route::prefix_t dst(payload.r[ii].is_ipv6,
-                                payload.r[ii].dst_ip_addr,
-                                payload.r[ii].dst_ip_prefix_len);
+      const route::prefix_t src = from_api(payload.r[ii].src_prefix);
+      const route::prefix_t dst = from_api(payload.r[ii].dst_prefix);
       l3_rule rule(ii, action_t::from_int(payload.r[ii].is_permit), src, dst);
 
       rule.set_proto(payload.r[ii].proto);

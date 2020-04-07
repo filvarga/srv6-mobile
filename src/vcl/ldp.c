@@ -448,24 +448,20 @@ writev (int fd, const struct iovec * iov, int iovcnt)
   vlsh = ldp_fd_to_vlsh (fd);
   if (vlsh != VLS_INVALID_HANDLE)
     {
-      do
+      for (i = 0; i < iovcnt; ++i)
 	{
-	  for (i = 0; i < iovcnt; ++i)
+	  rv = vls_write_msg (vlsh, iov[i].iov_base, iov[i].iov_len);
+	  if (rv < 0)
+	    break;
+	  else
 	    {
-	      rv = vls_write_msg (vlsh, iov[i].iov_base, iov[i].iov_len);
-	      if (rv < 0)
+	      total += rv;
+	      if (rv < iov[i].iov_len)
 		break;
-	      else
-		{
-		  total += rv;
-		  if (rv < iov[i].iov_len)
-		    break;
-		}
 	    }
 	}
-      while ((rv >= 0) && (total == 0));
 
-      if (rv < 0)
+      if (rv < 0 && total == 0)
 	{
 	  errno = -rv;
 	  size = -1;
@@ -1506,7 +1502,10 @@ recv (int fd, void *buf, size_t n, int flags)
     {
       size = vls_recvfrom (vlsh, buf, n, flags, NULL);
       if (size < 0)
-	errno = -size;
+	{
+	  errno = -size;
+	  size = -1;
+	}
     }
   else
     {
@@ -1815,8 +1814,8 @@ getsockopt (int fd, int level, int optname,
 		rv = -EFAULT;
 	      break;
 	    case TCP_CONGESTION:
-	      strcpy (optval, "cubic");
 	      *optlen = strlen ("cubic");
+	      strncpy (optval, "cubic", *optlen + 1);
 	      rv = 0;
 	      break;
 	    default:
