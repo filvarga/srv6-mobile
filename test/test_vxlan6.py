@@ -8,7 +8,8 @@ from template_bd import BridgeDomain
 from scapy.layers.l2 import Ether
 from scapy.layers.inet6 import IPv6, UDP
 from scapy.layers.vxlan import VXLAN
-from scapy.utils import atol
+
+import util
 from vpp_ip_route import VppIpRoute, VppRoutePath
 from vpp_vxlan_tunnel import VppVxlanTunnel
 from vpp_ip import INVALID_INDEX
@@ -125,16 +126,15 @@ class TestVxlan6(BridgeDomain, VppTestCase):
             for pg in cls.pg_interfaces:
                 pg.admin_up()
 
-            # Configure IPv4 addresses on VPP pg0.
+            # Configure IPv6 addresses on VPP pg0.
             cls.pg0.config_ip6()
 
             # Resolve MAC address for VPP's IP address on pg0.
             cls.pg0.resolve_ndp()
 
+            # Our Multicast address
             cls.mcast_ip6 = 'ff0e::1'
-            cls.mcast_ip6n = socket.inet_pton(socket.AF_INET6, cls.mcast_ip6)
-            cls.mcast_mac = "33:33:00:00:00:%02x" % (1)
-
+            cls.mcast_mac = util.mcast_ip_to_mac(cls.mcast_ip6)
         except Exception:
             super(TestVxlan6, cls).tearDownClass()
             raise
@@ -147,9 +147,11 @@ class TestVxlan6(BridgeDomain, VppTestCase):
         super(TestVxlan6, self).setUp()
         # Create VXLAN VTEP on VPP pg0, and put vxlan_tunnel0 and pg1
         #  into BD.
+        self.single_tunnel_vni = 0x12345
         self.single_tunnel_bd = 1
         r = VppVxlanTunnel(self, src=self.pg0.local_ip6,
-                           dst=self.pg0.remote_ip6, vni=self.single_tunnel_bd)
+                           dst=self.pg0.remote_ip6,
+                           vni=self.single_tunnel_vni)
         r.add_vpp_config()
         self.vapi.sw_interface_set_l2_bridge(rx_sw_if_index=r.sw_if_index,
                                              bd_id=self.single_tunnel_bd)

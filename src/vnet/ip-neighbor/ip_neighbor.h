@@ -41,6 +41,8 @@ extern int ip_neighbor_del (const ip46_address_t * ip,
 extern int ip_neighbor_config (ip46_type_t type, u32 limit, u32 age,
 			       bool recycle);
 
+extern void ip_neighbor_del_all (ip46_type_t type, u32 sw_if_index);
+
 typedef walk_rc_t (*ip_neighbor_walk_cb_t) (index_t ipni, void *ctx);
 extern void ip_neighbor_walk (ip46_type_t type,
 			      u32 sw_if_index,
@@ -61,6 +63,9 @@ extern void ip_neighbor_advertise (vlib_main_t * vm,
 extern void ip_neighbor_probe (const ip_adjacency_t * adj);
 extern void ip_neighbor_probe_dst (const ip_adjacency_t * adj,
 				   const ip46_address_t * ip);
+
+extern void ip_neighbor_mark (ip46_type_t type);
+extern void ip_neighbor_sweep (ip46_type_t type);
 
 /**
  * From the watcher to the API to publish a new neighbor

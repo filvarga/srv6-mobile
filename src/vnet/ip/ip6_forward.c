@@ -295,7 +295,7 @@ ip6_add_del_interface_address (vlib_main_t * vm,
   vnet_main_t *vnm = vnet_get_main ();
   ip6_main_t *im = &ip6_main;
   ip_lookup_main_t *lm = &im->lookup_main;
-  clib_error_t *error;
+  clib_error_t *error = NULL;
   u32 if_address_index;
   ip6_address_fib_t ip6_af, *addr_fib = 0;
   const ip6_address_t *ll_addr;
@@ -320,7 +320,7 @@ ip6_add_del_interface_address (vlib_main_t * vm,
 	{
 	  int rv;
 
-	  rv = ip6_set_link_local_address (sw_if_index, address);
+	  rv = ip6_link_set_local_address (sw_if_index, address);
 
 	  if (rv)
 	    {
@@ -342,6 +342,8 @@ ip6_add_del_interface_address (vlib_main_t * vm,
 	      return clib_error_create ("address not found");
 	    }
 	}
+
+      return (NULL);
     }
 
   vec_validate (im->fib_index_by_sw_if_index, sw_if_index);
@@ -371,6 +373,7 @@ ip6_add_del_interface_address (vlib_main_t * vm,
                    ip6_address_t * x =
                      ip_interface_address_get_address
                      (&im->lookup_main, ia);
+
                    if (ip6_destination_matches_route
                        (im, address, x, ia->address_length) ||
                        ip6_destination_matches_route (im,
@@ -384,10 +387,17 @@ ip6_add_del_interface_address (vlib_main_t * vm,
 			   !ip6_address_is_equal (x, address))
 		         continue;
 
+                       if (ia->flags & IP_INTERFACE_ADDRESS_FLAG_STALE)
+                         /* if the address we're comparing against is stale
+                          * then the CP has not added this one back yet, maybe
+                          * it never will, so we have to assume it won't and
+                          * ignore it. if it does add it back, then it will fail
+                          * because this one is now present */
+                         continue;
+
 		       /* error if the length or intf was different */
                        vnm->api_errno = VNET_API_ERROR_DUPLICATE_IF_ADDRESS;
-                       return
-                         clib_error_create
+                       error =  clib_error_create
                          ("failed to add %U which conflicts with %U for interface %U",
                           format_ip6_address_and_length, address,
                           address_length,
@@ -395,6 +405,7 @@ ip6_add_del_interface_address (vlib_main_t * vm,
                           ia->address_length,
                           format_vnet_sw_if_index_name, vnm,
                           sif->sw_if_index);
+                       goto done;
                      }
                  }));
             }
@@ -402,22 +413,75 @@ ip6_add_del_interface_address (vlib_main_t * vm,
     }
   /* *INDENT-ON* */
 
-  {
-    uword elts_before = pool_elts (lm->if_address_pool);
+  if_address_index = ip_interface_address_find (lm, addr_fib, address_length);
 
-    error = ip_interface_address_add_del
-      (lm, sw_if_index, addr_fib, address_length, is_del, &if_address_index);
-    if (error)
-      goto done;
+  if (is_del)
+    {
+      if (~0 == if_address_index)
+	{
+	  vnm->api_errno = VNET_API_ERROR_ADDRESS_NOT_FOUND_FOR_INTERFACE;
+	  error = clib_error_create ("%U not found for interface %U",
+				     lm->format_address_and_length,
+				     addr_fib, address_length,
+				     format_vnet_sw_if_index_name, vnm,
+				     sw_if_index);
+	  goto done;
+	}
 
-    /* Pool did not grow: add duplicate address. */
-    if (elts_before == pool_elts (lm->if_address_pool))
-      goto done;
-  }
+      ip_interface_address_del (lm, if_address_index, addr_fib);
+    }
+  else
+    {
+      if (~0 != if_address_index)
+	{
+	  ip_interface_address_t *ia;
+
+	  ia = pool_elt_at_index (lm->if_address_pool, if_address_index);
+
+	  if (ia->flags & IP_INTERFACE_ADDRESS_FLAG_STALE)
+	    {
+	      if (ia->sw_if_index == sw_if_index)
+		{
+		  /* re-adding an address during the replace action.
+		   * consdier this the update. clear the flag and
+		   * we're done */
+		  ia->flags &= ~IP_INTERFACE_ADDRESS_FLAG_STALE;
+		  goto done;
+		}
+	      else
+		{
+		  /* The prefix is moving from one interface to another.
+		   * delete the stale and add the new */
+		  ip6_add_del_interface_address (vm,
+						 ia->sw_if_index,
+						 address, address_length, 1);
+		  ia = NULL;
+		  error = ip_interface_address_add (lm, sw_if_index,
+						    addr_fib, address_length,
+						    &if_address_index);
+		}
+	    }
+	  else
+	    {
+	      vnm->api_errno = VNET_API_ERROR_DUPLICATE_IF_ADDRESS;
+	      error = clib_error_create
+		("Prefix %U already found on interface %U",
+		 lm->format_address_and_length, addr_fib, address_length,
+		 format_vnet_sw_if_index_name, vnm, ia->sw_if_index);
+	    }
+	}
+      else
+	error = ip_interface_address_add (lm, sw_if_index,
+					  addr_fib, address_length,
+					  &if_address_index);
+    }
+
+  if (error)
+    goto done;
 
   ip6_sw_interface_enable_disable (sw_if_index, !is_del);
   if (!is_del)
-    ip6_link_enable (sw_if_index);
+    ip6_link_enable (sw_if_index, NULL);
 
   /* intf addr routes are added/deleted on admin up/down */
   if (vnet_sw_interface_is_admin_up (vnm, sw_if_index))
@@ -432,12 +496,12 @@ ip6_add_del_interface_address (vlib_main_t * vm,
 				  pool_elt_at_index (lm->if_address_pool,
 						     if_address_index));
     }
-  {
-    ip6_add_del_interface_address_callback_t *cb;
-    vec_foreach (cb, im->add_del_interface_address_callbacks)
-      cb->function (im, cb->function_opaque, sw_if_index,
-		    address, address_length, if_address_index, is_del);
-  }
+
+  ip6_add_del_interface_address_callback_t *cb;
+  vec_foreach (cb, im->add_del_interface_address_callbacks)
+    cb->function (im, cb->function_opaque, sw_if_index,
+		  address, address_length, if_address_index, is_del);
+
   if (is_del)
     ip6_link_disable (sw_if_index);
 
@@ -1744,10 +1808,7 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 					       0);
 		}
 	    }
-	  else
-	    {
-	      p0->flags &= ~VNET_BUFFER_F_LOCALLY_ORIGINATED;
-	    }
+
 	  is_locally_originated1 =
 	    p1->flags & VNET_BUFFER_F_LOCALLY_ORIGINATED;
 	  if (PREDICT_TRUE (!is_locally_originated1))
@@ -1775,10 +1836,7 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 					       0);
 		}
 	    }
-	  else
-	    {
-	      p1->flags &= ~VNET_BUFFER_F_LOCALLY_ORIGINATED;
-	    }
+
 	  adj0 = adj_get (adj_index0);
 	  adj1 = adj_get (adj_index1);
 
@@ -1835,8 +1893,9 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 
 	      if (PREDICT_FALSE
 		  (adj0[0].rewrite_header.flags & VNET_REWRITE_HAS_FEATURES))
-		vnet_feature_arc_start (lm->output_feature_arc_index,
-					tx_sw_if_index0, &next0, p0);
+		vnet_feature_arc_start_w_cfg_index
+		  (lm->output_feature_arc_index, tx_sw_if_index0, &next0, p0,
+		   adj0->ia_cfg_index);
 	    }
 	  else
 	    {
@@ -1853,8 +1912,9 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 
 	      if (PREDICT_FALSE
 		  (adj1[0].rewrite_header.flags & VNET_REWRITE_HAS_FEATURES))
-		vnet_feature_arc_start (lm->output_feature_arc_index,
-					tx_sw_if_index1, &next1, p1);
+		vnet_feature_arc_start_w_cfg_index
+		  (lm->output_feature_arc_index, tx_sw_if_index1, &next1, p1,
+		   adj1->ia_cfg_index);
 	    }
 	  else
 	    {
@@ -1865,13 +1925,21 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 	    {
 	      /* before we paint on the next header, update the L4
 	       * checksums if required, since there's no offload on a tunnel */
-	      calc_checksums (vm, p0);
-	      calc_checksums (vm, p1);
-	    }
+	      vnet_calc_checksums_inline (vm, p0, 0 /* is_ip4 */ ,
+					  1 /* is_ip6 */ ,
+					  0 /* with gso */ );
+	      vnet_calc_checksums_inline (vm, p1, 0 /* is_ip4 */ ,
+					  1 /* is_ip6 */ ,
+					  0 /* with gso */ );
 
-	  /* Guess we are only writing on simple Ethernet header. */
-	  vnet_rewrite_two_headers (adj0[0], adj1[0],
-				    ip0, ip1, sizeof (ethernet_header_t));
+	      /* Guess we are only writing on ipv6 header. */
+	      vnet_rewrite_two_headers (adj0[0], adj1[0],
+					ip0, ip1, sizeof (ip6_header_t));
+	    }
+	  else
+	    /* Guess we are only writing on simple Ethernet header. */
+	    vnet_rewrite_two_headers (adj0[0], adj1[0],
+				      ip0, ip1, sizeof (ethernet_header_t));
 
 	  if (is_midchain)
 	    {
@@ -1954,18 +2022,20 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 					       0);
 		}
 	    }
-	  else
-	    {
-	      p0->flags &= ~VNET_BUFFER_F_LOCALLY_ORIGINATED;
-	    }
 
 	  if (is_midchain)
 	    {
-	      calc_checksums (vm, p0);
-	    }
+	      vnet_calc_checksums_inline (vm, p0, 0 /* is_ip4 */ ,
+					  1 /* is_ip6 */ ,
+					  0 /* with gso */ );
 
-	  /* Guess we are only writing on simple Ethernet header. */
-	  vnet_rewrite_one_header (adj0[0], ip0, sizeof (ethernet_header_t));
+	      /* Guess we are only writing on ip6 header. */
+	      vnet_rewrite_one_header (adj0[0], ip0, sizeof (ip6_header_t));
+	    }
+	  else
+	    /* Guess we are only writing on simple Ethernet header. */
+	    vnet_rewrite_one_header (adj0[0], ip0,
+				     sizeof (ethernet_header_t));
 
 	  /* Update packet buffer attributes/set output interface. */
 	  rw_len0 = adj0[0].rewrite_header.data_bytes;
@@ -2005,8 +2075,9 @@ ip6_rewrite_inline_with_gso (vlib_main_t * vm,
 
 	      if (PREDICT_FALSE
 		  (adj0[0].rewrite_header.flags & VNET_REWRITE_HAS_FEATURES))
-		vnet_feature_arc_start (lm->output_feature_arc_index,
-					tx_sw_if_index0, &next0, p0);
+		vnet_feature_arc_start_w_cfg_index
+		  (lm->output_feature_arc_index, tx_sw_if_index0, &next0, p0,
+		   adj0->ia_cfg_index);
 	    }
 	  else
 	    {

@@ -57,6 +57,14 @@ tap_main_t tap_main;
       goto error; \
     }
 
+  /* *INDENT-OFF* */
+VNET_HW_INTERFACE_CLASS (tun_device_hw_interface_class, static) =
+{
+  .name = "tun-device",
+  .flags = VNET_HW_INTERFACE_CLASS_FLAG_P2P,
+};
+  /* *INDENT-ON* */
+
 static u32
 virtio_eth_flag_change (vnet_main_t * vnm, vnet_hw_interface_t * hi,
 			u32 flags)
@@ -103,11 +111,10 @@ tap_free (vlib_main_t * vm, virtio_if_t * vif)
     virtio_vring_free_tx (vm, vif, TX_QUEUE (i));
   /* *INDENT-ON* */
 
-  _IOCTL (vif->tap_fd, TUNSETPERSIST, (void *) (uintptr_t) 0);
+  _IOCTL (vif->tap_fds[0], TUNSETPERSIST, (void *) (uintptr_t) 0);
   tap_log_dbg (vif, "TUNSETPERSIST: unset");
 error:
-  if (vif->tap_fd != -1)
-    close (vif->tap_fd);
+  vec_foreach_index (i, vif->tap_fds) close (vif->tap_fds[i]);
 
   vec_free (vif->vhost_fds);
   vec_free (vif->rxq_vrings);
@@ -132,19 +139,18 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
   tap_main_t *tm = &tap_main;
   vnet_sw_interface_t *sw;
   vnet_hw_interface_t *hw;
-  int i;
+  int i, j, num_vhost_queues;
   int old_netns_fd = -1;
-  struct ifreq ifr = {.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_VNET_HDR };
+  struct ifreq ifr = {.ifr_flags = IFF_NO_PI | IFF_VNET_HDR };
   struct ifreq get_ifr = {.ifr_flags = 0 };
   size_t hdrsz;
   struct vhost_memory *vhost_mem = 0;
   virtio_if_t *vif = 0;
   clib_error_t *err = 0;
   unsigned int tap_features;
-  int tfd, vfd, nfd = -1;
+  int tfd = -1, qfd = -1, vfd = -1, nfd = -1;
   char *host_if_name = 0;
   unsigned int offload = 0;
-  u16 num_q_pairs;
 
   if (args->id != ~0)
     {
@@ -168,12 +174,23 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
     }
 
   pool_get_zero (vim->interfaces, vif);
-  vif->type = VIRTIO_IF_TYPE_TAP;
+
+  if (args->tap_flags & TAP_FLAG_TUN)
+    {
+      vif->type = VIRTIO_IF_TYPE_TUN;
+      ifr.ifr_flags |= IFF_TUN;
+      args->tap_flags &= ~(TAP_FLAG_GSO | TAP_FLAG_CSUM_OFFLOAD);
+    }
+  else
+    {
+      vif->type = VIRTIO_IF_TYPE_TAP;
+      ifr.ifr_flags |= IFF_TAP;
+    }
+
   vif->dev_instance = vif - vim->interfaces;
   vif->id = args->id;
   vif->num_txqs = thm->n_vlib_mains;
-  vif->num_rxqs = args->num_rx_queues;
-  num_q_pairs = clib_max (vif->num_rxqs, vif->num_txqs);
+  vif->num_rxqs = clib_max (args->num_rx_queues, 1);
 
   if (args->tap_flags & TAP_FLAG_ATTACH)
     {
@@ -208,12 +225,14 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 	    }
 	}
     }
-  if ((vif->tap_fd = tfd = open ("/dev/net/tun", O_RDWR | O_NONBLOCK)) < 0)
+
+  if ((tfd = open ("/dev/net/tun", O_RDWR | O_NONBLOCK)) < 0)
     {
       args->rv = VNET_API_ERROR_SYSCALL_ERROR_2;
       args->error = clib_error_return_unix (0, "open '/dev/net/tun'");
       goto error;
     }
+  vec_add1 (vif->tap_fds, tfd);
   tap_log_dbg (vif, "open tap fd %d", tfd);
 
   _IOCTL (tfd, TUNGETFEATURES, &tap_features);
@@ -227,13 +246,13 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 
   if ((tap_features & IFF_MULTI_QUEUE) == 0)
     {
-      if (args->num_rx_queues > 1)
+      if (vif->num_rxqs > 1)
 	{
 	  args->rv = VNET_API_ERROR_SYSCALL_ERROR_2;
 	  args->error = clib_error_return (0, "multiqueue not supported");
 	  goto error;
 	}
-      vif->num_rxqs = vif->num_txqs = num_q_pairs = 1;
+      vif->num_rxqs = vif->num_txqs = 1;
     }
   else
     ifr.ifr_flags |= IFF_MULTI_QUEUE;
@@ -262,13 +281,6 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
   else
     host_if_name = (char *) args->host_if_name;
 
-  if (fcntl (tfd, F_SETFL, O_NONBLOCK) < 0)
-    {
-      err = clib_error_return_unix (0, "fcntl(tfd, F_SETFL, O_NONBLOCK)");
-      tap_log_err (vif, "set nonblocking: %U", format_clib_error, err);
-      goto error;
-    }
-
   /*
    * unset the persistence when attaching to existing
    * interface
@@ -296,18 +308,48 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 	}
     }
 
-  tap_log_dbg (vif, "TUNSETVNETHDRSZ: fd %d vnet_hdr_sz %u", tfd, hdrsz);
-  _IOCTL (tfd, TUNSETVNETHDRSZ, &hdrsz);
+  /* create additional queues on the linux side.
+   * we create as many linux queue pairs as we have rx queues
+   */
+  for (i = 1; i < vif->num_rxqs; i++)
+    {
+      if ((qfd = open ("/dev/net/tun", O_RDWR | O_NONBLOCK)) < 0)
+	{
+	  args->rv = VNET_API_ERROR_SYSCALL_ERROR_2;
+	  args->error = clib_error_return_unix (0, "open '/dev/net/tun'");
+	  goto error;
+	}
+      _IOCTL (qfd, TUNSETIFF, (void *) &ifr);
+      tap_log_dbg (vif, "TUNSETIFF fd %d name %s flags 0x%x", qfd,
+		   ifr.ifr_ifrn.ifrn_name, ifr.ifr_flags);
+      vec_add1 (vif->tap_fds, qfd);
+    }
 
-  i = INT_MAX;
-  tap_log_dbg (vif, "TUNSETSNDBUF: fd %d sndbuf %d", tfd, i);
-  _IOCTL (tfd, TUNSETSNDBUF, &i);
+  for (i = 0; i < vif->num_rxqs; i++)
+    {
+      tap_log_dbg (vif, "TUNSETVNETHDRSZ: fd %d vnet_hdr_sz %u",
+		   vif->tap_fds[i], hdrsz);
+      _IOCTL (vif->tap_fds[i], TUNSETVNETHDRSZ, &hdrsz);
 
-  tap_log_dbg (vif, "TUNSETOFFLOAD: fd %d offload 0x%lx", tfd, offload);
-  _IOCTL (tfd, TUNSETOFFLOAD, offload);
+      j = INT_MAX;
+      tap_log_dbg (vif, "TUNSETSNDBUF: fd %d sndbuf %d", vif->tap_fds[i], j);
+      _IOCTL (vif->tap_fds[i], TUNSETSNDBUF, &j);
 
-  /* open vhost-net fd for each queue pair and set ownership */
-  for (i = 0; i < num_q_pairs; i++)
+      tap_log_dbg (vif, "TUNSETOFFLOAD: fd %d offload 0x%lx", vif->tap_fds[i],
+		   offload);
+      _IOCTL (vif->tap_fds[i], TUNSETOFFLOAD, offload);
+
+      if (fcntl (vif->tap_fds[i], F_SETFL, O_NONBLOCK) < 0)
+	{
+	  err = clib_error_return_unix (0, "fcntl(tfd, F_SETFL, O_NONBLOCK)");
+	  tap_log_err (vif, "set nonblocking: %U", format_clib_error, err);
+	  goto error;
+	}
+    }
+
+  /* open as many vhost-net fds as required and set ownership */
+  num_vhost_queues = clib_max (vif->num_rxqs, vif->num_txqs);
+  for (i = 0; i < num_vhost_queues; i++)
     {
       if ((vfd = open ("/dev/vhost-net", O_RDWR | O_NONBLOCK)) < 0)
 	{
@@ -404,14 +446,17 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 	}
     }
 
-  if (ethernet_mac_address_is_zero (args->host_mac_addr.bytes))
-    ethernet_mac_address_generate (args->host_mac_addr.bytes);
-  args->error = vnet_netlink_set_link_addr (vif->ifindex,
-					    args->host_mac_addr.bytes);
-  if (args->error)
+  if (vif->type == VIRTIO_IF_TYPE_TAP)
     {
-      args->rv = VNET_API_ERROR_NETLINK_ERROR;
-      goto error;
+      if (ethernet_mac_address_is_zero (args->host_mac_addr.bytes))
+	ethernet_mac_address_generate (args->host_mac_addr.bytes);
+      args->error = vnet_netlink_set_link_addr (vif->ifindex,
+						args->host_mac_addr.bytes);
+      if (args->error)
+	{
+	  args->rv = VNET_API_ERROR_NETLINK_ERROR;
+	  goto error;
+	}
     }
 
   if (args->host_bridge)
@@ -511,7 +556,7 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 	}
     }
 
-  for (i = 0; i < num_q_pairs; i++)
+  for (i = 0; i < num_vhost_queues; i++)
     {
       if (i < vif->num_rxqs && (args->error =
 				virtio_vring_init (vm, vif, RX_QUEUE (i),
@@ -548,7 +593,7 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 		      vhost_mem->regions[0].userspace_addr);
 
 
-  for (i = 0; i < num_q_pairs; i++)
+  for (i = 0; i < num_vhost_queues; i++)
     {
       int fd = vif->vhost_fds[i];
       _IOCTL (fd, VHOST_SET_FEATURES, &vif->features);
@@ -559,7 +604,7 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
     }
 
   /* finish initializing queue pair */
-  for (i = 0; i < num_q_pairs * 2; i++)
+  for (i = 0; i < num_vhost_queues * 2; i++)
     {
       struct vhost_vring_addr addr = { 0 };
       struct vhost_vring_state state = { 0 };
@@ -609,17 +654,19 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
 			fd, file.index, file.fd);
       _IOCTL (fd, VHOST_SET_VRING_KICK, &file);
 
-      file.fd = tfd;
+      file.fd = vif->tap_fds[qp % vif->num_rxqs];
       virtio_log_debug (vif, "VHOST_NET_SET_BACKEND fd %d index %u tap_fd %d",
 			fd, file.index, file.fd);
       _IOCTL (fd, VHOST_NET_SET_BACKEND, &file);
     }
 
-  if (!args->mac_addr_set)
-    ethernet_mac_address_generate (args->mac_addr.bytes);
+  if (vif->type == VIRTIO_IF_TYPE_TAP)
+    {
+      if (!args->mac_addr_set)
+	ethernet_mac_address_generate (args->mac_addr.bytes);
 
-  clib_memcpy (vif->mac_addr, args->mac_addr.bytes, 6);
-
+      clib_memcpy (vif->mac_addr, args->mac_addr.bytes, 6);
+    }
   vif->host_if_name = format (0, "%s%c", host_if_name, 0);
   vif->net_ns = format (0, "%s%c", args->host_namespace, 0);
   vif->host_bridge = format (0, "%s%c", args->host_bridge, 0);
@@ -632,17 +679,28 @@ tap_create_if (vlib_main_t * vm, tap_create_if_args_t * args)
   if (args->host_ip6_prefix_len)
     clib_memcpy (&vif->host_ip6_addr, &args->host_ip6_addr, 16);
 
-  args->error = ethernet_register_interface (vnm, virtio_device_class.index,
-					     vif->dev_instance,
-					     vif->mac_addr,
-					     &vif->hw_if_index,
-					     virtio_eth_flag_change);
-  if (args->error)
+  if (vif->type != VIRTIO_IF_TYPE_TUN)
     {
-      args->rv = VNET_API_ERROR_INVALID_REGISTRATION;
-      goto error;
-    }
+      args->error =
+	ethernet_register_interface (vnm, virtio_device_class.index,
+				     vif->dev_instance, vif->mac_addr,
+				     &vif->hw_if_index,
+				     virtio_eth_flag_change);
+      if (args->error)
+	{
+	  args->rv = VNET_API_ERROR_INVALID_REGISTRATION;
+	  goto error;
+	}
 
+    }
+  else
+    {
+      vif->hw_if_index = vnet_register_interface
+	(vnm, virtio_device_class.index,
+	 vif->dev_instance /* device instance */ ,
+	 tun_device_hw_interface_class.index, vif->dev_instance);
+
+    }
   tm->tap_ids = clib_bitmap_set (tm->tap_ids, vif->id, 1);
   sw = vnet_get_hw_sw_interface (vnm, vif->hw_if_index);
   vif->sw_if_index = sw->sw_if_index;
@@ -712,7 +770,7 @@ tap_delete_if (vlib_main_t * vm, u32 sw_if_index)
 
   vif = pool_elt_at_index (mm->interfaces, hw->dev_instance);
 
-  if (vif->type != VIRTIO_IF_TYPE_TAP)
+  if ((vif->type != VIRTIO_IF_TYPE_TAP) && (vif->type != VIRTIO_IF_TYPE_TUN))
     return VNET_API_ERROR_INVALID_INTERFACE;
 
   /* bring down the interface */
@@ -721,7 +779,10 @@ tap_delete_if (vlib_main_t * vm, u32 sw_if_index)
   for (i = 0; i < vif->num_rxqs; i++)
     vnet_hw_interface_unassign_rx_thread (vnm, vif->hw_if_index, i);
 
-  ethernet_delete_interface (vnm, vif->hw_if_index);
+  if (vif->type == VIRTIO_IF_TYPE_TAP)
+    ethernet_delete_interface (vnm, vif->hw_if_index);
+  else				/* VIRTIO_IF_TYPE_TUN */
+    vnet_delete_hw_interface (vnm, vif->hw_if_index);
   vif->hw_if_index = ~0;
 
   tap_free (vm, vif);
@@ -738,6 +799,7 @@ tap_csum_offload_enable_disable (vlib_main_t * vm, u32 sw_if_index,
   virtio_if_t *vif;
   vnet_hw_interface_t *hw;
   clib_error_t *err = 0;
+  int i = 0;
 
   hw = vnet_get_sup_hw_interface_api_visible_or_null (vnm, sw_if_index);
 
@@ -746,10 +808,14 @@ tap_csum_offload_enable_disable (vlib_main_t * vm, u32 sw_if_index,
 
   vif = pool_elt_at_index (mm->interfaces, hw->dev_instance);
 
+  if (vif->type == VIRTIO_IF_TYPE_TUN)
+    return VNET_API_ERROR_UNIMPLEMENTED;
+
   const unsigned int csum_offload_on = TUN_F_CSUM;
   const unsigned int csum_offload_off = 0;
   unsigned int offload = enable_disable ? csum_offload_on : csum_offload_off;
-  _IOCTL (vif->tap_fd, TUNSETOFFLOAD, offload);
+  vec_foreach_index (i, vif->tap_fds)
+    _IOCTL (vif->tap_fds[i], TUNSETOFFLOAD, offload);
   vif->gso_enabled = 0;
   vif->csum_offload_enabled = enable_disable ? 1 : 0;
 
@@ -793,6 +859,7 @@ tap_gso_enable_disable (vlib_main_t * vm, u32 sw_if_index, int enable_disable)
   virtio_if_t *vif;
   vnet_hw_interface_t *hw;
   clib_error_t *err = 0;
+  int i = 0;
 
   hw = vnet_get_sup_hw_interface_api_visible_or_null (vnm, sw_if_index);
 
@@ -801,10 +868,14 @@ tap_gso_enable_disable (vlib_main_t * vm, u32 sw_if_index, int enable_disable)
 
   vif = pool_elt_at_index (mm->interfaces, hw->dev_instance);
 
+  if (vif->type == VIRTIO_IF_TYPE_TUN)
+    return VNET_API_ERROR_UNIMPLEMENTED;
+
   const unsigned int gso_on = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6;
   const unsigned int gso_off = 0;
   unsigned int offload = enable_disable ? gso_on : gso_off;
-  _IOCTL (vif->tap_fd, TUNSETOFFLOAD, offload);
+  vec_foreach_index (i, vif->tap_fds)
+    _IOCTL (vif->tap_fds[i], TUNSETOFFLOAD, offload);
   vif->gso_enabled = enable_disable ? 1 : 0;
   vif->csum_offload_enabled = 0;
   if (enable_disable)

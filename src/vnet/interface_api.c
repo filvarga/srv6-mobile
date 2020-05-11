@@ -79,8 +79,12 @@ _(CREATE_LOOPBACK_INSTANCE, create_loopback_instance)		\
 _(DELETE_LOOPBACK, delete_loopback)                             \
 _(INTERFACE_NAME_RENUMBER, interface_name_renumber)             \
 _(COLLECT_DETAILED_INTERFACE_STATS, collect_detailed_interface_stats) \
-_(SW_INTERFACE_SET_IP_DIRECTED_BROADCAST,                            \
-  sw_interface_set_ip_directed_broadcast)
+_(SW_INTERFACE_SET_IP_DIRECTED_BROADCAST,                       \
+  sw_interface_set_ip_directed_broadcast)                       \
+_(SW_INTERFACE_ADDRESS_REPLACE_BEGIN,                           \
+  sw_interface_address_replace_begin)                           \
+_(SW_INTERFACE_ADDRESS_REPLACE_END,                             \
+  sw_interface_address_replace_end)
 
 static void
 vl_api_sw_interface_set_flags_t_handler (vl_api_sw_interface_set_flags_t * mp)
@@ -169,7 +173,6 @@ vl_api_sw_interface_set_mtu_t_handler (vl_api_sw_interface_set_mtu_t * mp)
   for (i = 0; i < VNET_N_MTU; i++)
     {
       per_protocol_mtu[i] = ntohl (mp->mtu[i]);
-      clib_warning ("MTU %u", per_protocol_mtu[i]);
     }
   vnet_sw_interface_set_protocol_mtu (vnm, sw_if_index, per_protocol_mtu);
 
@@ -358,7 +361,7 @@ vl_api_sw_interface_dump_t_handler (vl_api_sw_interface_dump_t * mp)
 
   if (mp->name_filter_valid)
     {
-      filter = vl_api_from_api_to_new_vec (&mp->name_filter);
+      filter = vl_api_from_api_to_new_vec (mp, &mp->name_filter);
       vec_add1 (filter, 0);	/* Ensure it's a C string for strcasecmp() */
     }
 
@@ -1365,6 +1368,30 @@ static void
 						    mp->enable_disable);
 
   REPLY_MACRO (VL_API_COLLECT_DETAILED_INTERFACE_STATS_REPLY);
+}
+
+static void
+  vl_api_sw_interface_address_replace_begin_t_handler
+  (vl_api_sw_interface_address_replace_begin_t * mp)
+{
+  vl_api_sw_interface_address_replace_begin_reply_t *rmp;
+  int rv = 0;
+
+  ip_interface_address_mark ();
+
+  REPLY_MACRO (VL_API_SW_INTERFACE_ADDRESS_REPLACE_BEGIN_REPLY);
+}
+
+static void
+  vl_api_sw_interface_address_replace_end_t_handler
+  (vl_api_sw_interface_address_replace_end_t * mp)
+{
+  vl_api_sw_interface_address_replace_end_reply_t *rmp;
+  int rv = 0;
+
+  ip_interface_address_sweep ();
+
+  REPLY_MACRO (VL_API_SW_INTERFACE_ADDRESS_REPLACE_END_REPLY);
 }
 
 /*

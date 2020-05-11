@@ -412,7 +412,7 @@ dhcp6_client_cp_process (vlib_main_t * vm, vlib_node_runtime_t * rt,
                     clib_warning ("Failed to delete interface address");
                 pool_put (rm->address_pool, address_info);
                 /* make sure ip6 stays enabled */
-                ip6_link_enable (sw_if_index);
+                ip6_link_enable (sw_if_index, NULL);
                 client_state = &rm->client_state_by_sw_if_index[sw_if_index];
                 if (--client_state->address_count == 0)
                   {
@@ -557,8 +557,8 @@ dhcp6_clients_show_command_function (vlib_main_t * vm,
   clib_error_t *error = 0;
   client_state_t *cs;
   f64 current_time = vlib_time_now (vm);
-  char buf1[256];
-  char buf2[256];
+  u8 *buf1 = 0;
+  u8 *buf2 = 0;
   const char *rebinding;
   u32 i;
 
@@ -567,32 +567,37 @@ dhcp6_clients_show_command_function (vlib_main_t * vm,
       cs = &rm->client_state_by_sw_if_index[i];
       if (cs->enabled)
 	{
+	  vec_reset_length (buf1);
+	  vec_reset_length (buf2);
 	  if (cs->T1_due_time != DBL_MAX && cs->T1_due_time > current_time)
 	    {
-	      sprintf (buf1, "%u remaining",
-		       (u32) round (cs->T1_due_time - current_time));
+	      buf1 = format (buf1, "%u remaining",
+			     (u32) round (cs->T1_due_time - current_time));
 	    }
 	  else
-	    sprintf (buf1, "timeout");
+	    buf1 = format (buf1, "timeout");
 	  if (cs->T2_due_time != DBL_MAX && cs->T2_due_time > current_time)
-	    sprintf (buf2, "%u remaining",
-		     (u32) round (cs->T2_due_time - current_time));
+	    buf2 = format (buf2, "%u remaining",
+			   (u32) round (cs->T2_due_time - current_time));
 	  else
-	    sprintf (buf2, "timeout");
+	    buf2 = format (buf2, "timeout");
 	  if (cs->rebinding)
 	    rebinding = ", REBINDING";
 	  else
 	    rebinding = "";
 	  if (cs->T1)
 	    vlib_cli_output (vm,
-			     "sw_if_index: %u, T1: %u (%s), "
-			     "T2: %u (%s), server index: %d%s", i,
+			     "sw_if_index: %u, T1: %u (%v), "
+			     "T2: %u (%v), server index: %d%s", i,
 			     cs->T1, buf1, cs->T2, buf2,
 			     cs->server_index, rebinding);
 	  else
 	    vlib_cli_output (vm, "sw_if_index: %u%s", i, rebinding);
 	}
     }
+
+  vec_free (buf1);
+  vec_free (buf2);
 
   return error;
 }
@@ -640,7 +645,7 @@ dhcp6_client_enable_disable (u32 sw_if_index, u8 enable)
 	  dhcp6_clients_enable_disable (1);
 	}
 
-      ip6_link_enable (sw_if_index);
+      ip6_link_enable (sw_if_index, NULL);
       send_client_message_start_stop (sw_if_index, ~0, DHCPV6_MSG_SOLICIT,
 				      0, 1);
     }

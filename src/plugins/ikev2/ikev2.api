@@ -142,7 +142,7 @@ autoreply define ikev2_set_local_key
   u32 client_index;
   u32 context;
 
-  u8 key_file[256];
+  string key_file[256];
   option vat_help = "file <absolute_file_path>";
 };
 
@@ -334,7 +334,7 @@ autoreply define ikev2_profile_set_udp_encap
     @param client_index - opaque cookie to identify the sender
     @param context - sender context, to match reply w/ request
     @param is_set - whether set or unset custom port
-    @port - port number
+    @param port - port number
     @param name - IKEv2 profile name
 */
 autoreply define ikev2_profile_set_ipsec_udp_port
@@ -346,9 +346,24 @@ autoreply define ikev2_profile_set_ipsec_udp_port
   u16 port;
   string name[64];
 };
+
+/** \brief IKEv2: Set liveness parameters
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param period - how often is liveness check performed
+    @param max_retries - max retries for liveness check
+*/
+autoreply define ikev2_profile_set_liveness
+{
+  u32 client_index;
+  u32 context;
+
+  u32 period;
+  u32 max_retries;
+};
+
 /*
  * Local Variables:
  * eval: (c-set-style "gnu")
  * End:
  */
- 

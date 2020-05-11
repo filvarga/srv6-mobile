@@ -270,10 +270,8 @@ wipe: reset
 	@rm -rf $(VENV_PATH)
 	@rm -rf $(patsubst %,%/__pycache__, $(VPP_TEST_DIRS) $(BUILD_TEST_SRC))
 
-$(TEST_DOC_BR):
+$(TEST_DOC_BR): $(PIP_INSTALL_DONE)
 	@mkdir -p $@
-	@bash -c "source $(VENV_PATH)/bin/activate && \
-		  $(PYTHON_INTERP) -m pip install sphinx sphinx-rtd-theme"
 	@bash -c "source $(VENV_PATH)/bin/activate && make -C doc html"
 
 .PHONY: doc
@@ -381,6 +379,10 @@ help:
 	@echo "                               TEST='bfd.BFDAPITestCase.*' selects all tests from test_bfd.py which are part of BFDAPITestCase class"
 	@echo "                               TEST='bfd.BFDAPITestCase.test_add_bfd' selects a single test named test_add_bfd from test_bfd.py/BFDAPITestCase"
 	@echo "                               TEST='*.*.test_add_bfd' selects all test functions named test_add_bfd from all files/classes"
+	@echo ""
+	@echo " VARIANT=<variant>      - specify which march node variant to unit test"
+	@echo "                          e.g. VARIANT=avx2 test the avx2 march variants"
+	@echo "                          e.g. VARIANT=avx512 test the avx512 march variants"
 	@echo ""
 	@echo " VPP_ZOMBIE_NOCHECK=1   - skip checking for vpp (zombie) processes (CAUTION)"
 	@echo " COREDUMP_SIZE=<size>   - pass <size> as unix { coredump-size <size> } argument to vpp"

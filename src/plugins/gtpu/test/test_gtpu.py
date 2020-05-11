@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import socket
-from util import ip4n_range, ip4_range
+from util import ip4_range
 import unittest
 from framework import VppTestCase, VppTestRunner
 from template_bd import BridgeDomain
@@ -12,6 +12,8 @@ from scapy.layers.inet import IP, UDP
 from scapy.layers.inet6 import IPv6
 from scapy.contrib.gtp import GTP_U_Header
 from scapy.utils import atol
+
+import util
 from vpp_ip_route import VppIpRoute, VppRoutePath
 from vpp_ip import INVALID_INDEX
 
@@ -43,7 +45,7 @@ class TestGtpuUDP(VppTestCase):
         self.pg_start()
 
         err = self.statistics.get_counter(
-            '/err/ip4-udp-lookup/no listener for dst port')[0]
+            '/err/ip4-udp-lookup/No listener for dst port')[0]
 
         if enabled:
             self.assertEqual(err, self.ip4_err)
@@ -62,7 +64,7 @@ class TestGtpuUDP(VppTestCase):
         self.pg_start()
 
         err = self.statistics.get_counter(
-            '/err/ip6-udp-lookup/no listener for dst port')[0]
+            '/err/ip6-udp-lookup/No listener for dst port')[0]
 
         if enabled:
             self.assertEqual(err, self.ip6_err)
@@ -187,7 +189,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
         # Pick first received frame and check if it's correctly encapsulated.
         out = self.pg0.get_capture(1)
         pkt = out[0]
-        self.check_encapsulation(pkt, self.single_tunnel_bd)
+        self.check_encapsulation(pkt, self.single_tunnel_vni)
 
         # payload = self.decapsulate(pkt)
         # self.assert_eq_pkts(payload, self.frame_reply)
@@ -238,7 +240,7 @@ class TestGtpu(BridgeDomain, VppTestCase):
         next_hop_address = cls.pg0.remote_ip4
         for dest_ip4 in ip4_range(next_hop_address, ip_range_start,
                                   ip_range_end):
-            # add host route so dest_ip4n will not be resolved
+            # add host route so dest_ip4 will not be resolved
             rip = VppIpRoute(cls, dest_ip4, 32,
                              [VppRoutePath(next_hop_address,
                                            INVALID_INDEX)],
@@ -335,21 +337,19 @@ class TestGtpu(BridgeDomain, VppTestCase):
 
             # Our Multicast address
             cls.mcast_ip4 = '239.1.1.1'
-            cls.mcast_ip4n = socket.inet_pton(socket.AF_INET, cls.mcast_ip4)
-            iplong = atol(cls.mcast_ip4)
-            cls.mcast_mac = "01:00:5e:%02x:%02x:%02x" % (
-                (iplong >> 16) & 0x7F, (iplong >> 8) & 0xFF, iplong & 0xFF)
+            cls.mcast_mac = util.mcast_ip_to_mac(cls.mcast_ip4)
 
             # Create GTPU VTEP on VPP pg0, and put gtpu_tunnel0 and pg1
             #  into BD.
             cls.single_tunnel_bd = 11
+            cls.single_tunnel_vni = 11
             r = cls.vapi.gtpu_add_del_tunnel(
                 is_add=True,
                 mcast_sw_if_index=0xFFFFFFFF,
                 decap_next_index=0xFFFFFFFF,
                 src_address=cls.pg0.local_ip4,
                 dst_address=cls.pg0.remote_ip4,
-                teid=cls.single_tunnel_bd)
+                teid=cls.single_tunnel_vni)
             cls.vapi.sw_interface_set_l2_bridge(rx_sw_if_index=r.sw_if_index,
                                                 bd_id=cls.single_tunnel_bd)
             cls.vapi.sw_interface_set_l2_bridge(

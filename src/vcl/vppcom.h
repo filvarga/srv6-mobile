@@ -49,7 +49,6 @@ typedef enum
 {
   VPPCOM_PROTO_TCP = 0,
   VPPCOM_PROTO_UDP,
-  VPPCOM_PROTO_SCTP,
   VPPCOM_PROTO_NONE,
   VPPCOM_PROTO_TLS,
   VPPCOM_PROTO_UDPC,
@@ -68,9 +67,6 @@ vppcom_proto_str (vppcom_proto_t proto)
       break;
     case VPPCOM_PROTO_UDP:
       proto_str = "UDP";
-      break;
-    case VPPCOM_PROTO_SCTP:
-      proto_str = "SCTP";
       break;
     case VPPCOM_PROTO_TLS:
       proto_str = "TLS";
@@ -332,6 +328,11 @@ extern void vppcom_worker_unregister (void);
  * Retrieve current worker index
  */
 extern int vppcom_worker_index (void);
+
+/**
+ * Set current worker index
+ */
+extern void vppcom_worker_index_set (int);
 
 /**
  * Returns the current worker's message queues epoll fd

@@ -301,18 +301,10 @@ unformat_transport_proto (unformat_input_t * input, va_list * args)
     *proto = TRANSPORT_PROTO_TCP;
   else if (unformat (input, "TCP"))
     *proto = TRANSPORT_PROTO_TCP;
-  else if (unformat (input, "udpc"))
-    *proto = TRANSPORT_PROTO_UDPC;
-  else if (unformat (input, "UDPC"))
-    *proto = TRANSPORT_PROTO_UDPC;
   else if (unformat (input, "udp"))
     *proto = TRANSPORT_PROTO_UDP;
   else if (unformat (input, "UDP"))
     *proto = TRANSPORT_PROTO_UDP;
-  else if (unformat (input, "sctp"))
-    *proto = TRANSPORT_PROTO_SCTP;
-  else if (unformat (input, "SCTP"))
-    *proto = TRANSPORT_PROTO_SCTP;
   else if (unformat (input, "tls"))
     *proto = TRANSPORT_PROTO_TLS;
   else if (unformat (input, "TLS"))
@@ -338,17 +330,11 @@ format_transport_proto (u8 * s, va_list * args)
     case TRANSPORT_PROTO_UDP:
       s = format (s, "UDP");
       break;
-    case TRANSPORT_PROTO_SCTP:
-      s = format (s, "SCTP");
-      break;
     case TRANSPORT_PROTO_NONE:
       s = format (s, "NONE");
       break;
     case TRANSPORT_PROTO_TLS:
       s = format (s, "TLS");
-      break;
-    case TRANSPORT_PROTO_UDPC:
-      s = format (s, "UDPC");
       break;
     case TRANSPORT_PROTO_QUIC:
       s = format (s, "QUIC");
