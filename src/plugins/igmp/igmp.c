@@ -282,7 +282,7 @@ igmp_listen (vlib_main_t * vm,
 	  }
 
 	  if (0 == igmp_group_n_srcs (group, mode))
-	    igmp_group_clear (group);
+	    igmp_group_clear (&group);
 
 	  vec_free (added);
 	  vec_free (removed);
@@ -303,13 +303,6 @@ error:
   return (rv);
 }
 
-/** \brief igmp hardware interface link up down
-    @param vnm - vnet main
-    @param hw_if_index - interface hw_if_index
-    @param flags - hw interface flags
-
-    If an interface goes down, remove its (S,G)s.
-*/
 static walk_rc_t
 igmp_sw_if_down (vnet_main_t * vnm, u32 sw_if_index, void *ctx)
 {
@@ -325,6 +318,13 @@ igmp_sw_if_down (vnet_main_t * vnm, u32 sw_if_index, void *ctx)
   return (WALK_CONTINUE);
 }
 
+/** \brief igmp hardware interface link up down
+    @param vnm - vnet main
+    @param hw_if_index - interface hw_if_index
+    @param flags - hw interface flags
+
+    If an interface goes down, remove its (S,G)s.
+*/
 static clib_error_t *
 igmp_hw_interface_link_up_down (vnet_main_t * vnm, u32 hw_if_index, u32 flags)
 {

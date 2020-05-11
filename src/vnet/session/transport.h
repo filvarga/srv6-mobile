@@ -32,7 +32,6 @@ typedef struct _transport_options_t
   char *short_name;
   transport_tx_fn_type_t tx_type;
   transport_service_type_t service_type;
-  u8 half_open_has_fifos;
 } transport_options_t;
 
 typedef enum transport_snd_flags_
@@ -77,6 +76,7 @@ typedef struct _transport_proto_vft
   void (*close) (u32 conn_index, u32 thread_index);
   void (*reset) (u32 conn_index, u32 thread_index);
   void (*cleanup) (u32 conn_index, u32 thread_index);
+  void (*cleanup_ho) (u32 conn_index);
   clib_error_t *(*enable) (vlib_main_t * vm, u8 is_en);
 
   /*
@@ -138,6 +138,7 @@ u32 transport_start_listen (transport_proto_t tp, u32 session_index,
 u32 transport_stop_listen (transport_proto_t tp, u32 conn_index);
 void transport_cleanup (transport_proto_t tp, u32 conn_index,
 			u8 thread_index);
+void transport_cleanup_half_open (transport_proto_t tp, u32 conn_index);
 void transport_get_endpoint (transport_proto_t tp, u32 conn_index,
 			     u32 thread_index, transport_endpoint_t * tep,
 			     u8 is_lcl);

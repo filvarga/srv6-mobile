@@ -428,6 +428,7 @@ dpdk_esp_encrypt_inline (vlib_main_t * vm,
 	      u8 *src = ((u8 *) ih0) - rewrite_len;
 	      u8 *dst = vlib_buffer_get_current (b0);
 	      oh0 = vlib_buffer_get_current (b0) + rewrite_len;
+	      ouh0 = vlib_buffer_get_current (b0) + rewrite_len;
 
 	      if (is_ip6)
 		{
@@ -577,7 +578,7 @@ dpdk_esp_encrypt_inline (vlib_main_t * vm,
 	      tr->crypto_alg = sa0->crypto_alg;
 	      tr->integ_alg = sa0->integ_alg;
 	      u8 *p = vlib_buffer_get_current (b0);
-	      if (!ipsec_sa_is_set_IS_TUNNEL (sa0))
+	      if (!ipsec_sa_is_set_IS_TUNNEL (sa0) && !is_tun)
 		p += vnet_buffer (b0)->ip.save_rewrite_length;
 	      clib_memcpy_fast (tr->packet_data, p, sizeof (tr->packet_data));
 	    }
@@ -681,13 +682,6 @@ VLIB_REGISTER_NODE (dpdk_esp4_encrypt_tun_node) = {
       [ESP_ENCRYPT_NEXT_DROP] = "error-drop",
     }
 };
-
-VNET_FEATURE_INIT (dpdk_esp4_encrypt_tun_feat_node, static) =
-{
-  .arc_name = "ip4-output",
-  .node_name = "dpdk-esp4-encrypt-tun",
-  .runs_before = VNET_FEATURES ("adj-midchain-tx"),
-};
 /* *INDENT-ON* */
 
 VLIB_NODE_FN (dpdk_esp6_encrypt_tun_node) (vlib_main_t * vm,
@@ -710,13 +704,6 @@ VLIB_REGISTER_NODE (dpdk_esp6_encrypt_tun_node) = {
     {
       [ESP_ENCRYPT_NEXT_DROP] = "error-drop",
     }
-};
-
-VNET_FEATURE_INIT (dpdk_esp6_encrypt_tun_feat_node, static) =
-{
-  .arc_name = "ip6-output",
-  .node_name = "dpdk-esp6-encrypt-tun",
-  .runs_before = VNET_FEATURES ("adj-midchain-tx"),
 };
 /* *INDENT-ON* */
 

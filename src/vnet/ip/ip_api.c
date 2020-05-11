@@ -82,6 +82,7 @@ _(IP_TABLE_REPLACE_BEGIN, ip_table_replace_begin)                       \
 _(IP_TABLE_REPLACE_END, ip_table_replace_end)                           \
 _(IP_TABLE_FLUSH, ip_table_flush)                                       \
 _(IP_ROUTE_ADD_DEL, ip_route_add_del)                                   \
+_(IP_ROUTE_LOOKUP, ip_route_lookup)                                     \
 _(IP_TABLE_ADD_DEL, ip_table_add_del)                                   \
 _(IP_PUNT_POLICE, ip_punt_police)                                       \
 _(IP_PUNT_REDIRECT, ip_punt_redirect)                                   \
@@ -94,8 +95,6 @@ _(IP_SOURCE_AND_PORT_RANGE_CHECK_ADD_DEL,                               \
   ip_source_and_port_range_check_add_del)                               \
 _(IP_SOURCE_AND_PORT_RANGE_CHECK_INTERFACE_ADD_DEL,                     \
   ip_source_and_port_range_check_interface_add_del)                     \
-_(IP_SOURCE_CHECK_INTERFACE_ADD_DEL,                                    \
-  ip_source_check_interface_add_del)                                    \
  _(SW_INTERFACE_IP6_SET_LINK_LOCAL_ADDRESS,                             \
    sw_interface_ip6_set_link_local_address)                             \
 _(IP_REASSEMBLY_SET, ip_reassembly_set)                                 \
@@ -113,7 +112,7 @@ static void
   VALIDATE_SW_IF_INDEX (mp);
 
   rv = ((mp->enable == 1) ?
-	ip6_link_enable (ntohl (mp->sw_if_index)) :
+	ip6_link_enable (ntohl (mp->sw_if_index), NULL) :
 	ip6_link_disable (ntohl (mp->sw_if_index)));
 
   BAD_SW_IF_INDEX_LABEL;
@@ -573,6 +572,62 @@ vl_api_ip_route_add_del_t_handler (vl_api_ip_route_add_del_t * mp)
     rmp->stats_index = htonl (stats_index);
   }))
   /* *INDENT-ON* */
+}
+
+void
+vl_api_ip_route_lookup_t_handler (vl_api_ip_route_lookup_t * mp)
+{
+  vl_api_ip_route_lookup_reply_t *rmp = NULL;
+  fib_route_path_t *rpaths = NULL, *rpath;
+  const fib_prefix_t *pfx = NULL;
+  fib_prefix_t lookup;
+  vl_api_fib_path_t *fp;
+  fib_node_index_t fib_entry_index;
+  u32 fib_index;
+  int npaths = 0;
+  int rv;
+
+  ip_prefix_decode (&mp->prefix, &lookup);
+  rv = fib_api_table_id_decode (lookup.fp_proto, ntohl (mp->table_id),
+				&fib_index);
+  if (PREDICT_TRUE (!rv))
+    {
+      if (mp->exact)
+	fib_entry_index = fib_table_lookup_exact_match (fib_index, &lookup);
+      else
+	fib_entry_index = fib_table_lookup (fib_index, &lookup);
+      if (fib_entry_index == FIB_NODE_INDEX_INVALID)
+	rv = VNET_API_ERROR_NO_SUCH_ENTRY;
+      else
+	{
+	  pfx = fib_entry_get_prefix (fib_entry_index);
+	  rpaths = fib_entry_encode (fib_entry_index);
+	  npaths = vec_len (rpaths);
+	}
+    }
+
+  /* *INDENT-OFF* */
+  REPLY_MACRO3_ZERO(VL_API_IP_ROUTE_LOOKUP_REPLY,
+                    npaths * sizeof (*fp),
+  ({
+    if (!rv)
+      {
+        ip_prefix_encode (pfx, &rmp->route.prefix);
+        rmp->route.table_id = mp->table_id;
+        rmp->route.n_paths = npaths;
+        rmp->route.stats_index = fib_table_entry_get_stats_index (fib_index, pfx);
+        rmp->route.stats_index = htonl (rmp->route.stats_index);
+
+        fp = rmp->route.paths;
+        vec_foreach (rpath, rpaths)
+          {
+            fib_api_path_encode (rpath, fp);
+            fp++;
+          }
+      }
+  }));
+  /* *INDENT-ON* */
+  vec_free (rpaths);
 }
 
 void
@@ -1264,42 +1319,11 @@ static void
 
   ip6_address_decode (mp->ip, &ip);
 
-  rv = ip6_set_link_local_address (ntohl (mp->sw_if_index), &ip);
+  rv = ip6_link_set_local_address (ntohl (mp->sw_if_index), &ip);
 
   BAD_SW_IF_INDEX_LABEL;
   REPLY_MACRO (VL_API_SW_INTERFACE_IP6_SET_LINK_LOCAL_ADDRESS_REPLY);
 }
-
-typedef union
-{
-  u32 fib_index;
-} ip4_source_check_config_t;
-
-static void
-  vl_api_ip_source_check_interface_add_del_t_handler
-  (vl_api_ip_source_check_interface_add_del_t * mp)
-{
-  vl_api_ip_source_check_interface_add_del_reply_t *rmp;
-  int rv;
-  u32 sw_if_index = ntohl (mp->sw_if_index);
-  u8 is_add = mp->is_add;
-  char *feature_name =
-    mp->loose ? "ip4-source-check-via-any" : "ip4-source-check-via-rx";
-
-  ip4_source_check_config_t config;
-
-  VALIDATE_SW_IF_INDEX (mp);
-
-  config.fib_index =
-    fib_table_get_index_for_sw_if_index (FIB_PROTOCOL_IP4, sw_if_index);
-  rv =
-    vnet_feature_enable_disable ("ip4-unicast", feature_name, sw_if_index,
-				 is_add, &config, sizeof (config));
-  BAD_SW_IF_INDEX_LABEL;
-
-  REPLY_MACRO (VL_API_IP_SOURCE_CHECK_INTERFACE_ADD_DEL_REPLY);
-}
-
 
 static void
 vl_api_ip_table_replace_begin_t_handler (vl_api_ip_table_replace_begin_t * mp)
@@ -1577,13 +1601,14 @@ static void
 vl_api_ip_punt_redirect_dump_t_handler (vl_api_ip_punt_redirect_dump_t * mp)
 {
   vl_api_registration_t *reg;
-  fib_protocol_t fproto;
+  fib_protocol_t fproto = FIB_PROTOCOL_IP4;
 
   reg = vl_api_client_index_to_registration (mp->client_index);
   if (!reg)
     return;
 
-  fproto = mp->is_ipv6 ? FIB_PROTOCOL_IP6 : FIB_PROTOCOL_IP4;
+  if (mp->is_ipv6 == 1)
+    fproto = FIB_PROTOCOL_IP6;
 
   ip_punt_redirect_walk_ctx_t ctx = {
     .reg = reg,

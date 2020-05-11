@@ -132,6 +132,9 @@ _ (x86_aes,  1, ecx, 25)  \
 _ (sha,      7, ebx, 29)  \
 _ (vaes,     7, ecx, 9)   \
 _ (vpclmulqdq, 7, ecx, 10)   \
+_ (avx512_vnni, 7, ecx, 11)   \
+_ (avx512_bitalg, 7, ecx, 12)   \
+_ (avx512_vpopcntdq, 7, ecx, 14)   \
 _ (invariant_tsc, 0x80000007, edx, 8)
 
 
@@ -245,15 +248,23 @@ clib_cpu_supports_aes ()
 }
 
 static inline int
-clib_cpu_march_priority_avx512 ()
+clib_cpu_march_priority_icl ()
 {
-  if (clib_cpu_supports_avx512f ())
-    return 20;
+  if (clib_cpu_supports_avx512_bitalg ())
+    return 200;
   return -1;
 }
 
 static inline int
-clib_cpu_march_priority_avx2 ()
+clib_cpu_march_priority_skx ()
+{
+  if (clib_cpu_supports_avx512f ())
+    return 100;
+  return -1;
+}
+
+static inline int
+clib_cpu_march_priority_hsw ()
 {
   if (clib_cpu_supports_avx2 ())
     return 50;
@@ -322,6 +333,8 @@ clib_cpu_part ()
 #define AARCH64_CPU_PART_QDF24XX            0xc00
 #define AARCH64_CPU_IMPLEMENTER_CORTEXA72   0x41
 #define AARCH64_CPU_PART_CORTEXA72          0xd08
+#define AARCH64_CPU_IMPLEMENTER_NEOVERSEN1  0x41
+#define AARCH64_CPU_PART_NEOVERSEN1         0xd0c
 
 static inline int
 clib_cpu_march_priority_thunderx2t99 ()
@@ -346,6 +359,15 @@ clib_cpu_march_priority_cortexa72 ()
 {
   if ((AARCH64_CPU_IMPLEMENTER_CORTEXA72 == clib_cpu_implementer ()) &&
       (AARCH64_CPU_PART_CORTEXA72 == clib_cpu_part ()))
+    return 10;
+  return -1;
+}
+
+static inline int
+clib_cpu_march_priority_neoversen1 ()
+{
+  if ((AARCH64_CPU_IMPLEMENTER_NEOVERSEN1 == clib_cpu_implementer ()) &&
+      (AARCH64_CPU_PART_NEOVERSEN1 == clib_cpu_part ()))
     return 10;
   return -1;
 }

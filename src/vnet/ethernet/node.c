@@ -114,7 +114,7 @@ parse_header (ethernet_input_variant_t variant,
     {
       ethernet_header_t *e0;
 
-      e0 = (void *) (b0->data + b0->current_data);
+      e0 = vlib_buffer_get_current (b0);
 
       vnet_buffer (b0)->l2_hdr_offset = b0->current_data;
       b0->flags |= VNET_BUFFER_F_L2_HDR_OFFSET_VALID;
@@ -128,7 +128,7 @@ parse_header (ethernet_input_variant_t variant,
       // here when prior node was LLC/SNAP processing
       u16 *e0;
 
-      e0 = (void *) (b0->data + b0->current_data);
+      e0 = vlib_buffer_get_current (b0);
 
       vlib_buffer_advance (b0, sizeof (e0[0]));
 
@@ -153,7 +153,7 @@ parse_header (ethernet_input_variant_t variant,
 
       *match_flags = SUBINT_CONFIG_VALID | SUBINT_CONFIG_MATCH_1_TAG;
 
-      h0 = (void *) (b0->data + b0->current_data);
+      h0 = vlib_buffer_get_current (b0);
 
       tag = clib_net_to_host_u16 (h0->priority_cfi_and_id);
 
@@ -171,7 +171,7 @@ parse_header (ethernet_input_variant_t variant,
 	  // Double tagged packet
 	  *match_flags = SUBINT_CONFIG_VALID | SUBINT_CONFIG_MATCH_2_TAG;
 
-	  h0 = (void *) (b0->data + b0->current_data);
+	  h0 = vlib_buffer_get_current (b0);
 
 	  tag = clib_net_to_host_u16 (h0->priority_cfi_and_id);
 
@@ -842,18 +842,15 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
   u16 et_vlan = clib_host_to_net_u16 (ETHERNET_TYPE_VLAN);
   u16 et_dot1ad = clib_host_to_net_u16 (ETHERNET_TYPE_DOT1AD);
   i32 n_left = n_packets;
-  vlib_buffer_t *b[20];
-  u32 *from;
+  vlib_buffer_t *bufs[VLIB_FRAME_SIZE];
+  vlib_buffer_t **b = bufs;
   ethernet_interface_t *ei = ethernet_get_interface (em, hi->hw_if_index);
 
-  from = buffer_indices;
+  vlib_get_buffers (vm, buffer_indices, b, n_left);
 
   while (n_left >= 20)
     {
       vlib_buffer_t **ph = b + 16, **pd = b + 8;
-      vlib_get_buffers (vm, from, b, 4);
-      vlib_get_buffers (vm, from + 8, pd, 4);
-      vlib_get_buffers (vm, from + 16, ph, 4);
 
       vlib_prefetch_buffer_header (ph[0], LOAD);
       vlib_prefetch_buffer_data (pd[0], LOAD);
@@ -874,15 +871,14 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
       eth_input_adv_and_flags_x4 (b, main_is_l3);
 
       /* next */
+      b += 4;
       n_left -= 4;
       etype += 4;
       tag += 4;
       dmac += 4;
-      from += 4;
     }
   while (n_left >= 4)
     {
-      vlib_get_buffers (vm, from, b, 4);
       eth_input_get_etype_and_tags (b, etype, tag, dmac, 0, dmac_check);
       eth_input_get_etype_and_tags (b, etype, tag, dmac, 1, dmac_check);
       eth_input_get_etype_and_tags (b, etype, tag, dmac, 2, dmac_check);
@@ -890,24 +886,23 @@ eth_input_process_frame (vlib_main_t * vm, vlib_node_runtime_t * node,
       eth_input_adv_and_flags_x4 (b, main_is_l3);
 
       /* next */
+      b += 4;
       n_left -= 4;
       etype += 4;
       tag += 4;
       dmac += 4;
-      from += 4;
     }
   while (n_left)
     {
-      vlib_get_buffers (vm, from, b, 1);
       eth_input_get_etype_and_tags (b, etype, tag, dmac, 0, dmac_check);
       eth_input_adv_and_flags_x1 (b, main_is_l3);
 
       /* next */
+      b += 1;
       n_left -= 1;
       etype += 1;
       tag += 1;
-      dmac += 4;
-      from += 1;
+      dmac += 1;
     }
 
   if (dmac_check)

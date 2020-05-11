@@ -237,7 +237,7 @@ VNET GSO
 I:	gso
 M:	Andrew Yourtchenko <ayourtch@gmail.com>
 M:	Mohsin Kazmi <sykazmi@cisco.com>
-F:	src/vnet/interface_output.c
+F:	src/vnet/gso/
 
 Plugin - MAP
 I:	map
@@ -593,6 +593,11 @@ I:	libmemif
 M:	Damjan Marion <damarion@cisco.com>
 F:	extras/libmemif
 
+gomemif
+I:	gomemif
+M:	Jakub Grajciar <jgrajcia@cisco.com>
+F:	extras/gomemif
+
 VPP Comms Library
 I:	vcl
 Y:	src/vnet/vcl/FEATURE.yaml
@@ -659,6 +664,11 @@ Plugin - VRRP
 I:	vrrp
 M:	Matthew Smith <mgsmith@netgate.com>
 F:	src/plugins/vrrp
+
+Plugin - Unicast Reverse Path forwarding
+I:	urpf
+M:	Neale Ranns <nranns@cisco.com>
+F:	src/plugins/urpf
 
 VPP Config Tooling
 I:	vpp_config

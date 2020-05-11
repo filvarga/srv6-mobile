@@ -11,9 +11,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+option(VPP_BUFFER_FAULT_INJECTOR "Include the buffer fault injector" OFF)
+
 ##############################################################################
 # Generate vlib/config.h
 ##############################################################################
+if(VPP_BUFFER_FAULT_INJECTOR)
+  set(BUFFER_ALLOC_FAULT_INJECTOR 1 CACHE STRING "fault injector on")
+else()
+  set(BUFFER_ALLOC_FAULT_INJECTOR 0 CACHE STRING "fault injector off")
+endif()
+
 set(PRE_DATA_SIZE 128 CACHE STRING "Buffer headroom size.")
 configure_file(
   ${CMAKE_SOURCE_DIR}/vlib/config.h.in
@@ -53,7 +61,6 @@ add_vpp_library(vlib
   error.c
   format.c
   handoff_trace.c
-  i2c.c
   init.c
   linux/pci.c
   linux/vfio.c
@@ -62,6 +69,7 @@ add_vpp_library(vlib
   node.c
   node_cli.c
   node_format.c
+  node_init.c
   pci/pci.c
   pci/pci_types_api.c
   physmem.c
@@ -70,7 +78,6 @@ add_vpp_library(vlib
   threads.c
   threads_cli.c
   trace.c
-  unix/cj.c
   unix/cli.c
   unix/input.c
   unix/main.c
@@ -82,6 +89,7 @@ add_vpp_library(vlib
   MULTIARCH_SOURCES
   drop.c
   punt_node.c
+  node_init.c
 
   INSTALL_HEADERS
   buffer_funcs.h
@@ -95,7 +103,6 @@ add_vpp_library(vlib
   error.h
   format_funcs.h
   global_funcs.h
-  i2c.h
   init.h
   linux/vfio.h
   log.h
@@ -111,7 +118,6 @@ add_vpp_library(vlib
   threads.h
   trace_funcs.h
   trace.h
-  unix/cj.h
   unix/mc_socket.h
   unix/plugin.h
   unix/unix.h

@@ -58,7 +58,6 @@
   _ (VHOST_USER_F_PROTOCOL_FEATURES, 30) \
   _ (VIRTIO_F_VERSION_1, 32)
 
-
 #define foreach_virtio_if_flag		\
   _(0, ADMIN_UP, "admin-up")		\
   _(1, DELETING, "deleting")
@@ -80,11 +79,17 @@ typedef enum
 #define TX_QUEUE_ACCESS(X) (X/2)
 #define RX_QUEUE_ACCESS(X) (X/2)
 
+#define foreach_virtio_if_types \
+  _ (TAP, 0)                    \
+  _ (TUN, 1)                    \
+  _ (PCI, 2)
+
 typedef enum
 {
-  VIRTIO_IF_TYPE_TAP = 1,
-  VIRTIO_IF_TYPE_PCI,
-  VIRTIO_IF_N_TYPES,
+#define _(a, b) VIRTIO_IF_TYPE_##a = (1 << b),
+  foreach_virtio_if_types
+#undef _
+    VIRTIO_IF_N_TYPES = (1 << 3),
 } virtio_if_type_t;
 
 
@@ -150,7 +155,7 @@ typedef struct
   };
   u32 per_interface_next_index;
   int *vhost_fds;
-  int tap_fd;
+  int *tap_fds;
   u32 msix_enabled;
   u32 pci_dev_handle;
   virtio_vring_t *rxq_vrings;

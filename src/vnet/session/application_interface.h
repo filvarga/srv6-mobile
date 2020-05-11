@@ -200,6 +200,7 @@ typedef enum
   APP_OPTIONS_RX_FIFO_SIZE,
   APP_OPTIONS_TX_FIFO_SIZE,
   APP_OPTIONS_PREALLOC_FIFO_PAIRS,
+  APP_OPTIONS_PREALLOC_FIFO_HDRS,
   APP_OPTIONS_NAMESPACE,
   APP_OPTIONS_NAMESPACE_SECRET,
   APP_OPTIONS_PROXY_TRANSPORT,
@@ -522,6 +523,7 @@ typedef struct session_migrate_msg_
 typedef struct session_cleanup_msg_
 {
   session_handle_t handle;
+  u8 type;
 } __clib_packed session_cleanup_msg_t;
 
 typedef struct app_session_event_

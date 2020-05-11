@@ -749,6 +749,17 @@ vcl_session_cleanup_handler (vcl_worker_t * wrk, void *data)
       return;
     }
 
+  if (msg->type == SESSION_CLEANUP_TRANSPORT)
+    {
+      /* Transport was cleaned up before we confirmed close. Probably the
+       * app is still waiting for some data that cannot be delivered.
+       * Confirm close to make sure everything is cleaned up */
+      if (session->session_state == STATE_VPP_CLOSING)
+	vcl_session_cleanup (wrk, session, vcl_session_handle (session),
+			     1 /* do_disconnect */ );
+      return;
+    }
+
   vcl_session_table_del_vpp_handle (wrk, msg->handle);
   /* Should not happen. App did not close the connection so don't free it. */
   if (session->session_state != STATE_CLOSED)
@@ -1211,35 +1222,38 @@ vppcom_app_create (char *app_name)
 void
 vppcom_app_destroy (void)
 {
-  int rv;
-  f64 orig_app_timeout;
+  vcl_worker_t *wrk, *current_wrk;
+  struct dlmallinfo mi;
+  mspace heap;
 
   if (!pool_elts (vcm->workers))
     return;
 
   vcl_evt (VCL_EVT_DETACH, vcm);
 
-  if (pool_elts (vcm->workers) == 1)
-    {
-      vcl_send_app_detach (vcl_worker_get_current ());
-      orig_app_timeout = vcm->cfg.app_timeout;
-      vcm->cfg.app_timeout = 2.0;
-      rv = vcl_wait_for_app_state_change (STATE_APP_ENABLED);
-      vcm->cfg.app_timeout = orig_app_timeout;
-      if (PREDICT_FALSE (rv))
-	VDBG (0, "application detach timed out! returning %d (%s)", rv,
-	      vppcom_retval_str (rv));
-      vec_free (vcm->app_name);
-      vcl_worker_cleanup (vcl_worker_get_current (), 0 /* notify vpp */ );
-    }
-  else
-    {
-      vcl_worker_cleanup (vcl_worker_get_current (), 1 /* notify vpp */ );
-    }
+  current_wrk = vcl_worker_get_current ();
 
-  vcl_set_worker_index (~0);
+  /* *INDENT-OFF* */
+  pool_foreach (wrk, vcm->workers, ({
+    if (current_wrk != wrk)
+      vcl_worker_cleanup (wrk, 0 /* notify vpp */ );
+  }));
+  /* *INDENT-ON* */
+
+  vcl_send_app_detach (current_wrk);
+  vppcom_disconnect_from_vpp ();
+  vcl_worker_cleanup (current_wrk, 0 /* notify vpp */ );
+
   vcl_elog_stop (vcm);
-  vl_client_disconnect_from_vlib ();
+
+  /*
+   * Free the heap and fix vcm
+   */
+  heap = clib_mem_get_heap ();
+  mi = mspace_mallinfo (heap);
+  munmap (mspace_least_addr (heap), mi.arena);
+
+  vcm = &_vppcom_main;
 }
 
 int
@@ -2161,7 +2175,7 @@ vcl_select_handle_mq_event (vcl_worker_t * wrk, session_event_t * e,
     case SESSION_IO_EVT_RX:
       sid = e->session_index;
       session = vcl_session_get (wrk, sid);
-      if (!session)
+      if (!session || !vcl_session_is_open (session))
 	break;
       vcl_fifo_rx_evt_valid_or_break (session);
       if (sid < n_bits && read_map)
@@ -2173,7 +2187,7 @@ vcl_select_handle_mq_event (vcl_worker_t * wrk, session_event_t * e,
     case SESSION_IO_EVT_TX:
       sid = e->session_index;
       session = vcl_session_get (wrk, sid);
-      if (!session)
+      if (!session || !vcl_session_is_open (session))
 	break;
       if (sid < n_bits && write_map)
 	{
@@ -2366,7 +2380,7 @@ vppcom_select (int n_bits, vcl_si_set * read_map, vcl_si_set * write_map,
   u32 sid, minbits = clib_max (n_bits, BITS (uword)), bits_set = 0;
   vcl_worker_t *wrk = vcl_worker_get_current ();
   vcl_session_t *session = 0;
-  int rv, i;
+  int i;
 
   if (n_bits && read_map)
     {
@@ -2400,13 +2414,12 @@ vppcom_select (int n_bits, vcl_si_set * read_map, vcl_si_set * write_map,
   clib_bitmap_foreach (sid, wrk->wr_bitmap, ({
     if (!(session = vcl_session_get (wrk, sid)))
       {
-        if (except_map && sid < minbits)
-          clib_bitmap_set_no_check (except_map, sid, 1);
-        continue;
+	clib_bitmap_set_no_check ((uword*)write_map, sid, 1);
+	bits_set++;
+	continue;
       }
 
-    rv = svm_fifo_is_full_prod (session->tx_fifo);
-    if (!rv)
+    if (vcl_session_write_ready (session))
       {
         clib_bitmap_set_no_check ((uword*)write_map, sid, 1);
         bits_set++;
@@ -2422,13 +2435,12 @@ check_rd:
   clib_bitmap_foreach (sid, wrk->rd_bitmap, ({
     if (!(session = vcl_session_get (wrk, sid)))
       {
-        if (except_map && sid < minbits)
-          clib_bitmap_set_no_check (except_map, sid, 1);
-        continue;
+	clib_bitmap_set_no_check ((uword*)read_map, sid, 1);
+	bits_set++;
+	continue;
       }
 
-    rv = vcl_session_read_ready (session);
-    if (rv)
+    if (vcl_session_read_ready (session))
       {
         clib_bitmap_set_no_check ((uword*)read_map, sid, 1);
         bits_set++;
@@ -3816,6 +3828,12 @@ vppcom_worker_unregister (void)
 {
   vcl_worker_cleanup (vcl_worker_get_current (), 1 /* notify vpp */ );
   vcl_set_worker_index (~0);
+}
+
+void
+vppcom_worker_index_set (int index)
+{
+  vcl_set_worker_index (index);
 }
 
 int

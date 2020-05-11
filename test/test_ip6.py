@@ -25,7 +25,8 @@ from vpp_ip import DpoProto
 from vpp_ip_route import VppIpRoute, VppRoutePath, find_route, VppIpMRoute, \
     VppMRoutePath, MRouteItfFlags, MRouteEntryFlags, VppMplsIpBind, \
     VppMplsRoute, VppMplsTable, VppIpTable, FibPathType, FibPathProto, \
-    VppIpInterfaceAddress, find_route_in_dump, find_mroute_in_dump
+    VppIpInterfaceAddress, find_route_in_dump, find_mroute_in_dump, \
+    VppIp6LinkLocalAddress
 from vpp_neighbor import find_nbr, VppNeighbor
 from vpp_pg_interface import is_ipv6_misc
 from vpp_sub_interface import VppSubInterface, VppDot1QSubint
@@ -976,6 +977,80 @@ class TestIPv6(TestIPv6ND):
                 mld = rx[ICMPv6MLReport2]
 
         self.assertEqual(mld.records_number, 4)
+
+
+class TestIPv6RouteLookup(VppTestCase):
+    """ IPv6 Route Lookup Test Case """
+    routes = []
+
+    def route_lookup(self, prefix, exact):
+        return self.vapi.api(self.vapi.papi.ip_route_lookup,
+                             {
+                                 'table_id': 0,
+                                 'exact': exact,
+                                 'prefix': prefix,
+                             })
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPv6RouteLookup, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIPv6RouteLookup, cls).tearDownClass()
+
+    def setUp(self):
+        super(TestIPv6RouteLookup, self).setUp()
+
+        drop_nh = VppRoutePath("::1", 0xffffffff,
+                               type=FibPathType.FIB_PATH_TYPE_DROP)
+
+        # Add 3 routes
+        r = VppIpRoute(self, "2001:1111::", 32, [drop_nh])
+        r.add_vpp_config()
+        self.routes.append(r)
+
+        r = VppIpRoute(self, "2001:1111:2222::", 48, [drop_nh])
+        r.add_vpp_config()
+        self.routes.append(r)
+
+        r = VppIpRoute(self, "2001:1111:2222::1", 128, [drop_nh])
+        r.add_vpp_config()
+        self.routes.append(r)
+
+    def tearDown(self):
+        # Remove the routes we added
+        for r in self.routes:
+            r.remove_vpp_config()
+
+        super(TestIPv6RouteLookup, self).tearDown()
+
+    def test_exact_match(self):
+        # Verify we find the host route
+        prefix = "2001:1111:2222::1/128"
+        result = self.route_lookup(prefix, True)
+        assert (prefix == str(result.route.prefix))
+
+        # Verify we find a middle prefix route
+        prefix = "2001:1111:2222::/48"
+        result = self.route_lookup(prefix, True)
+        assert (prefix == str(result.route.prefix))
+
+        # Verify we do not find an available LPM.
+        with self.vapi.assert_negative_api_retval():
+            self.route_lookup("2001::2/128", True)
+
+    def test_longest_prefix_match(self):
+        # verify we find lpm
+        lpm_prefix = "2001:1111:2222::/48"
+        result = self.route_lookup("2001:1111:2222::2/128", False)
+        assert (lpm_prefix == str(result.route.prefix))
+
+        # Verify we find the exact when not requested
+        result = self.route_lookup(lpm_prefix, False)
+        assert (lpm_prefix == str(result.route.prefix))
+
+        # Can't seem to delete the default route so no negative LPM test.
 
 
 class TestIPv6IfAddrRoute(VppTestCase):
@@ -2442,7 +2517,6 @@ class TestIPReplace(VppTestCase):
         for i in self.pg_interfaces:
             i.admin_up()
             i.config_ip6()
-            i.resolve_arp()
             i.generate_remote_hosts(2)
             self.tables.append(VppIpTable(self, table_id,
                                           True).add_vpp_config())
@@ -2452,7 +2526,7 @@ class TestIPReplace(VppTestCase):
         super(TestIPReplace, self).tearDown()
         for i in self.pg_interfaces:
             i.admin_down()
-            i.unconfig_ip4()
+            i.unconfig_ip6()
 
     def test_replace(self):
         """ IP Table Replace """
@@ -2558,6 +2632,255 @@ class TestIPReplace(VppTestCase):
             t.flush()
             self.assertEqual(len(t.dump()), 2)
             self.assertEqual(len(t.mdump()), 5)
+
+
+class TestIP6Replace(VppTestCase):
+    """ IPv4 Interface Address Replace """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIP6Replace, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIP6Replace, cls).tearDownClass()
+
+    def setUp(self):
+        super(TestIP6Replace, self).setUp()
+
+        self.create_pg_interfaces(range(4))
+
+        for i in self.pg_interfaces:
+            i.admin_up()
+
+    def tearDown(self):
+        super(TestIP6Replace, self).tearDown()
+        for i in self.pg_interfaces:
+            i.admin_down()
+
+    def get_n_pfxs(self, intf):
+        return len(self.vapi.ip_address_dump(intf.sw_if_index, True))
+
+    def test_replace(self):
+        """ IP interface address replace """
+
+        intf_pfxs = [[], [], [], []]
+
+        # add prefixes to each of the interfaces
+        for i in range(len(self.pg_interfaces)):
+            intf = self.pg_interfaces[i]
+
+            # 2001:16:x::1/64
+            addr = "2001:16:%d::1" % intf.sw_if_index
+            a = VppIpInterfaceAddress(self, intf, addr, 64).add_vpp_config()
+            intf_pfxs[i].append(a)
+
+            # 2001:16:x::2/64 - a different address in the same subnet as above
+            addr = "2001:16:%d::2" % intf.sw_if_index
+            a = VppIpInterfaceAddress(self, intf, addr, 64).add_vpp_config()
+            intf_pfxs[i].append(a)
+
+            # 2001:15:x::2/64 - a different address and subnet
+            addr = "2001:15:%d::2" % intf.sw_if_index
+            a = VppIpInterfaceAddress(self, intf, addr, 64).add_vpp_config()
+            intf_pfxs[i].append(a)
+
+        # a dump should n_address in it
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 3)
+
+        #
+        # remove all the address thru a replace
+        #
+        self.vapi.sw_interface_address_replace_begin()
+        self.vapi.sw_interface_address_replace_end()
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 0)
+
+        #
+        # add all the interface addresses back
+        #
+        for p in intf_pfxs:
+            for v in p:
+                v.add_vpp_config()
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 3)
+
+        #
+        # replace again, but this time update/re-add the address on the first
+        # two interfaces
+        #
+        self.vapi.sw_interface_address_replace_begin()
+
+        for p in intf_pfxs[:2]:
+            for v in p:
+                v.add_vpp_config()
+
+        self.vapi.sw_interface_address_replace_end()
+
+        # on the first two the address still exist,
+        # on the other two they do not
+        for intf in self.pg_interfaces[:2]:
+            self.assertEqual(self.get_n_pfxs(intf), 3)
+        for p in intf_pfxs[:2]:
+            for v in p:
+                self.assertTrue(v.query_vpp_config())
+        for intf in self.pg_interfaces[2:]:
+            self.assertEqual(self.get_n_pfxs(intf), 0)
+
+        #
+        # add all the interface addresses back on the last two
+        #
+        for p in intf_pfxs[2:]:
+            for v in p:
+                v.add_vpp_config()
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 3)
+
+        #
+        # replace again, this time add different prefixes on all the interfaces
+        #
+        self.vapi.sw_interface_address_replace_begin()
+
+        pfxs = []
+        for intf in self.pg_interfaces:
+            # 2001:18:x::1/64
+            addr = "2001:18:%d::1" % intf.sw_if_index
+            pfxs.append(VppIpInterfaceAddress(self, intf, addr,
+                                              64).add_vpp_config())
+
+        self.vapi.sw_interface_address_replace_end()
+
+        # only .18 should exist on each interface
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 1)
+        for pfx in pfxs:
+            self.assertTrue(pfx.query_vpp_config())
+
+        #
+        # remove everything
+        #
+        self.vapi.sw_interface_address_replace_begin()
+        self.vapi.sw_interface_address_replace_end()
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 0)
+
+        #
+        # add prefixes to each interface. post-begin add the prefix from
+        # interface X onto interface Y. this would normally be an error
+        # since it would generate a 'duplicate address' warning. but in
+        # this case, since what is newly downloaded is sane, it's ok
+        #
+        for intf in self.pg_interfaces:
+            # 2001:18:x::1/64
+            addr = "2001:18:%d::1" % intf.sw_if_index
+            VppIpInterfaceAddress(self, intf, addr, 64).add_vpp_config()
+
+        self.vapi.sw_interface_address_replace_begin()
+
+        pfxs = []
+        for intf in self.pg_interfaces:
+            # 2001:18:x::1/64
+            addr = "2001:18:%d::1" % (intf.sw_if_index + 1)
+            pfxs.append(VppIpInterfaceAddress(self, intf,
+                                              addr, 64).add_vpp_config())
+
+        self.vapi.sw_interface_address_replace_end()
+
+        self.logger.info(self.vapi.cli("sh int addr"))
+
+        for intf in self.pg_interfaces:
+            self.assertEqual(self.get_n_pfxs(intf), 1)
+        for pfx in pfxs:
+            self.assertTrue(pfx.query_vpp_config())
+
+
+class TestIP6LinkLocal(VppTestCase):
+    """ IPv6 Link Local """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIP6LinkLocal, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TestIP6LinkLocal, cls).tearDownClass()
+
+    def setUp(self):
+        super(TestIP6LinkLocal, self).setUp()
+
+        self.create_pg_interfaces(range(2))
+
+        for i in self.pg_interfaces:
+            i.admin_up()
+
+    def tearDown(self):
+        super(TestIP6LinkLocal, self).tearDown()
+        for i in self.pg_interfaces:
+            i.admin_down()
+
+    def test_ip6_ll(self):
+        """ IPv6 Link Local """
+
+        #
+        # two APIs to add a link local address.
+        #   1 - just like any other prefix
+        #   2 - with the special set LL API
+        #
+
+        #
+        # First with the API to set a 'normal' prefix
+        #
+        ll1 = "fe80:1::1"
+        ll2 = "fe80:2::2"
+        ll3 = "fe80:3::3"
+
+        VppIpInterfaceAddress(self, self.pg0, ll1, 128).add_vpp_config()
+
+        #
+        # should be able to ping the ll
+        #
+        p_echo_request_1 = (Ether(src=self.pg0.remote_mac,
+                                  dst=self.pg0.local_mac) /
+                            IPv6(src=ll2,
+                                 dst=ll1) /
+                            ICMPv6EchoRequest())
+
+        self.send_and_expect(self.pg0, [p_echo_request_1], self.pg0)
+
+        #
+        # change the link-local on pg0
+        #
+        v_ll3 = VppIpInterfaceAddress(self, self.pg0,
+                                      ll3, 128).add_vpp_config()
+
+        p_echo_request_3 = (Ether(src=self.pg0.remote_mac,
+                                  dst=self.pg0.local_mac) /
+                            IPv6(src=ll2,
+                                 dst=ll3) /
+                            ICMPv6EchoRequest())
+
+        self.send_and_expect(self.pg0, [p_echo_request_3], self.pg0)
+
+        #
+        # set a normal v6 prefix on the link
+        #
+        self.pg0.config_ip6()
+
+        self.send_and_expect(self.pg0, [p_echo_request_3], self.pg0)
+
+        # the link-local cannot be removed
+        with self.vapi.assert_negative_api_retval():
+            v_ll3.remove_vpp_config()
+
+        #
+        # Use the specific link-local API on pg1
+        #
+        VppIp6LinkLocalAddress(self, self.pg1, ll1).add_vpp_config()
+        self.send_and_expect(self.pg1, [p_echo_request_1], self.pg1)
+
+        VppIp6LinkLocalAddress(self, self.pg1, ll3).add_vpp_config()
+        self.send_and_expect(self.pg1, [p_echo_request_3], self.pg1)
 
 
 if __name__ == '__main__':

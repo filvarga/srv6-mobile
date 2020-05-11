@@ -642,7 +642,7 @@ echo_clients_attach (u8 * appns_id, u64 appns_flags, u64 appns_secret)
   u32 prealloc_fifos, segment_size = 256 << 20;
   echo_client_main_t *ecm = &echo_client_main;
   vnet_app_attach_args_t _a, *a = &_a;
-  u64 options[17];
+  u64 options[18];
   int rv;
 
   clib_memset (a, 0, sizeof (*a));
@@ -898,8 +898,7 @@ echo_clients_command_fn (vlib_main_t * vm,
   if ((rv = parse_uri ((char *) ecm->connect_uri, &sep)))
     return clib_error_return (0, "Uri parse error: %d", rv);
   ecm->transport_proto = sep.transport_proto;
-  ecm->is_dgram = (sep.transport_proto == TRANSPORT_PROTO_UDP
-		   || sep.transport_proto == TRANSPORT_PROTO_UDPC);
+  ecm->is_dgram = (sep.transport_proto == TRANSPORT_PROTO_UDP);
 
 #if ECHO_CLIENT_PTHREAD
   echo_clients_start_tx_pthread ();

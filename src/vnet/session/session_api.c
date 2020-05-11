@@ -66,8 +66,6 @@ api_session_transport_proto_decode (const vl_api_transport_proto_t * api_tp)
       return TRANSPORT_PROTO_UDP;
     case TRANSPORT_PROTO_API_TLS:
       return TRANSPORT_PROTO_TLS;
-    case TRANSPORT_PROTO_API_UDPC:
-      return TRANSPORT_PROTO_UDPC;
     case TRANSPORT_PROTO_API_QUIC:
       return TRANSPORT_PROTO_QUIC;
     default:
@@ -86,8 +84,6 @@ api_session_transport_proto_encode (const transport_proto_t tp)
       return TRANSPORT_PROTO_API_UDP;
     case TRANSPORT_PROTO_TLS:
       return TRANSPORT_PROTO_API_TLS;
-    case TRANSPORT_PROTO_UDPC:
-      return TRANSPORT_PROTO_API_UDPC;
     case TRANSPORT_PROTO_QUIC:
       return TRANSPORT_PROTO_API_QUIC;
     default:
@@ -554,8 +550,9 @@ mq_send_session_cleanup_cb (session_t * s, session_cleanup_ntf_t ntf)
   session_event_t *evt;
   app_worker_t *app_wrk;
 
-  /* Only propagate session cleanup notification */
-  if (ntf == SESSION_CLEANUP_TRANSPORT)
+  /* Propagate transport cleanup notifications only if app didn't close */
+  if (ntf == SESSION_CLEANUP_TRANSPORT
+      && s->session_state != SESSION_STATE_TRANSPORT_DELETED)
     return;
 
   app_wrk = app_worker_get_if_valid (s->app_wrk_index);
@@ -571,6 +568,7 @@ mq_send_session_cleanup_cb (session_t * s, session_cleanup_ntf_t ntf)
   evt->event_type = SESSION_CTRL_EVT_CLEANUP;
   mp = (session_cleanup_msg_t *) evt->data;
   mp->handle = session_handle (s);
+  mp->type = ntf;
   svm_msg_q_add_and_unlock (app_mq, msg);
 }
 
@@ -626,7 +624,7 @@ vl_api_app_attach_t_handler (vl_api_app_attach_t * mp)
   a->options = mp->options;
   a->session_cb_vft = &session_mq_cb_vft;
 
-  a->namespace_id = vl_api_from_api_to_new_vec (&mp->namespace_id);
+  a->namespace_id = vl_api_from_api_to_new_vec (mp, &mp->namespace_id);
 
   if ((rv = vnet_application_attach (a)))
     {
@@ -803,7 +801,7 @@ vl_api_app_namespace_add_del_t_handler (vl_api_app_namespace_add_del_t * mp)
       goto done;
     }
 
-  ns_id = vl_api_from_api_to_new_vec (&mp->namespace_id);
+  ns_id = vl_api_from_api_to_new_vec (mp, &mp->namespace_id);
 
   vnet_app_namespace_add_del_args_t args = {
     .ns_id = ns_id,
