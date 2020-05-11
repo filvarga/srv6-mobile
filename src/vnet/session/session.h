@@ -52,6 +52,7 @@ typedef struct session_tx_context_
   u16 deq_per_first_buf;
   u16 deq_per_buf;
   u16 n_segs_per_evt;
+  u16 n_bufs_needed;
   u8 n_bufs_per_seg;
     CLIB_CACHE_LINE_ALIGN_MARK (cacheline1);
   session_dgram_hdr_t hdr;
@@ -292,6 +293,8 @@ session_evt_alloc_old (session_worker_t * wrk)
 session_t *session_alloc (u32 thread_index);
 void session_free (session_t * s);
 void session_free_w_fifos (session_t * s);
+void session_cleanup_half_open (transport_proto_t tp,
+				session_handle_t ho_handle);
 u8 session_is_valid (u32 si, u8 thread_index);
 
 always_inline session_t *
@@ -461,10 +464,14 @@ int session_dgram_connect_notify (transport_connection_t * tc,
 int session_stream_accept_notify (transport_connection_t * tc);
 void session_transport_closing_notify (transport_connection_t * tc);
 void session_transport_delete_notify (transport_connection_t * tc);
+void session_half_open_delete_notify (transport_proto_t tp,
+				      session_handle_t ho_handle);
 void session_transport_closed_notify (transport_connection_t * tc);
 void session_transport_reset_notify (transport_connection_t * tc);
 int session_stream_accept (transport_connection_t * tc, u32 listener_index,
 			   u32 thread_index, u8 notify);
+int session_dgram_accept (transport_connection_t * tc, u32 listener_index,
+			  u32 thread_index);
 /**
  * Initialize session layer for given transport proto and ip version
  *

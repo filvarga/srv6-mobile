@@ -276,6 +276,10 @@ typedef struct vlib_main_t
   uword *processing_rpc_requests;
   clib_spinlock_t pending_rpc_lock;
 
+  /* buffer fault injector */
+  u32 buffer_alloc_success_seed;
+  f64 buffer_alloc_success_rate;
+
 } vlib_main_t;
 
 /* Global main structure. */
@@ -286,6 +290,13 @@ void vlib_worker_loop (vlib_main_t * vm);
 always_inline f64
 vlib_time_now (vlib_main_t * vm)
 {
+#if CLIB_DEBUG > 0
+  extern __thread uword __os_thread_index;
+#endif
+  /*
+   * Make sure folks don't pass &vlib_global_main from a worker thread.
+   */
+  ASSERT (vm->thread_index == __os_thread_index);
   return clib_time_now (&vm->clib_time) + vm->time_offset;
 }
 

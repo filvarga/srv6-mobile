@@ -1948,11 +1948,6 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
       new_tc0->timers[TCP_TIMER_RETRANSMIT_SYN] = TCP_TIMER_HANDLE_INVALID;
       new_tc0->sw_if_index = vnet_buffer (b0)->sw_if_index[VLIB_RX];
 
-      /* If this is not the owning thread, wait for syn retransmit to
-       * expire and cleanup then */
-      if (tcp_half_open_connection_cleanup (tc0))
-	tc0->flags |= TCP_CONN_HALF_OPEN_DONE;
-
       if (tcp_opts_tstamp (&new_tc0->rcv_opts))
 	{
 	  new_tc0->tsval_recent = new_tc0->rcv_opts.tsval;
@@ -1991,7 +1986,7 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      tcp_send_reset_w_pkt (new_tc0, b0, my_thread_index, is_ip4);
 	      tcp_connection_cleanup (new_tc0);
 	      error0 = TCP_ERROR_CREATE_SESSION_FAIL;
-	      goto drop;
+	      goto cleanup_ho;
 	    }
 
 	  new_tc0->tx_fifo_size =
@@ -2014,7 +2009,7 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	      tcp_send_reset_w_pkt (tc0, b0, my_thread_index, is_ip4);
 	      TCP_EVT (TCP_EVT_RST_SENT, tc0);
 	      error0 = TCP_ERROR_CREATE_SESSION_FAIL;
-	      goto drop;
+	      goto cleanup_ho;
 	    }
 
 	  new_tc0->tx_fifo_size =
@@ -2023,7 +2018,7 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  tcp_init_snd_vars (new_tc0);
 	  tcp_send_synack (new_tc0);
 	  error0 = TCP_ERROR_SYNS_RCVD;
-	  goto drop;
+	  goto cleanup_ho;
 	}
 
       if (!(new_tc0->cfg_flags & TCP_CFG_F_NO_TSO))
@@ -2043,6 +2038,13 @@ tcp46_syn_sent_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	   * just established and it's not optional. */
 	  tcp_send_ack (new_tc0);
 	}
+
+    cleanup_ho:
+
+      /* If this is not the owning thread, wait for syn retransmit to
+       * expire and cleanup then */
+      if (tcp_half_open_connection_cleanup (tc0))
+	tc0->flags |= TCP_CONN_HALF_OPEN_DONE;
 
     drop:
 
@@ -2836,11 +2838,9 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
   tcp_main_t *tm = vnet_get_tcp_main ();
   vlib_buffer_t *bufs[VLIB_FRAME_SIZE], **b;
   u16 nexts[VLIB_FRAME_SIZE], *next;
-  vlib_node_runtime_t *error_node;
 
   tcp_set_time_now (tcp_get_worker (thread_index));
 
-  error_node = vlib_node_get_runtime (vm, tcp_node_index (input, is_ip4));
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
   vlib_get_buffers (vm, from, bufs, n_left_from);
@@ -2876,8 +2876,8 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	  vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
 	  vnet_buffer (b[1])->tcp.connection_index = tc1->c_c_index;
 
-	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
-	  tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], error_node);
+	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], node);
+	  tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], node);
 	}
       else
 	{
@@ -2885,24 +2885,24 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	    {
 	      ASSERT (tcp_lookup_is_valid (tc0, b[0], tcp_buffer_hdr (b[0])));
 	      vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
-	      tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
+	      tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], node);
 	    }
 	  else
 	    {
 	      tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
-	      b[0]->error = error_node->errors[error0];
+	      b[0]->error = node->errors[error0];
 	    }
 
 	  if (PREDICT_TRUE (tc1 != 0))
 	    {
 	      ASSERT (tcp_lookup_is_valid (tc1, b[1], tcp_buffer_hdr (b[1])));
 	      vnet_buffer (b[1])->tcp.connection_index = tc1->c_c_index;
-	      tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], error_node);
+	      tcp_input_dispatch_buffer (tm, tc1, b[1], &next[1], node);
 	    }
 	  else
 	    {
 	      tcp_input_set_error_next (tm, &next[1], &error1, is_ip4);
-	      b[1]->error = error_node->errors[error1];
+	      b[1]->error = node->errors[error1];
 	    }
 	}
 
@@ -2928,12 +2928,12 @@ tcp46_input_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 	{
 	  ASSERT (tcp_lookup_is_valid (tc0, b[0], tcp_buffer_hdr (b[0])));
 	  vnet_buffer (b[0])->tcp.connection_index = tc0->c_c_index;
-	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], error_node);
+	  tcp_input_dispatch_buffer (tm, tc0, b[0], &next[0], node);
 	}
       else
 	{
 	  tcp_input_set_error_next (tm, &next[0], &error0, is_ip4);
-	  b[0]->error = error_node->errors[error0];
+	  b[0]->error = node->errors[error0];
 	}
 
       b += 1;

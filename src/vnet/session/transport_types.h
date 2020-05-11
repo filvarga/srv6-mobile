@@ -144,6 +144,8 @@ typedef struct _transport_connection
 #define c_stats connection.stats
 #define c_pacer connection.pacer
 #define c_flags connection.flags
+#define s_ho_handle pacer.bucket
+#define c_s_ho_handle connection.pacer.bucket
 } transport_connection_t;
 
 STATIC_ASSERT (STRUCT_OFFSET_OF (transport_connection_t, s_index)
@@ -159,7 +161,6 @@ STATIC_ASSERT (sizeof (transport_connection_t) <= 128,
   _(UDP, "udp", "U")					\
   _(NONE, "ct", "C")					\
   _(TLS, "tls", "J")					\
-  _(UDPC, "udpc", "U")					\
   _(QUIC, "quic", "Q")					\
 
 typedef enum _transport_proto
@@ -228,7 +229,6 @@ transport_endpoint_fib_proto (transport_endpoint_t * tep)
 }
 
 u8 transport_protocol_is_cl (transport_proto_t tp);
-u8 transport_half_open_has_fifos (transport_proto_t tp);
 transport_service_type_t transport_protocol_service_type (transport_proto_t);
 transport_tx_fn_type_t transport_protocol_tx_fn_type (transport_proto_t tp);
 

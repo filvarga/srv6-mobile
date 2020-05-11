@@ -340,6 +340,7 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
   tcp_bt_sample_t *bts, *next, *cur, *prev, *nbts;
   u32 bts_index, cur_index, next_index, prev_index, max_seq;
   u8 is_end = end == tc->snd_nxt;
+  tcp_bts_flags_t bts_flags;
 
   /* Contiguous blocks retransmitted at the same time */
   bts = bt_get_sample (bt, bt->last_ooo);
@@ -354,8 +355,10 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
       return;
     }
 
-  /* Find original tx sample */
+  /* Find original tx sample and cache flags in case the sample
+   * is freed or the pool moves */
   bts = bt_lookup_seq (bt, start);
+  bts_flags = bts->flags;
 
   ASSERT (bts != 0 && seq_geq (start, bts->min_seq));
 
@@ -368,11 +371,12 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
     {
       prev_index = bts->prev;
       next = bt_fix_overlapped (bt, bts, end, is_end);
+      /* bts might no longer be valid from here */
       next_index = bt_sample_index (bt, next);
 
       cur = tcp_bt_alloc_tx_sample (tc, start, end);
       cur->flags |= TCP_BTS_IS_RXT;
-      if (bts->flags & TCP_BTS_IS_RXT)
+      if (bts_flags & TCP_BTS_IS_RXT)
 	cur->flags |= TCP_BTS_IS_RXT_LOST;
       cur->next = next_index;
       cur->prev = prev_index;
@@ -414,7 +418,7 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
   /* Have to split or tail overlap */
   cur = tcp_bt_alloc_tx_sample (tc, start, end);
   cur->flags |= TCP_BTS_IS_RXT;
-  if (bts->flags & TCP_BTS_IS_RXT)
+  if (bts_flags & TCP_BTS_IS_RXT)
     cur->flags |= TCP_BTS_IS_RXT_LOST;
   cur->prev = bts_index;
   cur_index = bt_sample_index (bt, cur);

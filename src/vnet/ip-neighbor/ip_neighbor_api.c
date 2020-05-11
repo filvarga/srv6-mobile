@@ -275,6 +275,51 @@ vl_api_ip_neighbor_config_t_handler (vl_api_ip_neighbor_config_t * mp)
   REPLY_MACRO (VL_API_IP_NEIGHBOR_CONFIG_REPLY);
 }
 
+static void
+vl_api_ip_neighbor_replace_begin_t_handler (vl_api_ip_neighbor_replace_begin_t
+					    * mp)
+{
+  vl_api_ip_neighbor_replace_begin_reply_t *rmp;
+  int rv = 0;
+
+  ip_neighbor_mark (IP46_TYPE_IP4);
+  ip_neighbor_mark (IP46_TYPE_IP6);
+
+  REPLY_MACRO (VL_API_IP_NEIGHBOR_REPLACE_BEGIN_REPLY);
+}
+
+static void
+vl_api_ip_neighbor_replace_end_t_handler (vl_api_ip_neighbor_replace_end_t *
+					  mp)
+{
+  vl_api_ip_neighbor_replace_end_reply_t *rmp;
+  int rv = 0;
+
+  ip_neighbor_sweep (IP46_TYPE_IP4);
+  ip_neighbor_sweep (IP46_TYPE_IP6);
+
+  REPLY_MACRO (VL_API_IP_NEIGHBOR_REPLACE_END_REPLY);
+}
+
+static void
+vl_api_ip_neighbor_flush_t_handler (vl_api_ip_neighbor_flush_t * mp)
+{
+  vl_api_ip_neighbor_flush_reply_t *rmp;
+  ip_address_family_t af;
+  int rv;
+
+  if (mp->sw_if_index != ~0)
+    VALIDATE_SW_IF_INDEX (mp);
+
+  rv = ip_address_family_decode (mp->af, &af);
+
+  if (!rv)
+    ip_neighbor_del_all (ip46_type_from_af (af), ntohl (mp->sw_if_index));
+
+  BAD_SW_IF_INDEX_LABEL;
+  REPLY_MACRO (VL_API_IP_NEIGHBOR_FLUSH_REPLY);
+}
+
 #define vl_msg_name_crc_list
 #include <vnet/ip-neighbor/ip_neighbor.api.h>
 #undef vl_msg_name_crc_list

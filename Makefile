@@ -59,11 +59,6 @@ else ifeq ($(filter rhel centos fedora opensuse opensuse-leap opensuse-tumblewee
 PKG=rpm
 endif
 
-# on ubuntu 18.04 prefer gcc-8 if it is installed and CC  is not set
-ifeq ($(OS_VERSION_ID)-$(CC)-$(shell which gcc-8 > /dev/null; echo $$?),18.04-cc-0)
-	CC = gcc-8
-endif
-
 # +libganglia1-dev if building the gmond plugin
 
 DEB_DEPENDS  = curl build-essential autoconf automake ccache
@@ -86,7 +81,7 @@ ifeq ($(OS_VERSION_ID),16.04)
 else ifeq ($(OS_VERSION_ID),18.04)
 	DEB_DEPENDS += python-dev
 	DEB_DEPENDS += libssl-dev
-	DEB_DEPENDS += gcc-8
+	DEB_DEPENDS += clang-9
 else ifeq ($(OS_VERSION_ID),20.04)
 	LIBFFI=libffi7
 else ifeq ($(OS_ID)-$(OS_VERSION_ID),debian-8)
@@ -132,7 +127,7 @@ else
 	RPM_DEPENDS += python36-ply  # for vppapigen
 	RPM_DEPENDS += python3-devel python3-pip
 	RPM_DEPENDS += python-virtualenv python36-jsonschema
-	RPM_DEPENDS += devtoolset-7
+	RPM_DEPENDS += devtoolset-9
 	RPM_DEPENDS += cmake3
 	RPM_DEPENDS_GROUPS = 'Development Tools'
 endif
@@ -228,9 +223,11 @@ help:
 	@echo " ctags                - (re)generate ctags database"
 	@echo " gtags                - (re)generate gtags database"
 	@echo " cscope               - (re)generate cscope database"
+	@echo " compdb               - (re)generate compile_commands.json"
 	@echo " checkstyle           - check coding style"
 	@echo " checkstyle-commit    - check commit message format"
 	@echo " checkstyle-test      - check test framework coding style"
+	@echo " checkstyle-api       - check api for incompatible changes"
 	@echo " fixstyle             - fix coding style"
 	@echo " doxygen              - (re)generate documentation"
 	@echo " bootstrap-doxygen    - setup Doxygen dependencies"
@@ -659,6 +656,10 @@ gtags: ctags
 cscope: cscope.files
 	@cscope -b -q -v
 
+.PHONY: compdb
+compdb:
+	@ninja -C build-root/build-vpp_debug-native/vpp -t compdb > compile_commands.json
+
 .PHONY: checkstyle
 checkstyle: checkfeaturelist
 	@build-root/scripts/checkstyle.sh
@@ -676,6 +677,10 @@ checkstyle-all: checkstyle-commit checkstyle checkstyle-test
 .PHONY: fixstyle
 fixstyle:
 	@build-root/scripts/checkstyle.sh --fix
+
+.PHONY: checkstyle-api
+checkstyle-api:
+	@extras/scripts/crcchecker.py --check-patch
 
 # necessary because Bug 1696324 - Update to python3.6 breaks PyYAML dependencies
 # Status:	CLOSED CANTFIX

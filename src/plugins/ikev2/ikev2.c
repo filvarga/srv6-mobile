@@ -380,8 +380,6 @@ ikev2_complete_sa_data (ikev2_sa_t * sa, ikev2_sa_t * sai)
   ikev2_sa_transform_t *t = 0, *t2;
   ikev2_main_t *km = &ikev2_main;
 
-  sai->init_response_received = 1;
-
   /*move some data to the new SA */
 #define _(A) ({void* __tmp__ = (A); (A) = 0; __tmp__;})
   sa->i_nonce = _(sai->i_nonce);
@@ -1568,19 +1566,19 @@ ikev2_add_tunnel_from_main (ikev2_add_ipsec_tunnel_args_t * a)
 			       IPSEC_PROTOCOL_ESP, a->encr_type,
 			       &a->loc_ckey, a->integ_type, &a->loc_ikey,
 			       a->flags, 0, a->salt_local, &a->local_ip,
-			       &a->remote_ip, NULL, a->dst_port);
+			       &a->remote_ip, NULL, a->dst_port, a->dst_port);
   rv |= ipsec_sa_add_and_lock (a->remote_sa_id, a->remote_spi,
 			       IPSEC_PROTOCOL_ESP, a->encr_type, &a->rem_ckey,
 			       a->integ_type, &a->rem_ikey,
 			       (a->flags | IPSEC_SA_FLAG_IS_INBOUND), 0,
 			       a->salt_remote, &a->remote_ip,
-			       &a->local_ip, NULL, a->dst_port);
+			       &a->local_ip, NULL, a->dst_port, a->dst_port);
 
   rv |= ipsec_tun_protect_update (sw_if_index, NULL, a->local_sa_id, sas_in);
 }
 
 static int
-ikev2_create_tunnel_interface (vnet_main_t * vnm,
+ikev2_create_tunnel_interface (vlib_main_t * vm,
 			       u32 thread_index,
 			       ikev2_sa_t * sa,
 			       ikev2_child_sa_t * child, u32 sa_index,
@@ -1756,8 +1754,7 @@ ikev2_create_tunnel_interface (vnet_main_t * vnm,
 
   if (p && p->lifetime)
     {
-      child->time_to_expiration =
-	vlib_time_now (vnm->vlib_main) + p->lifetime;
+      child->time_to_expiration = vlib_time_now (vm) + p->lifetime;
       if (p->lifetime_jitter)
 	{
 	  // This is not much better than rand(3), which Coverity warns
@@ -1765,7 +1762,7 @@ ikev2_create_tunnel_interface (vnet_main_t * vnm,
 	  // however fast. If this perturbance to the expiration time
 	  // needs to use a better RNG then we may need to use something
 	  // like /dev/urandom which has significant overhead.
-	  u32 rnd = (u32) (vlib_time_now (vnm->vlib_main) * 1e6);
+	  u32 rnd = (u32) (vlib_time_now (vm) * 1e6);
 	  rnd = random_u32 (&rnd);
 
 	  child->time_to_expiration += 1 + (rnd % p->lifetime_jitter);
@@ -2305,11 +2302,31 @@ ikev2_retransmit_resp (ikev2_sa_t * sa, ike_header_t * ike)
 }
 
 static void
-ikev2_init_sa (ikev2_sa_t * sa)
+ikev2_init_sa (vlib_main_t * vm, ikev2_sa_t * sa)
 {
   ikev2_main_t *km = &ikev2_main;
-  sa->liveness_period_check =
-    vlib_time_now (km->vlib_main) + km->liveness_period;
+  sa->liveness_period_check = vlib_time_now (vm) + km->liveness_period;
+}
+
+static void
+ikev2_del_sa_init_from_main (u64 * ispi)
+{
+  ikev2_main_t *km = &ikev2_main;
+  uword *p = hash_get (km->sa_by_ispi, *ispi);
+  if (p)
+    {
+      ikev2_sa_t *sai = pool_elt_at_index (km->sais, p[0]);
+      hash_unset (km->sa_by_ispi, sai->ispi);
+      ikev2_sa_free_all_vec (sai);
+      pool_put (km->sais, sai);
+    }
+}
+
+static void
+ikev2_del_sa_init (u64 ispi)
+{
+  vl_api_rpc_call_main_thread (ikev2_del_sa_init_from_main, (u8 *) & ispi,
+			       sizeof (ispi));
 }
 
 static uword
@@ -2420,7 +2437,7 @@ ikev2_node_fn (vlib_main_t * vm,
 			  pool_get (km->per_thread_data[thread_index].sas,
 				    sa0);
 			  clib_memcpy_fast (sa0, &sa, sizeof (*sa0));
-			  ikev2_init_sa (sa0);
+			  ikev2_init_sa (vm, sa0);
 			  hash_set (km->
 				    per_thread_data[thread_index].sa_by_rspi,
 				    sa0->rspi,
@@ -2446,17 +2463,18 @@ ikev2_node_fn (vlib_main_t * vm,
 			  ikev2_sa_t *sai =
 			    pool_elt_at_index (km->sais, p[0]);
 
-			  if (sai->init_response_received)
-			    {
-			      /* we've already processed sa-init response */
-			      sa0->state = IKEV2_STATE_UNKNOWN;
-			    }
-			  else
+			  if (clib_atomic_bool_cmp_and_swap
+			      (&sai->init_response_received, 0, 1))
 			    {
 			      ikev2_complete_sa_data (sa0, sai);
 			      ikev2_calc_keys (sa0);
 			      ikev2_sa_auth_init (sa0);
 			      len = ikev2_generate_message (sa0, ike0, 0);
+			    }
+			  else
+			    {
+			      /* we've already processed sa-init response */
+			      sa0->state = IKEV2_STATE_UNKNOWN;
 			    }
 			}
 		    }
@@ -2511,23 +2529,14 @@ ikev2_node_fn (vlib_main_t * vm,
 		      ikev2_initial_contact_cleanup (sa0);
 		      ikev2_sa_match_ts (sa0);
 		      if (sa0->state != IKEV2_STATE_TS_UNACCEPTABLE)
-			ikev2_create_tunnel_interface (km->vnet_main,
-						       thread_index, sa0,
+			ikev2_create_tunnel_interface (vm, thread_index, sa0,
 						       &sa0->childs[0],
 						       p[0], 0, 0);
 		    }
 
 		  if (sa0->is_initiator)
 		    {
-		      uword *p = hash_get (km->sa_by_ispi, ike0->ispi);
-		      if (p)
-			{
-			  ikev2_sa_t *sai =
-			    pool_elt_at_index (km->sais, p[0]);
-			  hash_unset (km->sa_by_ispi, sai->ispi);
-			  ikev2_sa_free_all_vec (sai);
-			  pool_put (km->sais, sai);
-			}
+		      ikev2_del_sa_init (ike0->ispi);
 		    }
 		  else
 		    {
@@ -2643,9 +2652,8 @@ ikev2_node_fn (vlib_main_t * vm,
 			  child->i_proposals = sa0->rekey[0].i_proposal;
 			  child->tsi = sa0->rekey[0].tsi;
 			  child->tsr = sa0->rekey[0].tsr;
-			  ikev2_create_tunnel_interface (km->vnet_main,
-							 thread_index, sa0,
-							 child, p[0],
+			  ikev2_create_tunnel_interface (vm, thread_index,
+							 sa0, child, p[0],
 							 child - sa0->childs,
 							 1);
 			}

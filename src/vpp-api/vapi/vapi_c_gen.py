@@ -19,13 +19,13 @@ class CField(Field):
             else:
                 return "vl_api_string_t %s;" % (self.name)
         else:
-            if self.len is not None:
+            if self.len is not None and type(self.len) != dict:
                 return "%s %s[%d];" % (self.type.get_c_name(), self.name, self.len)
             else:
                 return "%s %s;" % (self.type.get_c_name(), self.name)
 
     def get_swap_to_be_code(self, struct, var):
-        if self.len is not None:
+        if self.len is not None and type(self.len) != dict:
             if self.len > 0:
                 return "do { unsigned i; for (i = 0; i < %d; ++i) { %s } }"\
                     " while(0);" % (
@@ -46,7 +46,7 @@ class CField(Field):
         return self.type.get_swap_to_be_code(struct, "%s" % var)
 
     def get_swap_to_host_code(self, struct, var):
-        if self.len is not None:
+        if self.len is not None and type(self.len) != dict:
             if self.len > 0:
                 return "do { unsigned i; for (i = 0; i < %d; ++i) { %s } }"\
                     " while(0);" % (
@@ -153,6 +153,12 @@ class CSimpleType (SimpleType):
         'i64': 'be64toh', 'u64': 'be64toh',
     }
 
+    __packed = "__attribute__((packed))"
+    pack_dict = {
+        'i8':  __packed, 'u8':  __packed,
+        'i16': __packed, 'u16': __packed,
+    }
+
     def get_c_name(self):
         return self.name
 
@@ -161,6 +167,9 @@ class CSimpleType (SimpleType):
 
     def get_swap_to_host_func_name(self):
         return self.swap_to_host_dict[self.name]
+
+    def get_packed_string(self):
+        return self.pack_dict[self.name]
 
     def get_swap_to_be_code(self, struct, var, cast=None):
         x = "%s%s" % (struct, var)
@@ -182,14 +191,18 @@ class CSimpleType (SimpleType):
             pass
         return False
 
+    def get_packed(self):
+        return self.pack_dict.get(self.name, "")
+
 
 class CEnum(Enum):
     def get_c_name(self):
         return "vapi_enum_%s" % self.name
 
     def get_c_def(self):
-        return "typedef enum {\n%s\n} %s;" % (
+        return "typedef enum {\n%s\n} %s %s;" % (
             "\n".join(["  %s = %s," % (i, j) for i, j in self.value_pairs]),
+            self.type.get_packed(),
             self.get_c_name()
         )
 
@@ -678,7 +691,7 @@ def gen_json_unified_header(parser, logger, j, io, name):
     orig_stdout = sys.stdout
     sys.stdout = io
     include_guard = "__included_%s" % (
-        j.replace(".", "_").replace("/", "_").replace("-", "_"))
+        j.replace(".", "_").replace("/", "_").replace("-", "_").replace("+", "_"))
     print("#ifndef %s" % include_guard)
     print("#define %s" % include_guard)
     print("")

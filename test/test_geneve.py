@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import socket
-from util import ip4_range, ip4_range
+from util import ip4_range
 import unittest
 from framework import VppTestCase, VppTestRunner
 from template_bd import BridgeDomain
@@ -9,7 +9,8 @@ from template_bd import BridgeDomain
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 from scapy.contrib.geneve import GENEVE
-from scapy.utils import atol
+
+import util
 from vpp_ip_route import VppIpRoute, VppRoutePath
 from vpp_ip import INVALID_INDEX
 
@@ -176,16 +177,15 @@ class TestGeneve(BridgeDomain, VppTestCase):
 
             # Our Multicast address
             cls.mcast_ip4 = '239.1.1.1'
-            iplong = atol(cls.mcast_ip4)
-            cls.mcast_mac = "01:00:5e:%02x:%02x:%02x" % (
-                (iplong >> 16) & 0x7F, (iplong >> 8) & 0xFF, iplong & 0xFF)
+            cls.mcast_mac = util.mcast_ip_to_mac(cls.mcast_ip4)
 
             # Create GENEVE VTEP on VPP pg0, and put geneve_tunnel0 and pg1
             #  into BD.
+            cls.single_tunnel_vni = 0xabcde
             cls.single_tunnel_bd = 1
             r = cls.vapi.geneve_add_del_tunnel(
                 local_address=cls.pg0.local_ip4,
-                remote_address=cls.pg0.remote_ip4, vni=cls.single_tunnel_bd)
+                remote_address=cls.pg0.remote_ip4, vni=cls.single_tunnel_vni)
             cls.vapi.sw_interface_set_l2_bridge(rx_sw_if_index=r.sw_if_index,
                                                 bd_id=cls.single_tunnel_bd)
             cls.vapi.sw_interface_set_l2_bridge(

@@ -56,6 +56,7 @@ list(APPEND VNET_HEADERS
   handoff.h
   interface.h
   interface_funcs.h
+  interface_output.h
   ip/ip4_to_ip6.h
   ip/ip6_to_ip4.h
   ip/ip_types_api.h
@@ -440,7 +441,6 @@ list(APPEND VNET_SOURCES
   ip/ip4_mtrie.c
   ip/ip4_pg.c
   ip/ip4_source_and_port_range_check.c
-  ip/ip4_source_check.c
   ip/reass/ip4_full_reass.c
   ip/reass/ip4_sv_reass.c
   ip/ip6_format.c
@@ -458,6 +458,7 @@ list(APPEND VNET_SOURCES
   ip/ip_checksum.c
   ip/ip_frag.c
   ip/ip.c
+  ip/ip_interface.c
   ip/ip_init.c
   ip/ip_in_out_acl.c
   ip/ip_punt_drop.c
@@ -470,7 +471,6 @@ list(APPEND VNET_SOURCES
 )
 
 list(APPEND VNET_MULTIARCH_SOURCES
-  ip/ip4_source_check.c
   ip/ip4_punt_drop.c
   ip/reass/ip4_full_reass.c
   ip/ip6_hop_by_hop.c
@@ -502,6 +502,7 @@ list(APPEND VNET_HEADERS
   ip/ip6_hop_by_hop_packet.h
   ip/ip6_packet.h
   ip/ip.h
+  ip/ip_interface.h
   ip/ip_packet.h
   ip/ip_source_and_port_range_check.h
   ip/ip_types.h
@@ -575,11 +576,14 @@ list(APPEND VNET_SOURCES
   crypto/cli.c
   crypto/crypto.c
   crypto/format.c
+  crypto/node.c
 )
 
 list(APPEND VNET_HEADERS
   crypto/crypto.h
 )
+
+list(APPEND VNET_MULTIARCH_SOURCES crypto/node.c)
 
 ##############################################################################
 # Layer 3 protocol: IPSec
@@ -897,6 +901,7 @@ list(APPEND VNET_SOURCES
   lisp-cp/lisp_cli.c
   lisp-cp/one_api.c
   lisp-cp/lisp_api.c
+  lisp-cp/lisp_types_api.c
 )
 
 list(APPEND VNET_HEADERS
@@ -906,8 +911,10 @@ list(APPEND VNET_HEADERS
   lisp-cp/lisp_cp_messages.h
   lisp-cp/lisp_msg_serdes.h
   lisp-cp/control.h
+  lisp-cp/lisp_types_api.h
 )
 
+list(APPEND VNET_API_FILES lisp-cp/lisp_types.api)
 list(APPEND VNET_API_FILES lisp-cp/lisp.api)
 list(APPEND VNET_API_FILES lisp-cp/one.api)
 
@@ -1005,6 +1012,7 @@ list(APPEND VNET_SOURCES
 )
 
 list(APPEND VNET_HEADERS
+  gso/hdr_offset_parser.h
   gso/gso.h
 )
 
@@ -1159,6 +1167,7 @@ list(APPEND VNET_API_FILES devices/pipe/pipe.api)
 
 list(APPEND VNET_SOURCES
   session/session.c
+  session/session_debug.c
   session/session_table.c
   session/session_rules_table.c
   session/session_lookup.c
@@ -1337,6 +1346,7 @@ list(APPEND VNET_SOURCES
 list(APPEND VNET_MULTIARCH_SOURCES
   adj/adj_nsh.c
   adj/adj_l2.c
+  adj/adj_midchain.c
 )
 
 list(APPEND VNET_HEADERS

@@ -37,7 +37,7 @@ NUM_PKTS = 67
 
 
 def find_gbp_endpoint(test, sw_if_index=None, ip=None, mac=None,
-                      tep=None, sclass=None):
+                      tep=None, sclass=None, flags=None):
     if ip:
         vip = ip
     if mac:
@@ -57,6 +57,9 @@ def find_gbp_endpoint(test, sw_if_index=None, ip=None, mac=None,
                 continue
         if sclass:
             if ep.endpoint.sclass != sclass:
+                continue
+        if flags:
+            if flags != (flags & ep.endpoint.flags):
                 continue
         if ip:
             for eip in ep.endpoint.ips:
@@ -829,8 +832,10 @@ class TestGBP(VppTestCase):
         for epg in epgs:
             # IP config on the BVI interfaces
             if epg != epgs[1] and epg != epgs[4]:
-                VppIpInterfaceBind(self, epg.bvi, epg.rd.t4).add_vpp_config()
-                VppIpInterfaceBind(self, epg.bvi, epg.rd.t6).add_vpp_config()
+                b4 = VppIpInterfaceBind(self, epg.bvi,
+                                        epg.rd.t4).add_vpp_config()
+                b6 = VppIpInterfaceBind(self, epg.bvi,
+                                        epg.rd.t6).add_vpp_config()
                 epg.bvi.set_mac(self.router_mac)
 
                 # The BVIs are NAT inside interfaces
@@ -842,10 +847,12 @@ class TestGBP(VppTestCase):
                     is_add=1, flags=flags,
                     sw_if_index=epg.bvi.sw_if_index)
 
-            if_ip4 = VppIpInterfaceAddress(self, epg.bvi, epg.bvi_ip4, 32)
-            if_ip6 = VppIpInterfaceAddress(self, epg.bvi, epg.bvi_ip6, 128)
-            if_ip4.add_vpp_config()
-            if_ip6.add_vpp_config()
+            if_ip4 = VppIpInterfaceAddress(self, epg.bvi,
+                                           epg.bvi_ip4, 32,
+                                           bind=b4).add_vpp_config()
+            if_ip6 = VppIpInterfaceAddress(self, epg.bvi,
+                                           epg.bvi_ip6, 128,
+                                           bind=b6).add_vpp_config()
 
             # EPG uplink interfaces in the RD
             VppIpInterfaceBind(self, epg.uplink, epg.rd.t4).add_vpp_config()
@@ -1498,12 +1505,17 @@ class TestGBP(VppTestCase):
 
     def wait_for_ep_timeout(self, sw_if_index=None, ip=None, mac=None,
                             tep=None, n_tries=100, s_time=1):
+        # only learnt EP can timeout
+        ep_flags = VppEnum.vl_api_gbp_endpoint_flags_t
+        flags = ep_flags.GBP_API_ENDPOINT_FLAG_LEARNT
         while (n_tries):
-            if not find_gbp_endpoint(self, sw_if_index, ip, mac, tep=tep):
+            if not find_gbp_endpoint(self, sw_if_index, ip, mac, tep=tep,
+                                     flags=flags):
                 return True
             n_tries = n_tries - 1
             self.sleep(s_time)
-        self.assertFalse(find_gbp_endpoint(self, sw_if_index, ip, mac))
+        self.assertFalse(find_gbp_endpoint(self, sw_if_index, ip, mac, tep=tep,
+                                           flags=flags))
         return False
 
     def test_gbp_learn_l2(self):
@@ -1578,13 +1590,13 @@ class TestGBP(VppTestCase):
                                       None, self.loop0,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_220.add_vpp_config()
         epg_330 = VppGbpEndpointGroup(self, 330, 113, rd1, gbd1,
                                       None, self.loop1,
                                       "10.0.1.128",
                                       "2001:11::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_330.add_vpp_config()
 
         #
@@ -2220,14 +2232,18 @@ class TestGBP(VppTestCase):
         for epg in epgs:
             # IP config on the BVI interfaces
             if epg != epgs[1]:
-                VppIpInterfaceBind(self, epg.bvi, epg.rd.t4).add_vpp_config()
-                VppIpInterfaceBind(self, epg.bvi, epg.rd.t6).add_vpp_config()
+                b4 = VppIpInterfaceBind(self, epg.bvi,
+                                        epg.rd.t4).add_vpp_config()
+                b6 = VppIpInterfaceBind(self, epg.bvi,
+                                        epg.rd.t6).add_vpp_config()
                 epg.bvi.set_mac(self.router_mac)
 
-            if_ip4 = VppIpInterfaceAddress(self, epg.bvi, epg.bvi_ip4, 32)
-            if_ip6 = VppIpInterfaceAddress(self, epg.bvi, epg.bvi_ip6, 128)
-            if_ip4.add_vpp_config()
-            if_ip6.add_vpp_config()
+            if_ip4 = VppIpInterfaceAddress(self, epg.bvi,
+                                           epg.bvi_ip4, 32,
+                                           bind=b4).add_vpp_config()
+            if_ip6 = VppIpInterfaceAddress(self, epg.bvi,
+                                           epg.bvi_ip6, 128,
+                                           bind=b6).add_vpp_config()
 
             # add the BD ARP termination entry for BVI IP
             epg.bd_arp_ip4 = VppBridgeDomainArpEntry(self, epg.bd.bd,
@@ -2447,8 +2463,8 @@ class TestGBP(VppTestCase):
         self.logger.info(self.vapi.cli("sh gbp bridge"))
 
         # ... and has a /32 applied
-        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip_addr.add_vpp_config()
+        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                        "10.0.0.128", 32).add_vpp_config()
 
         #
         # The Endpoint-group
@@ -2457,7 +2473,7 @@ class TestGBP(VppTestCase):
                                       None, self.loop0,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(3))
         epg_220.add_vpp_config()
 
         ep = VppGbpEndpoint(self, self.pg0,
@@ -2528,8 +2544,8 @@ class TestGBP(VppTestCase):
         gbd1.add_vpp_config()
 
         # ... and has a /32 applied
-        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip_addr.add_vpp_config()
+        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                        "10.0.0.128", 32).add_vpp_config()
 
         #
         # The Endpoint-group
@@ -2621,8 +2637,8 @@ class TestGBP(VppTestCase):
         self.logger.info(self.vapi.cli("sh gbp bridge"))
 
         # ... and has a /32 applied
-        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip_addr.add_vpp_config()
+        ip_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                        "10.0.0.128", 32).add_vpp_config()
 
         #
         # The Endpoint-group in which we are learning endpoints
@@ -2631,7 +2647,7 @@ class TestGBP(VppTestCase):
                                       None, self.loop0,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_220.add_vpp_config()
 
         #
@@ -2764,8 +2780,8 @@ class TestGBP(VppTestCase):
         #
         # Bind the BVI to the RD
         #
-        VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
+        b4 = VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
+        b6 = VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
 
         #
         # Pg2 hosts the vxlan tunnel
@@ -2795,10 +2811,12 @@ class TestGBP(VppTestCase):
         self.logger.info(self.vapi.cli("sh gbp route"))
 
         # ... and has a /32 and /128 applied
-        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip4_addr.add_vpp_config()
-        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi, "2001:10::128", 128)
-        ip6_addr.add_vpp_config()
+        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                         "10.0.0.128", 32,
+                                         bind=b4).add_vpp_config()
+        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                         "2001:10::128", 128,
+                                         bind=b6).add_vpp_config()
 
         #
         # The Endpoint-group in which we are learning endpoints
@@ -2807,7 +2825,7 @@ class TestGBP(VppTestCase):
                                       None, self.loop0,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_220.add_vpp_config()
 
         #
@@ -3270,8 +3288,8 @@ class TestGBP(VppTestCase):
         #
         # Bind the BVI to the RD
         #
-        VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
+        b_ip4 = VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
+        b_ip6 = VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
 
         #
         # Pg7 hosts a BD's UU-fwd
@@ -3293,14 +3311,16 @@ class TestGBP(VppTestCase):
         gbd2.add_vpp_config()
 
         # ... and has a /32 and /128 applied
-        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip4_addr.add_vpp_config()
-        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi, "2001:10::128", 128)
-        ip6_addr.add_vpp_config()
-        ip4_addr = VppIpInterfaceAddress(self, gbd2.bvi, "10.0.1.128", 32)
-        ip4_addr.add_vpp_config()
-        ip6_addr = VppIpInterfaceAddress(self, gbd2.bvi, "2001:11::128", 128)
-        ip6_addr.add_vpp_config()
+        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                         "10.0.0.128", 32,
+                                         bind=b_ip4).add_vpp_config()
+        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                         "2001:10::128", 128,
+                                         bind=b_ip6).add_vpp_config()
+        ip4_addr = VppIpInterfaceAddress(self, gbd2.bvi,
+                                         "10.0.1.128", 32).add_vpp_config()
+        ip6_addr = VppIpInterfaceAddress(self, gbd2.bvi,
+                                         "2001:11::128", 128).add_vpp_config()
 
         #
         # The Endpoint-groups in which we are learning endpoints
@@ -3309,19 +3329,19 @@ class TestGBP(VppTestCase):
                                       None, gbd1.bvi,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_220.add_vpp_config()
         epg_221 = VppGbpEndpointGroup(self, 221, 441, rd1, gbd2,
                                       None, gbd2.bvi,
                                       "10.0.1.128",
                                       "2001:11::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_221.add_vpp_config()
         epg_222 = VppGbpEndpointGroup(self, 222, 442, rd1, gbd1,
                                       None, gbd1.bvi,
                                       "10.0.2.128",
                                       "2001:12::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_222.add_vpp_config()
 
         #
@@ -3352,13 +3372,13 @@ class TestGBP(VppTestCase):
                                       None, gbd1.bvi,
                                       "12.0.0.128",
                                       "4001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_320.add_vpp_config()
         epg_321 = VppGbpEndpointGroup(self, 321, 551, rd1, gbd4,
                                       None, gbd2.bvi,
                                       "12.0.1.128",
                                       "4001:11::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_321.add_vpp_config()
 
         #
@@ -3859,8 +3879,8 @@ class TestGBP(VppTestCase):
         # add local l3out
         # the external bd
         self.loop4.set_mac(self.router_mac)
-        VppIpInterfaceBind(self, self.loop4, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop4, t6).add_vpp_config()
+        b_lo4_ip4 = VppIpInterfaceBind(self, self.loop4, t4).add_vpp_config()
+        b_lo4_ip6 = VppIpInterfaceBind(self, self.loop4, t6).add_vpp_config()
         ebd = VppBridgeDomain(self, 100)
         ebd.add_vpp_config()
         gebd = VppGbpBridgeDomain(self, ebd, rd1, self.loop4, None, None)
@@ -3870,19 +3890,19 @@ class TestGBP(VppTestCase):
                                    None, gebd.bvi,
                                    "10.1.0.128",
                                    "2001:10:1::128",
-                                   VppGbpEndpointRetention(2))
+                                   VppGbpEndpointRetention(60))
         eepg.add_vpp_config()
         # add subnets to BVI
         VppIpInterfaceAddress(
             self,
             gebd.bvi,
             "10.1.0.128",
-            24).add_vpp_config()
+            24, bind=b_lo4_ip4).add_vpp_config()
         VppIpInterfaceAddress(
             self,
             gebd.bvi,
             "2001:10:1::128",
-            64).add_vpp_config()
+            64, bind=b_lo4_ip6).add_vpp_config()
         # ... which are L3-out subnets
         VppGbpSubnet(self, rd1, "10.1.0.0", 24,
                      VppEnum.vl_api_gbp_subnet_type_t.GBP_API_SUBNET_L3_OUT,
@@ -4189,12 +4209,12 @@ class TestGBP(VppTestCase):
         #
         # Bind the BVI to the RD
         #
-        VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop1, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop1, t6).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop2, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop2, t6).add_vpp_config()
+        b_lo0_ip4 = VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
+        b_lo0_ip6 = VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
+        b_lo1_ip4 = VppIpInterfaceBind(self, self.loop1, t4).add_vpp_config()
+        b_lo1_ip6 = VppIpInterfaceBind(self, self.loop1, t6).add_vpp_config()
+        b_lo2_ip4 = VppIpInterfaceBind(self, self.loop2, t4).add_vpp_config()
+        b_lo2_ip6 = VppIpInterfaceBind(self, self.loop2, t6).add_vpp_config()
 
         #
         # Pg7 hosts a BD's UU-fwd
@@ -4216,14 +4236,18 @@ class TestGBP(VppTestCase):
         gbd2.add_vpp_config()
 
         # ... and has a /32 and /128 applied
-        ip4_addr1 = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 32)
-        ip4_addr1.add_vpp_config()
-        ip6_addr1 = VppIpInterfaceAddress(self, gbd1.bvi, "2001:10::128", 128)
-        ip6_addr1.add_vpp_config()
-        ip4_addr2 = VppIpInterfaceAddress(self, gbd2.bvi, "10.0.1.128", 32)
-        ip4_addr2.add_vpp_config()
-        ip6_addr2 = VppIpInterfaceAddress(self, gbd2.bvi, "2001:11::128", 128)
-        ip6_addr2.add_vpp_config()
+        ip4_addr1 = VppIpInterfaceAddress(self, gbd1.bvi,
+                                          "10.0.0.128", 32,
+                                          bind=b_lo0_ip4).add_vpp_config()
+        ip6_addr1 = VppIpInterfaceAddress(self, gbd1.bvi,
+                                          "2001:10::128", 128,
+                                          bind=b_lo0_ip6).add_vpp_config()
+        ip4_addr2 = VppIpInterfaceAddress(self, gbd2.bvi,
+                                          "10.0.1.128", 32,
+                                          bind=b_lo1_ip4).add_vpp_config()
+        ip6_addr2 = VppIpInterfaceAddress(self, gbd2.bvi,
+                                          "2001:11::128", 128,
+                                          bind=b_lo1_ip6).add_vpp_config()
 
         #
         # The Endpoint-groups
@@ -4232,13 +4256,13 @@ class TestGBP(VppTestCase):
                                       None, gbd1.bvi,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_220.add_vpp_config()
         epg_221 = VppGbpEndpointGroup(self, 221, 441, rd1, gbd2,
                                       None, gbd2.bvi,
                                       "10.0.1.128",
                                       "2001:11::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_221.add_vpp_config()
 
         #
@@ -4254,10 +4278,12 @@ class TestGBP(VppTestCase):
                                   bd_uu3, learn=False)
         gbd3.add_vpp_config()
 
-        ip4_addr3 = VppIpInterfaceAddress(self, gbd3.bvi, "12.0.0.128", 32)
-        ip4_addr3.add_vpp_config()
-        ip6_addr3 = VppIpInterfaceAddress(self, gbd3.bvi, "4001:10::128", 128)
-        ip6_addr3.add_vpp_config()
+        ip4_addr3 = VppIpInterfaceAddress(self, gbd3.bvi,
+                                          "12.0.0.128", 32,
+                                          bind=b_lo2_ip4).add_vpp_config()
+        ip6_addr3 = VppIpInterfaceAddress(self, gbd3.bvi,
+                                          "4001:10::128", 128,
+                                          bind=b_lo2_ip6).add_vpp_config()
 
         #
         # self.logger.info(self.vapi.cli("show gbp bridge"))
@@ -4273,7 +4299,7 @@ class TestGBP(VppTestCase):
                                       None, gbd3.bvi,
                                       "12.0.0.128",
                                       "4001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(60))
         epg_320.add_vpp_config()
 
         #
@@ -4616,8 +4642,8 @@ class TestGBP(VppTestCase):
         #
         # Bind the BVI to the RD
         #
-        VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
+        b_ip4 = VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
+        b_ip6 = VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
 
         #
         # Pg7 hosts a BD's BUM
@@ -4649,14 +4675,14 @@ class TestGBP(VppTestCase):
                                       None, gbd1.bvi,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_220.add_vpp_config()
 
         # the BVIs have the subnets applied ...
-        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 24)
-        ip4_addr.add_vpp_config()
-        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi, "2001:10::128", 64)
-        ip6_addr.add_vpp_config()
+        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128",
+                                         24, bind=b_ip4).add_vpp_config()
+        ip6_addr = VppIpInterfaceAddress(self, gbd1.bvi, "2001:10::128",
+                                         64, bind=b_ip6).add_vpp_config()
 
         # ... which are L3-out subnets
         l3o_1 = VppGbpSubnet(
@@ -5402,8 +5428,8 @@ class TestGBP(VppTestCase):
         #
         # Bind the BVI to the RD
         #
-        VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
-        VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
+        bind_l0_ip4 = VppIpInterfaceBind(self, self.loop0, t4).add_vpp_config()
+        bind_l0_ip6 = VppIpInterfaceBind(self, self.loop0, t6).add_vpp_config()
 
         #
         # Pg7 hosts a BD's BUM
@@ -5427,12 +5453,13 @@ class TestGBP(VppTestCase):
                                       None, gbd1.bvi,
                                       "10.0.0.128",
                                       "2001:10::128",
-                                      VppGbpEndpointRetention(2))
+                                      VppGbpEndpointRetention(4))
         epg_220.add_vpp_config()
 
         # the BVIs have the subnet applied ...
-        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi, "10.0.0.128", 24)
-        ip4_addr.add_vpp_config()
+        ip4_addr = VppIpInterfaceAddress(self, gbd1.bvi,
+                                         "10.0.0.128", 24,
+                                         bind=bind_l0_ip4).add_vpp_config()
 
         # ... which is an Anonymous L3-out subnets
         l3o_1 = VppGbpSubnet(
@@ -5843,6 +5870,8 @@ class TestGBP(VppTestCase):
         self.vlan_101.set_vtr(L2_VTR_OP.L2_DISABLED)
         self.vlan_100.set_vtr(L2_VTR_OP.L2_DISABLED)
         self.pg7.unconfig_ip4()
+        # make sure the programmed EP is no longer learnt from DP
+        self.wait_for_ep_timeout(sw_if_index=rep.itf.sw_if_index, ip=rep.ip4)
 
 
 if __name__ == '__main__':

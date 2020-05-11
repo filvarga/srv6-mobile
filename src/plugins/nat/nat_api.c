@@ -104,9 +104,9 @@ vl_api_nat_show_config_t_handler (vl_api_nat_show_config_t * mp)
   REPLY_MACRO2 (VL_API_NAT_SHOW_CONFIG_REPLY,
   ({
     rmp->translation_buckets = htonl (sm->translation_buckets);
-    rmp->translation_memory_size = htonl (sm->translation_memory_size);
+    rmp->translation_memory_size = clib_host_to_net_u64 (sm->translation_memory_size);
     rmp->user_buckets = htonl (sm->user_buckets);
-    rmp->user_memory_size = htonl (sm->user_memory_size);
+    rmp->user_memory_size = clib_host_to_net_u64 (sm->user_memory_size);
     rmp->max_translations_per_user = htonl (sm->max_translations_per_user);
     rmp->outside_vrf_id = htonl (sm->outside_vrf_id);
     rmp->inside_vrf_id = htonl (sm->inside_vrf_id);
@@ -117,10 +117,10 @@ vl_api_nat_show_config_t_handler (vl_api_nat_show_config_t * mp)
     rmp->endpoint_dependent = sm->endpoint_dependent;
     rmp->out2in_dpo = sm->out2in_dpo;
     //rmp->dslite_ce = dm->is_ce;
-    rmp->nat64_bib_buckets = n64m->bib_buckets;
-    rmp->nat64_bib_memory_size = n64m->bib_memory_size;
-    rmp->nat64_st_buckets = n64m->st_buckets;
-    rmp->nat64_st_memory_size = n64m->st_memory_size;
+    rmp->nat64_bib_buckets = clib_net_to_host_u32(n64m->bib_buckets);
+    rmp->nat64_bib_memory_size = clib_net_to_host_u64(n64m->bib_memory_size);
+    rmp->nat64_st_buckets = clib_net_to_host_u32(n64m->st_buckets);
+    rmp->nat64_st_memory_size = clib_net_to_host_u64(n64m->st_memory_size);
   }));
   /* *INDENT-ON* */
 }
@@ -242,26 +242,31 @@ vl_api_nat_worker_dump_t_print (vl_api_nat_worker_dump_t * mp, void *handle)
 }
 
 static void
-vl_api_nat44_session_cleanup_t_handler (vl_api_nat44_session_cleanup_t * mp)
+vl_api_nat44_set_session_limit_t_handler (vl_api_nat44_set_session_limit_t *
+					  mp)
 {
   snat_main_t *sm = &snat_main;
-  vl_api_nat44_session_cleanup_reply_t *rmp;
+  vl_api_nat44_set_session_limit_reply_t *rmp;
   int rv = 0;
-  nat44_force_users_cleanup ();
-  REPLY_MACRO (VL_API_NAT44_SESSION_CLEANUP_REPLY);
+
+  rv = nat44_set_session_limit
+    (ntohl (mp->session_limit), ntohl (mp->vrf_id));
+
+  REPLY_MACRO (VL_API_NAT_SET_WORKERS_REPLY);
 }
 
 static void *
-vl_api_nat44_session_cleanup_t_print (vl_api_nat44_session_cleanup_t * mp,
-				      void *handle)
+vl_api_nat44_set_session_limit_t_print (vl_api_nat44_set_session_limit_t *
+					mp, void *handle)
 {
   u8 *s;
 
-  s = format (0, "SCRIPT: nat44_session_cleanup");
+  s = format (0, "SCRIPT: nat44_set_session_limit ");
+  s = format (s, "session_limit %d", ntohl (mp->session_limit));
+  s = format (s, "vrf_id %d", ntohl (mp->vrf_id));
 
   FINISH;
 }
-
 
 static void
 vl_api_nat_set_log_level_t_handler (vl_api_nat_set_log_level_t * mp)
@@ -335,8 +340,6 @@ vl_api_nat_set_timeouts_t_handler (vl_api_nat_set_timeouts_t * mp)
   sm->tcp_established_timeout = ntohl (mp->tcp_established);
   sm->tcp_transitory_timeout = ntohl (mp->tcp_transitory);
   sm->icmp_timeout = ntohl (mp->icmp);
-
-  sm->min_timeout = nat44_minimal_timeout (sm);
 
   rv = nat64_set_icmp_timeout (ntohl (mp->icmp));
   if (rv)
@@ -1702,26 +1705,40 @@ vl_api_nat44_user_session_dump_t_handler (vl_api_nat44_user_session_dump_t *
 			sm->worker_in2out_cb (&ip, ukey.fib_index, 0));
   else
     tsm = vec_elt_at_index (sm->per_thread_data, sm->num_workers);
-  if (clib_bihash_search_8_8 (&tsm->user_hash, &key, &value))
-    return;
-  u = pool_elt_at_index (tsm->users, value.value);
-  if (!u->nsessions && !u->nstaticsessions)
-    return;
-
-  head_index = u->sessions_per_user_list_head_index;
-  head = pool_elt_at_index (tsm->list_pool, head_index);
-  elt_index = head->next;
-  elt = pool_elt_at_index (tsm->list_pool, elt_index);
-  session_index = elt->value;
-  while (session_index != ~0)
+  if (!sm->endpoint_dependent)
     {
-      s = pool_elt_at_index (tsm->sessions, session_index);
+      if (clib_bihash_search_8_8 (&tsm->user_hash, &key, &value))
+	return;
+      u = pool_elt_at_index (tsm->users, value.value);
+      if (!u->nsessions && !u->nstaticsessions)
+	return;
 
-      send_nat44_user_session_details (s, reg, mp->context);
-
-      elt_index = elt->next;
+      head_index = u->sessions_per_user_list_head_index;
+      head = pool_elt_at_index (tsm->list_pool, head_index);
+      elt_index = head->next;
       elt = pool_elt_at_index (tsm->list_pool, elt_index);
       session_index = elt->value;
+      while (session_index != ~0)
+	{
+	  s = pool_elt_at_index (tsm->sessions, session_index);
+
+	  send_nat44_user_session_details (s, reg, mp->context);
+
+	  elt_index = elt->next;
+	  elt = pool_elt_at_index (tsm->list_pool, elt_index);
+	  session_index = elt->value;
+	}
+    }
+  else
+    {
+      /* *INDENT-OFF* */
+      pool_foreach (s, tsm->sessions, {
+        if (s->in2out.addr.as_u32 == ukey.addr.as_u32)
+          {
+            send_nat44_user_session_details (s, reg, mp->context);
+          }
+      });
+      /* *INDENT-ON* */
     }
 }
 
@@ -2036,12 +2053,21 @@ static void
               vec_add1 (ses_to_be_removed, s - tsm->sessions);
             }
         }));
-        vec_foreach (ses_index, ses_to_be_removed)
-        {
-          s = pool_elt_at_index(tsm->sessions, ses_index[0]);
-          nat_free_session_data (sm, s, tsm - sm->per_thread_data, 0);
-          nat44_delete_session (sm, s, tsm - sm->per_thread_data);
-        }
+	if(sm->endpoint_dependent){
+	    vec_foreach (ses_index, ses_to_be_removed)
+	      {
+		s = pool_elt_at_index(tsm->sessions, ses_index[0]);
+		nat_free_session_data (sm, s, tsm - sm->per_thread_data, 0);
+		nat44_ed_delete_session (sm, s, tsm - sm->per_thread_data, 1);
+	      }
+	}else{
+	    vec_foreach (ses_index, ses_to_be_removed)
+	      {
+		s = pool_elt_at_index(tsm->sessions, ses_index[0]);
+		nat_free_session_data (sm, s, tsm - sm->per_thread_data, 0);
+		nat44_delete_session (sm, s, tsm - sm->per_thread_data);
+	      }
+	}
         vec_free (ses_to_be_removed);
       }
       /* *INDENT-ON* */
@@ -3142,7 +3168,7 @@ _(NAT_SHOW_CONFIG, nat_show_config)                                     \
 _(NAT_SET_WORKERS, nat_set_workers)                                     \
 _(NAT_WORKER_DUMP, nat_worker_dump)                                     \
 _(NAT44_DEL_USER, nat44_del_user)                                       \
-_(NAT44_SESSION_CLEANUP, nat44_session_cleanup)                         \
+_(NAT44_SET_SESSION_LIMIT, nat44_set_session_limit)                     \
 _(NAT_SET_LOG_LEVEL, nat_set_log_level)                                 \
 _(NAT_IPFIX_ENABLE_DISABLE, nat_ipfix_enable_disable)                   \
 _(NAT_SET_TIMEOUTS, nat_set_timeouts)                                   \

@@ -248,7 +248,7 @@ nat44_ed_classify_node_fn_inline (vlib_main_t * vm,
 	      u32 arc_next = 0;
 
 	      vnet_feature_next (&arc_next, b0);
-	      nat_buffer_opaque (b0)->arc_next = arc_next;
+	      vnet_buffer2 (b0)->nat.arc_next = arc_next;
 	    }
 
 	  if (ip0->protocol != IP_PROTOCOL_ICMP)
@@ -258,11 +258,11 @@ nat44_ed_classify_node_fn_inline (vlib_main_t * vm,
 	      rx_fib_index0 =
 		fib_table_get_index_for_sw_if_index (FIB_PROTOCOL_IP4,
 						     sw_if_index0);
-	      make_ed_kv (&ed_kv0, &ip0->src_address,
-			  &ip0->dst_address, ip0->protocol,
-			  rx_fib_index0,
+	      make_ed_kv (&ip0->src_address, &ip0->dst_address,
+			  ip0->protocol, rx_fib_index0,
 			  vnet_buffer (b0)->ip.reass.l4_src_port,
-			  vnet_buffer (b0)->ip.reass.l4_dst_port);
+			  vnet_buffer (b0)->ip.reass.l4_dst_port, ~0ULL,
+			  &ed_kv0);
 	      /* process whole packet */
 	      if (!clib_bihash_search_16_8
 		  (&tsm->in2out_ed, &ed_kv0, &ed_value0))

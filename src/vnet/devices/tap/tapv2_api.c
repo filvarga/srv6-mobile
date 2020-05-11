@@ -134,7 +134,7 @@ vl_api_tap_create_v2_t_handler (vl_api_tap_create_v2_t * mp)
   /* If a tag was supplied... */
   if (vl_api_string_len (&mp->tag))
     {
-      u8 *tag = vl_api_from_api_to_new_vec (&mp->tag);
+      u8 *tag = vl_api_from_api_to_new_vec (mp, &mp->tag);
       vnet_set_sw_interface_tag (vnm, tag, ap->sw_if_index);
     }
 
@@ -232,8 +232,8 @@ vl_api_sw_interface_tap_v2_dump_t_handler (vl_api_sw_interface_tap_v2_dump_t *
     return;
 
   filter_sw_if_index = htonl (mp->sw_if_index);
-  if (filter_sw_if_index != ~0)
-    return;			/* UNIMPLEMENTED */
+  if (mp->sw_if_index != ~0)
+    VALIDATE_SW_IF_INDEX (mp);
 
   rv = tap_dump_ifs (&tapifs);
   if (rv)
@@ -241,9 +241,11 @@ vl_api_sw_interface_tap_v2_dump_t_handler (vl_api_sw_interface_tap_v2_dump_t *
 
   vec_foreach (tap_if, tapifs)
   {
-    tap_send_sw_interface_details (am, reg, tap_if, mp->context);
+    if ((filter_sw_if_index == ~0)
+	|| (tap_if->sw_if_index == filter_sw_if_index))
+      tap_send_sw_interface_details (am, reg, tap_if, mp->context);
   }
-
+  BAD_SW_IF_INDEX_LABEL;
   vec_free (tapifs);
 }
 

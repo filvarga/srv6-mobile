@@ -94,11 +94,12 @@ format_transport_connection (u8 * s, va_list * args)
   s = format (s, "%U", tp_vft->format_connection, conn_index, thread_index,
 	      verbose);
   tc = tp_vft->get_connection (conn_index, thread_index);
-  if (tc && transport_connection_is_tx_paced (tc) && verbose > 1)
+  if (tc && verbose > 1)
     {
       indent = format_get_indent (s) + 1;
-      s = format (s, "%Upacer: %U\n", format_white_space, indent,
-		  format_transport_pacer, &tc->pacer, tc->thread_index);
+      if (transport_connection_is_tx_paced (tc))
+	s = format (s, "%Upacer: %U\n", format_white_space, indent,
+		    format_transport_pacer, &tc->pacer, tc->thread_index);
       s = format (s, "%Utransport: flags 0x%x\n", format_white_space, indent,
 		  tc->flags);
     }
@@ -285,12 +286,6 @@ transport_protocol_get_vft (transport_proto_t transport_proto)
   return &tp_vfts[transport_proto];
 }
 
-u8
-transport_half_open_has_fifos (transport_proto_t tp)
-{
-  return tp_vfts[tp].transport_options.half_open_has_fifos;
-}
-
 transport_service_type_t
 transport_protocol_service_type (transport_proto_t tp)
 {
@@ -307,6 +302,13 @@ void
 transport_cleanup (transport_proto_t tp, u32 conn_index, u8 thread_index)
 {
   tp_vfts[tp].cleanup (conn_index, thread_index);
+}
+
+void
+transport_cleanup_half_open (transport_proto_t tp, u32 conn_index)
+{
+  if (tp_vfts[tp].cleanup)
+    tp_vfts[tp].cleanup_ho (conn_index);
 }
 
 int
