@@ -394,7 +394,7 @@ vtc_accumulate_stats (vcl_test_client_worker_t * wrk,
 
       if (ctrl->cfg.verbose > 1)
 	{
-	  sprintf (buf, "CLIENT (fd %d) RESULTS", ts->fd);
+	  snprintf (buf, sizeof (buf), "CLIENT (fd %d) RESULTS", ts->fd);
 	  vcl_test_stats_dump (buf, &ts->stats, show_rx, 1 /* show tx */ ,
 			       ctrl->cfg.verbose);
 	}
@@ -553,10 +553,10 @@ vtc_print_stats (vcl_test_session_t * ctrl)
     }
 
   if (is_echo)
-    sprintf (buf, "Echo");
+    snprintf (buf, sizeof (buf), "Echo");
   else
-    sprintf (buf, "%s-directional Stream",
-	     ctrl->cfg.test == VCL_TEST_TYPE_BI ? "Bi" : "Uni");
+    snprintf (buf, sizeof (buf), "%s-directional Stream",
+	      ctrl->cfg.test == VCL_TEST_TYPE_BI ? "Bi" : "Uni");
 }
 
 static void
@@ -639,32 +639,6 @@ vtc_stream_client (vcl_test_client_main_t * vcm)
   ctrl->cfg.total_bytes = 0;
   if (vtc_cfg_sync (ctrl))
     vtwrn ("post-test cfg sync failed!");
-}
-
-static void
-dump_help (void)
-{
-#define INDENT "\n  "
-
-  printf ("CLIENT: Test configuration commands:"
-	  INDENT VCL_TEST_TOKEN_HELP
-	  "\t\t\tDisplay help."
-	  INDENT VCL_TEST_TOKEN_EXIT
-	  "\t\t\tExit test client & server."
-	  INDENT VCL_TEST_TOKEN_SHOW_CFG
-	  "\t\t\tShow the current test cfg."
-	  INDENT VCL_TEST_TOKEN_RUN_UNI
-	  "\t\t\tRun the Uni-directional test."
-	  INDENT VCL_TEST_TOKEN_RUN_BI
-	  "\t\t\tRun the Bi-directional test."
-	  INDENT VCL_TEST_TOKEN_VERBOSE
-	  "\t\t\tToggle verbose setting."
-	  INDENT VCL_TEST_TOKEN_RXBUF_SIZE
-	  "<rxbuf size>\tRx buffer size (bytes)."
-	  INDENT VCL_TEST_TOKEN_TXBUF_SIZE
-	  "<txbuf size>\tTx buffer size (bytes)."
-	  INDENT VCL_TEST_TOKEN_NUM_WRITES
-	  "<# of writes>\tNumber of txbuf writes to server." "\n");
 }
 
 static void
@@ -912,7 +886,7 @@ vtc_process_opts (vcl_test_client_main_t * vcm, int argc, char **argv)
 		   optopt, ctrl->txbuf_size);
 	    print_usage_and_exit ();
 	  }
-	strcpy (ctrl->txbuf, optarg);
+	strncpy (ctrl->txbuf, optarg, ctrl->txbuf_size);
 	ctrl->cfg.test = VCL_TEST_TYPE_ECHO;
 	break;
 

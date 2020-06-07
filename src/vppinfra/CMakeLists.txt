@@ -47,7 +47,6 @@ set(VPPINFRA_SRCS
   elf.c
   elog.c
   error.c
-  fheap.c
   fifo.c
   format.c
   graph.c
@@ -68,13 +67,13 @@ set(VPPINFRA_SRCS
   random_isaac.c
   rbtree.c
   serialize.c
-  slist.c
   socket.c
   std-formats.c
   string.c
   time.c
   time_range.c
   timing_wheel.c
+  tw_timer_2t_2w_512sl.c
   tw_timer_16t_1w_2048sl.c
   tw_timer_16t_2w_512sl.c
   tw_timer_1t_3w_1024sl_ov.c
@@ -86,7 +85,6 @@ set(VPPINFRA_SRCS
   valloc.c
   vec.c
   vector.c
-  zvec.c
 )
 
 set(VPPINFRA_HEADERS
@@ -108,10 +106,6 @@ set(VPPINFRA_HEADERS
   clib.h
   cpu.h
   crc32.h
-  cuckoo_8_8.h
-  cuckoo_16_8.h
-  cuckoo_template.h
-  cuckoo_template.c
   dlist.h
   dlmalloc.h
   elf_clib.h
@@ -119,12 +113,8 @@ set(VPPINFRA_HEADERS
   elog.h
   error_bootstrap.h
   error.h
-  fheap.h
   fifo.h
   file.h
-  flowhash_24_16.h
-  flowhash_8_8.h
-  flowhash_template.h
   format.h
   graph.h
   hash.h
@@ -146,7 +136,6 @@ set(VPPINFRA_HEADERS
   os.h
   pcap.h
   pcap_funcs.h
-  pipeline.h
   pmalloc.h
   pool.h
   pmc.h
@@ -157,7 +146,6 @@ set(VPPINFRA_HEADERS
   rbtree.h
   serialize.h
   sha2.h
-  slist.h
   smp.h
   socket.h
   sparse_vec.h
@@ -165,6 +153,7 @@ set(VPPINFRA_HEADERS
   time.h
   time_range.h
   timing_wheel.h
+  tw_timer_2t_2w_512sl.h
   tw_timer_16t_1w_2048sl.h
   tw_timer_16t_2w_512sl.h
   tw_timer_1t_3w_1024sl_ov.h
@@ -185,9 +174,8 @@ set(VPPINFRA_HEADERS
   vector.h
   vector_neon.h
   vector_sse42.h
+  warnings.h
   xxhash.h
-  xy.h
-  zvec.h
   linux/syscall.h
   linux/sysfs.h
 )
@@ -214,12 +202,10 @@ option(VPP_BUILD_VPPINFRA_TESTS "Build vppinfra tests." OFF)
 if(VPP_BUILD_VPPINFRA_TESTS)
   foreach(test
     bihash_vec88
-    cuckoo_template
     dlist
     elf
     elog
     fifo
-    flowhash_template
     format
     fpool
     hash
@@ -234,16 +220,13 @@ if(VPP_BUILD_VPPINFRA_TESTS)
     random_isaac
     rwlock
     serialize
-    slist
     socket
     spinlock
     time
     time_range
-    timing_wheel
     tw_timer
     valloc
     vec
-    zvec
   )
     add_vpp_executable(test_${test}
       SOURCES test_${test}.c
@@ -251,7 +234,7 @@ if(VPP_BUILD_VPPINFRA_TESTS)
       )
   endforeach()
 
-  foreach(test bihash_template cuckoo_bihash)
+  foreach(test bihash_template)
     add_vpp_executable(test_${test}
       SOURCES test_${test}.c
       LINK_LIBRARIES vppinfra Threads::Threads

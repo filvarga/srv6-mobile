@@ -68,7 +68,7 @@ BuildRequires: mbedtls-devel mbedtls
 BuildREquires: openssl-devel
 BuildRequires: python36-devel
 %if 0%{rhel} == 7
-BuildRequires: devtoolset-7-toolchain
+BuildRequires: devtoolset-9-toolchain
 BuildRequires: cmake3
 BuildRequires: glibc-static, yum-utils
 %else
@@ -177,7 +177,7 @@ groupadd -f -r vpp
 
 %build
 %if 0%{rhel} < 8
-. /opt/rh/devtoolset-7/enable
+. /opt/rh/devtoolset-9/enable
 %endif
 %if %{with aesni}
     make bootstrap
@@ -375,7 +375,6 @@ fi
 %{_unitdir}/vpp.service
 /usr/bin/vpp*
 /usr/bin/svm*
-/usr/bin/elftool
 %config(noreplace) /etc/sysctl.d/80-vpp.conf
 %config(noreplace) /etc/vpp/startup.conf
 /usr/share/vpp/api/*

@@ -110,14 +110,14 @@ define nat_show_config_reply
   u32 translation_buckets;
   u32 translation_memory_size;
   u32 user_buckets;
-  u32 user_memory_size;
+  u64 user_memory_size;
   u32 max_translations_per_user;
   u32 outside_vrf_id;
   u32 inside_vrf_id;
   u32 nat64_bib_buckets;
-  u32 nat64_bib_memory_size;
+  u64 nat64_bib_memory_size;
   u32 nat64_st_buckets;
-  u32 nat64_st_memory_size;
+  u64 nat64_st_memory_size;
 };
 
 enum nat_log_level : u8
@@ -137,6 +137,19 @@ enum nat_log_level : u8
 autoreply define nat44_session_cleanup {
   u32 client_index;
   u32 context;
+};
+
+/** \brief NAT44 set session limit
+    @param client_index - opaque cookie to identify the sender
+    @param context - sender context, to match reply w/ request
+    @param session_limit - session limit
+    @param vrf_id - vrf id
+*/
+autoreply define nat44_set_session_limit {
+  u32 client_index;
+  u32 context;
+  u32 session_limit;
+  u32 vrf_id;
 };
 
 /** \brief Set NAT logging level

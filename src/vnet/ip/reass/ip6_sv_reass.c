@@ -303,10 +303,9 @@ ip6_sv_reass_find_or_create (vlib_main_t * vm, vlib_node_runtime_t * node,
 			     u8 * do_handoff)
 {
   ip6_sv_reass_t *reass = NULL;
-  f64 now = vlib_time_now (rm->vlib_main);
+  f64 now = vlib_time_now (vm);
 
-  if (!clib_bihash_search_48_8
-      (&rm->hash, (clib_bihash_kv_48_8_t *) kv, (clib_bihash_kv_48_8_t *) kv))
+  if (!clib_bihash_search_48_8 (&rm->hash, &kv->kv, &kv->kv))
     {
       if (vm->thread_index != kv->v.thread_index)
 	{
@@ -355,17 +354,17 @@ ip6_sv_reass_find_or_create (vlib_main_t * vm, vlib_node_runtime_t * node,
       rt->lru_first = rt->lru_last = reass - rt->pool;
     }
 
-  reass->key.as_u64[0] = ((clib_bihash_kv_48_8_t *) kv)->key[0];
-  reass->key.as_u64[1] = ((clib_bihash_kv_48_8_t *) kv)->key[1];
-  reass->key.as_u64[2] = ((clib_bihash_kv_48_8_t *) kv)->key[2];
-  reass->key.as_u64[3] = ((clib_bihash_kv_48_8_t *) kv)->key[3];
-  reass->key.as_u64[4] = ((clib_bihash_kv_48_8_t *) kv)->key[4];
-  reass->key.as_u64[5] = ((clib_bihash_kv_48_8_t *) kv)->key[5];
+  reass->key.as_u64[0] = kv->kv.key[0];
+  reass->key.as_u64[1] = kv->kv.key[1];
+  reass->key.as_u64[2] = kv->kv.key[2];
+  reass->key.as_u64[3] = kv->kv.key[3];
+  reass->key.as_u64[4] = kv->kv.key[4];
+  reass->key.as_u64[5] = kv->kv.key[5];
   kv->v.reass_index = (reass - rt->pool);
   kv->v.thread_index = vm->thread_index;
   reass->last_heard = now;
 
-  if (clib_bihash_add_del_48_8 (&rm->hash, (clib_bihash_kv_48_8_t *) kv, 1))
+  if (clib_bihash_add_del_48_8 (&rm->hash, &kv->kv, 1))
     {
       ip6_sv_reass_free (vm, rm, rt, reass);
       reass = NULL;
@@ -556,6 +555,7 @@ ip6_sv_reassembly_inline (vlib_main_t * vm,
 		   &(vnet_buffer (b0)->ip.reass.tcp_seq_number)))
 		{
 		  error0 = IP6_ERROR_REASS_UNSUPP_IP_PROTO;
+		  b0->error = node->errors[error0];
 		  next0 = IP6_SV_REASSEMBLY_NEXT_DROP;
 		  goto packet_enqueue;
 		}
@@ -623,6 +623,7 @@ ip6_sv_reassembly_inline (vlib_main_t * vm,
 	    {
 	      next0 = IP6_SV_REASSEMBLY_NEXT_DROP;
 	      error0 = IP6_ERROR_REASS_LIMIT_REACHED;
+	      b0->error = node->errors[error0];
 	      goto packet_enqueue;
 	    }
 
@@ -640,7 +641,6 @@ ip6_sv_reassembly_inline (vlib_main_t * vm,
 	      vnet_buffer (b0)->ip.reass.l4_src_port = reass->l4_src_port;
 	      vnet_buffer (b0)->ip.reass.l4_dst_port = reass->l4_dst_port;
 	      next0 = IP6_SV_REASSEMBLY_NEXT_INPUT;
-	      error0 = IP6_ERROR_NONE;
 	      if (PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED))
 		{
 		  ip6_sv_reass_add_trace (vm, node, rm, reass, bi0,
@@ -679,8 +679,6 @@ ip6_sv_reassembly_inline (vlib_main_t * vm,
 	      goto next_packet;
 	      break;
 	    }
-
-	  b0->error = node->errors[error0];
 
 	  if (reass->is_complete)
 	    {

@@ -154,6 +154,7 @@ typedef struct quic_ctx_
     struct
     {	      /** STREAM ctx case */
       quicly_stream_t *stream;
+      u64 bytes_written;
       u32 quic_connection_ctx_id;
       u8 _sctx_end_marker;	/* Leave this at the end */
     };
@@ -274,6 +275,8 @@ typedef struct quic_main_
   u32 udp_fifo_size;
   u32 udp_fifo_prealloc;
   u32 connection_timeout;
+
+  u8 vnet_crypto_enabled;
 
   clib_rwlock_t crypto_keys_quic_rw_lock;
 } quic_main_t;

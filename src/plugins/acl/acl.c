@@ -24,6 +24,8 @@
 #include <vnet/classify/in_out_acl.h>
 #include <vpp/app/version.h>
 
+#include <vnet/ethernet/ethernet_types_api.h>
+
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 
@@ -342,47 +344,10 @@ validate_and_reset_acl_counters (acl_main_t * am, u32 acl_index)
 }
 
 static int
-acl_api_ip4_invalid_prefix (void *ip4_pref_raw, u8 ip4_prefix_len)
+acl_api_invalid_prefix (const vl_api_prefix_t * prefix)
 {
-  ip4_address_t ip4_addr;
-  ip4_address_t ip4_mask;
-  ip4_address_t ip4_masked_addr;
-
-  memcpy (&ip4_addr, ip4_pref_raw, sizeof (ip4_addr));
-  ip4_preflen_to_mask (ip4_prefix_len, &ip4_mask);
-  ip4_masked_addr.as_u32 = ip4_addr.as_u32 & ip4_mask.as_u32;
-  int ret = (ip4_masked_addr.as_u32 != ip4_addr.as_u32);
-  if (ret)
-    {
-      clib_warning
-	("inconsistent addr %U for prefix len %d; (%U when masked)",
-	 format_ip4_address, ip4_pref_raw, ip4_prefix_len, format_ip4_address,
-	 &ip4_masked_addr);
-    }
-  return ret;
-}
-
-static int
-acl_api_ip6_invalid_prefix (void *ip6_pref_raw, u8 ip6_prefix_len)
-{
-  ip6_address_t ip6_addr;
-  ip6_address_t ip6_mask;
-  ip6_address_t ip6_masked_addr;
-
-  memcpy (&ip6_addr, ip6_pref_raw, sizeof (ip6_addr));
-  ip6_preflen_to_mask (ip6_prefix_len, &ip6_mask);
-  ip6_masked_addr.as_u64[0] = ip6_addr.as_u64[0] & ip6_mask.as_u64[0];
-  ip6_masked_addr.as_u64[1] = ip6_addr.as_u64[1] & ip6_mask.as_u64[1];
-  int ret = ((ip6_masked_addr.as_u64[0] != ip6_addr.as_u64[0])
-	     || (ip6_masked_addr.as_u64[1] != ip6_addr.as_u64[1]));
-  if (ret)
-    {
-      clib_warning
-	("inconsistent addr %U for prefix len %d; (%U when masked)",
-	 format_ip6_address, ip6_pref_raw, ip6_prefix_len, format_ip6_address,
-	 &ip6_masked_addr);
-    }
-  return ret;
+  ip_prefix_t ip_prefix;
+  return ip_prefix_decode2 (prefix, &ip_prefix);
 }
 
 static int
@@ -402,32 +367,10 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
   /* check if what they request is consistent */
   for (i = 0; i < count; i++)
     {
-      if (rules[i].is_ipv6)
-	{
-	  if (rules[i].src_ip_prefix_len > 128)
-	    return VNET_API_ERROR_INVALID_VALUE;
-	  if (rules[i].dst_ip_prefix_len > 128)
-	    return VNET_API_ERROR_INVALID_VALUE;
-	  if (acl_api_ip6_invalid_prefix
-	      (&rules[i].src_ip_addr, rules[i].src_ip_prefix_len))
-	    return VNET_API_ERROR_INVALID_SRC_ADDRESS;
-	  if (acl_api_ip6_invalid_prefix
-	      (&rules[i].dst_ip_addr, rules[i].dst_ip_prefix_len))
-	    return VNET_API_ERROR_INVALID_DST_ADDRESS;
-	}
-      else
-	{
-	  if (rules[i].src_ip_prefix_len > 32)
-	    return VNET_API_ERROR_INVALID_VALUE;
-	  if (rules[i].dst_ip_prefix_len > 32)
-	    return VNET_API_ERROR_INVALID_VALUE;
-	  if (acl_api_ip4_invalid_prefix
-	      (&rules[i].src_ip_addr, rules[i].src_ip_prefix_len))
-	    return VNET_API_ERROR_INVALID_SRC_ADDRESS;
-	  if (acl_api_ip4_invalid_prefix
-	      (&rules[i].dst_ip_addr, rules[i].dst_ip_prefix_len))
-	    return VNET_API_ERROR_INVALID_DST_ADDRESS;
-	}
+      if (acl_api_invalid_prefix (&rules[i].src_prefix))
+	return VNET_API_ERROR_INVALID_SRC_ADDRESS;
+      if (acl_api_invalid_prefix (&rules[i].dst_prefix))
+	return VNET_API_ERROR_INVALID_DST_ADDRESS;
       if (ntohs (rules[i].srcport_or_icmptype_first) >
 	  ntohs (rules[i].srcport_or_icmptype_last))
 	return VNET_API_ERROR_INVALID_VALUE_2;
@@ -466,19 +409,11 @@ acl_add_list (u32 count, vl_api_acl_rule_t rules[],
       r = vec_elt_at_index (acl_new_rules, i);
       clib_memset (r, 0, sizeof (*r));
       r->is_permit = rules[i].is_permit;
-      r->is_ipv6 = rules[i].is_ipv6;
-      if (r->is_ipv6)
-	{
-	  memcpy (&r->src, rules[i].src_ip_addr, sizeof (r->src));
-	  memcpy (&r->dst, rules[i].dst_ip_addr, sizeof (r->dst));
-	}
-      else
-	{
-	  memcpy (&r->src.ip4, rules[i].src_ip_addr, sizeof (r->src.ip4));
-	  memcpy (&r->dst.ip4, rules[i].dst_ip_addr, sizeof (r->dst.ip4));
-	}
-      r->src_prefixlen = rules[i].src_ip_prefix_len;
-      r->dst_prefixlen = rules[i].dst_ip_prefix_len;
+      r->is_ipv6 = rules[i].src_prefix.address.af;
+      ip_address_decode (&rules[i].src_prefix.address, &r->src);
+      ip_address_decode (&rules[i].dst_prefix.address, &r->dst);
+      r->src_prefixlen = rules[i].src_prefix.len;
+      r->dst_prefixlen = rules[i].dst_prefix.len;
       r->proto = rules[i].proto;
       r->src_port_or_type_first = ntohs (rules[i].srcport_or_icmptype_first);
       r->src_port_or_type_last = ntohs (rules[i].srcport_or_icmptype_last);
@@ -1714,14 +1649,12 @@ macip_acl_add_list (u32 count, vl_api_macip_acl_rule_t rules[],
     {
       r = &acl_new_rules[i];
       r->is_permit = rules[i].is_permit;
-      r->is_ipv6 = rules[i].is_ipv6;
-      memcpy (&r->src_mac, rules[i].src_mac, 6);
-      memcpy (&r->src_mac_mask, rules[i].src_mac_mask, 6);
-      if (rules[i].is_ipv6)
-	memcpy (&r->src_ip_addr.ip6, rules[i].src_ip_addr, 16);
-      else
-	memcpy (&r->src_ip_addr.ip4, rules[i].src_ip_addr, 4);
-      r->src_prefixlen = rules[i].src_ip_prefix_len;
+      r->is_ipv6 = rules[i].src_prefix.address.af;
+      mac_address_decode (rules[i].src_mac, (mac_address_t *) & r->src_mac);
+      mac_address_decode (rules[i].src_mac_mask,
+			  (mac_address_t *) & r->src_mac_mask);
+      ip_address_decode (&rules[i].src_prefix.address, &r->src_ip_addr);
+      r->src_prefixlen = rules[i].src_prefix.len;
     }
 
   if (~0 == *acl_list_index)
@@ -2046,19 +1979,12 @@ static void
 copy_acl_rule_to_api_rule (vl_api_acl_rule_t * api_rule, acl_rule_t * r)
 {
   api_rule->is_permit = r->is_permit;
-  api_rule->is_ipv6 = r->is_ipv6;
-  if (r->is_ipv6)
-    {
-      memcpy (api_rule->src_ip_addr, &r->src, sizeof (r->src));
-      memcpy (api_rule->dst_ip_addr, &r->dst, sizeof (r->dst));
-    }
-  else
-    {
-      memcpy (api_rule->src_ip_addr, &r->src.ip4, sizeof (r->src.ip4));
-      memcpy (api_rule->dst_ip_addr, &r->dst.ip4, sizeof (r->dst.ip4));
-    }
-  api_rule->src_ip_prefix_len = r->src_prefixlen;
-  api_rule->dst_ip_prefix_len = r->dst_prefixlen;
+  ip_address_encode (&r->src, r->is_ipv6 ? IP46_TYPE_IP6 : IP46_TYPE_IP4,
+		     &api_rule->src_prefix.address);
+  ip_address_encode (&r->dst, r->is_ipv6 ? IP46_TYPE_IP6 : IP46_TYPE_IP4,
+		     &api_rule->dst_prefix.address);
+  api_rule->src_prefix.len = r->src_prefixlen;
+  api_rule->dst_prefix.len = r->dst_prefixlen;
   api_rule->proto = r->proto;
   api_rule->srcport_or_icmptype_first = htons (r->src_port_or_type_first);
   api_rule->srcport_or_icmptype_last = htons (r->src_port_or_type_last);
@@ -2333,17 +2259,14 @@ send_macip_acl_details (acl_main_t * am, vl_api_registration_t * reg,
 	{
 	  r = &acl->rules[i];
 	  rules[i].is_permit = r->is_permit;
-	  rules[i].is_ipv6 = r->is_ipv6;
-	  memcpy (rules[i].src_mac, &r->src_mac, sizeof (r->src_mac));
-	  memcpy (rules[i].src_mac_mask, &r->src_mac_mask,
-		  sizeof (r->src_mac_mask));
-	  if (r->is_ipv6)
-	    memcpy (rules[i].src_ip_addr, &r->src_ip_addr.ip6,
-		    sizeof (r->src_ip_addr.ip6));
-	  else
-	    memcpy (rules[i].src_ip_addr, &r->src_ip_addr.ip4,
-		    sizeof (r->src_ip_addr.ip4));
-	  rules[i].src_ip_prefix_len = r->src_prefixlen;
+	  mac_address_encode ((mac_address_t *) & r->src_mac,
+			      rules[i].src_mac);
+	  mac_address_encode ((mac_address_t *) & r->src_mac_mask,
+			      rules[i].src_mac_mask);
+	  ip_address_encode (&r->src_ip_addr,
+			     r->is_ipv6 ? IP46_TYPE_IP6 : IP46_TYPE_IP4,
+			     &rules[i].src_prefix.address);
+	  rules[i].src_prefix.len = r->src_prefixlen;
 	}
     }
   else
@@ -2922,6 +2845,196 @@ macip_acl_print (acl_main_t * am, u32 macip_acl_index)
 		     my_macip_acl_rule_t_pretty_format,
 		     vec_elt_at_index (a->rules, i));
 
+}
+
+static clib_error_t *
+acl_set_aclplugin_interface_fn (vlib_main_t * vm,
+				unformat_input_t * input,
+				vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  u32 sw_if_index, is_add, is_input, acl_index;
+
+  is_add = is_input = 1;
+  acl_index = sw_if_index = ~0;
+
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "%U",
+		    unformat_vnet_sw_interface, vnet_get_main (),
+		    &sw_if_index))
+	;
+      else if (unformat (line_input, "add"))
+	is_add = 1;
+      else if (unformat (line_input, "del"))
+	is_add = 0;
+      else if (unformat (line_input, "acl %d", &acl_index))
+	;
+      else if (unformat (line_input, "input"))
+	is_input = 1;
+      else if (unformat (line_input, "output"))
+	is_input = 0;
+      else
+	break;
+    }
+
+  if (~0 == sw_if_index)
+    return (clib_error_return (0, "invalid interface"));
+  if (~0 == acl_index)
+    return (clib_error_return (0, "invalid acl"));
+
+  acl_interface_add_del_inout_acl (sw_if_index, is_add, is_input, acl_index);
+
+  unformat_free (line_input);
+  return (NULL);
+}
+
+#define vec_validate_acl_rules(v, idx) \
+  do {                                 \
+    if (vec_len(v) < idx+1) {  \
+      vec_validate(v, idx); \
+      v[idx].is_permit = 0x1; \
+      v[idx].srcport_or_icmptype_last = 0xffff; \
+      v[idx].dstport_or_icmpcode_last = 0xffff; \
+    } \
+  } while (0)
+
+static clib_error_t *
+acl_set_aclplugin_acl_fn (vlib_main_t * vm,
+			  unformat_input_t * input, vlib_cli_command_t * cmd)
+{
+  unformat_input_t _line_input, *line_input = &_line_input;
+  vl_api_acl_rule_t *rules = 0;
+  int rv;
+  int rule_idx = 0;
+  int n_rules_override = -1;
+  u32 proto = 0;
+  u32 port1 = 0;
+  u32 port2 = 0;
+  u32 action = 0;
+  u32 tcpflags, tcpmask;
+  u32 src_prefix_length = 0, dst_prefix_length = 0;
+  ip46_address_t src, dst;
+  u8 *tag = (u8 *) "cli";
+
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "permit+reflect"))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].is_permit = 2;
+	}
+      else if (unformat (line_input, "permit"))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].is_permit = 1;
+	}
+      else if (unformat (line_input, "deny"))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].is_permit = 0;
+	}
+      else if (unformat (line_input, "count %d", &n_rules_override))
+	{
+	  /* we will use this later */
+	}
+      else if (unformat (line_input, "action %d", &action))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].is_permit = action;
+	}
+      else if (unformat (line_input, "src %U/%d",
+			 unformat_ip46_address, &src, IP46_TYPE_ANY,
+			 &src_prefix_length))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  ip_address_encode (&src, IP46_TYPE_ANY,
+			     &rules[rule_idx].src_prefix.address);
+	  rules[rule_idx].src_prefix.address.af = ADDRESS_IP4;
+	  rules[rule_idx].src_prefix.len = src_prefix_length;
+	}
+      else if (unformat (line_input, "dst %U/%d",
+			 unformat_ip46_address, &dst, IP46_TYPE_ANY,
+			 &dst_prefix_length))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  ip_address_encode (&dst, IP46_TYPE_ANY,
+			     &rules[rule_idx].dst_prefix.address);
+	  rules[rule_idx].dst_prefix.address.af = ADDRESS_IP4;
+	  rules[rule_idx].dst_prefix.len = dst_prefix_length;
+	}
+      else if (unformat (line_input, "sport %d-%d", &port1, &port2))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].srcport_or_icmptype_first = htons (port1);
+	  rules[rule_idx].srcport_or_icmptype_last = htons (port2);
+	}
+      else if (unformat (line_input, "sport %d", &port1))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].srcport_or_icmptype_first = htons (port1);
+	  rules[rule_idx].srcport_or_icmptype_last = htons (port1);
+	}
+      else if (unformat (line_input, "dport %d-%d", &port1, &port2))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].dstport_or_icmpcode_first = htons (port1);
+	  rules[rule_idx].dstport_or_icmpcode_last = htons (port2);
+	}
+      else if (unformat (line_input, "dport %d", &port1))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].dstport_or_icmpcode_first = htons (port1);
+	  rules[rule_idx].dstport_or_icmpcode_last = htons (port1);
+	}
+      else if (unformat (line_input, "tcpflags %d %d", &tcpflags, &tcpmask))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].tcp_flags_value = tcpflags;
+	  rules[rule_idx].tcp_flags_mask = tcpmask;
+	}
+      else
+	if (unformat (line_input, "tcpflags %d mask %d", &tcpflags, &tcpmask))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].tcp_flags_value = tcpflags;
+	  rules[rule_idx].tcp_flags_mask = tcpmask;
+	}
+      else if (unformat (line_input, "proto %d", &proto))
+	{
+	  vec_validate_acl_rules (rules, rule_idx);
+	  rules[rule_idx].proto = proto;
+	}
+      else if (unformat (line_input, "tag %s", &tag))
+	{
+	}
+      else if (unformat (line_input, ","))
+	{
+	  rule_idx++;
+	  vec_validate_acl_rules (rules, rule_idx);
+	}
+      else
+	break;
+    }
+
+  u32 acl_index = ~0;
+
+  rv = acl_add_list (vec_len (rules), rules, &acl_index, tag);
+
+  vec_free (rules);
+
+  if (rv)
+    return (clib_error_return (0, "failed"));
+
+  vlib_cli_output (vm, "ACL index:%d", acl_index);
+
+  return (NULL);
 }
 
 static clib_error_t *
@@ -3519,6 +3632,43 @@ VLIB_CLI_COMMAND (aclplugin_clear_command, static) = {
     .path = "clear acl-plugin sessions",
     .short_help = "clear acl-plugin sessions",
     .function = acl_clear_aclplugin_fn,
+};
+
+/*?
+ * [un]Apply an ACL to an interface.
+ *  The ACL is applied in a given direction, either input or output.
+ *  The ACL being applied must already exist.
+ *
+ * @cliexpar
+ * <b><em> set acl-plugin interface <input|output> acl <index> [del]  </b></em>
+ * @cliexend
+ ?*/
+VLIB_CLI_COMMAND (aclplugin_set_interface_command, static) = {
+    .path = "set acl-plugin interface",
+    .short_help = "set acl-plugin interface <interface> <input|output> <acl INDEX> [del] ",
+    .function = acl_set_aclplugin_interface_fn,
+};
+
+/*?
+ * Create an Access Control List (ACL)
+ *  an ACL is composed of more than one Access control element (ACE). Multiple
+ *  ACEs can be specified with this command using a comma separated list.
+ *
+ * Each ACE describes a tuple of src+dst IP prefix, ip protocol, src+dst port ranges.
+ * (the ACL plugin also support ICMP types/codes instead of UDP/TCP ports, but
+ *  this CLI does not).
+ *
+ * An ACL can optionally be assigned a 'tag' - which is an identifier understood
+ * by the client. VPP does not examine it in any way.
+ *
+ * @cliexpar
+ * <b><em> set acl-plugin acl <permit|deny> src <PREFIX> dst <PREFIX> proto <TCP|UDP> sport <X-Y> dport <X-Y> [tag FOO] </b></em>
+ * @cliexend
+ ?*/
+VLIB_CLI_COMMAND (aclplugin_set_acl_command, static) = {
+    .path = "set acl-plugin acl",
+    .short_help = "set acl-plugin acl <permit|deny> src <PREFIX> dst <PREFIX> proto X sport X-Y dport X-Y [tag FOO] {use comma separated list for multiple rules}",
+    .function = acl_set_aclplugin_acl_fn,
 };
 /* *INDENT-ON* */
 

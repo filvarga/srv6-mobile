@@ -16,7 +16,9 @@
  * draft-cheng-iccrg-delivery-rate-estimation-00
  */
 
+#include <vnet/tcp/tcp_bt.h>
 #include <vnet/tcp/tcp.h>
+#include <vnet/tcp/tcp_inlines.h>
 
 static tcp_bt_sample_t *
 bt_get_sample (tcp_byte_tracker_t * bt, u32 bts_index)
@@ -275,6 +277,8 @@ tcp_bt_alloc_tx_sample (tcp_connection_t * tc, u32 min_seq, u32 max_seq)
   bts->tx_time = tcp_time_now_us (tc->c_thread_index);
   bts->first_tx_time = tc->first_tx_time;
   bts->flags |= tc->app_limited ? TCP_BTS_IS_APP_LIMITED : 0;
+  bts->tx_in_flight = tcp_flight_size (tc);
+  bts->tx_lost = tc->lost;
   return bts;
 }
 
@@ -336,6 +340,7 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
   tcp_bt_sample_t *bts, *next, *cur, *prev, *nbts;
   u32 bts_index, cur_index, next_index, prev_index, max_seq;
   u8 is_end = end == tc->snd_nxt;
+  tcp_bts_flags_t bts_flags;
 
   /* Contiguous blocks retransmitted at the same time */
   bts = bt_get_sample (bt, bt->last_ooo);
@@ -350,8 +355,10 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
       return;
     }
 
-  /* Find original tx sample */
+  /* Find original tx sample and cache flags in case the sample
+   * is freed or the pool moves */
   bts = bt_lookup_seq (bt, start);
+  bts_flags = bts->flags;
 
   ASSERT (bts != 0 && seq_geq (start, bts->min_seq));
 
@@ -364,11 +371,12 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
     {
       prev_index = bts->prev;
       next = bt_fix_overlapped (bt, bts, end, is_end);
+      /* bts might no longer be valid from here */
       next_index = bt_sample_index (bt, next);
 
       cur = tcp_bt_alloc_tx_sample (tc, start, end);
       cur->flags |= TCP_BTS_IS_RXT;
-      if (bts->flags & TCP_BTS_IS_RXT)
+      if (bts_flags & TCP_BTS_IS_RXT)
 	cur->flags |= TCP_BTS_IS_RXT_LOST;
       cur->next = next_index;
       cur->prev = prev_index;
@@ -410,7 +418,7 @@ tcp_bt_track_rxt (tcp_connection_t * tc, u32 start, u32 end)
   /* Have to split or tail overlap */
   cur = tcp_bt_alloc_tx_sample (tc, start, end);
   cur->flags |= TCP_BTS_IS_RXT;
-  if (bts->flags & TCP_BTS_IS_RXT)
+  if (bts_flags & TCP_BTS_IS_RXT)
     cur->flags |= TCP_BTS_IS_RXT_LOST;
   cur->prev = bts_index;
   cur_index = bt_sample_index (bt, cur);
@@ -475,6 +483,8 @@ tcp_bt_sample_to_rate_sample (tcp_connection_t * tc, tcp_bt_sample_t * bts,
   rs->interval_time = bts->tx_time - bts->first_tx_time;
   rs->rtt_time = tc->delivered_time - bts->tx_time;
   rs->flags = bts->flags;
+  rs->tx_in_flight = bts->tx_in_flight;
+  rs->tx_lost = bts->tx_lost;
   tc->first_tx_time = bts->tx_time;
 }
 
@@ -586,6 +596,8 @@ tcp_bt_sample_delivery_rate (tcp_connection_t * tc, tcp_rate_sample_t * rs)
   if (PREDICT_FALSE (tc->flags & TCP_CONN_FINSNT))
     return;
 
+  tc->lost += tc->sack_sb.last_lost_bytes;
+
   delivered = tc->bytes_acked + tc->sack_sb.last_sacked_bytes;
   if (!delivered || tc->bt->head == TCP_BTS_INVALID_INDEX)
     return;
@@ -607,7 +619,8 @@ tcp_bt_sample_delivery_rate (tcp_connection_t * tc, tcp_rate_sample_t * rs)
 				rs->interval_time);
   rs->delivered = tc->delivered - rs->prior_delivered;
   rs->acked_and_sacked = delivered;
-  rs->lost = tc->sack_sb.last_lost_bytes;
+  rs->last_lost = tc->sack_sb.last_lost_bytes;
+  rs->lost = tc->lost - rs->tx_lost;
 }
 
 void

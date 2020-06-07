@@ -480,18 +480,17 @@ again:
 
   reass = NULL;
   now = vlib_time_now (vm);
-  if (!clib_bihash_search_16_8
-      (&rm->hash, (clib_bihash_kv_16_8_t *) kv, (clib_bihash_kv_16_8_t *) kv))
+  if (!clib_bihash_search_16_8 (&rm->hash, &kv->kv, &kv->kv))
     {
+      if (vm->thread_index != kv->v.memory_owner_thread_index)
+	{
+	  *do_handoff = 1;
+	  return NULL;
+	}
       reass =
 	pool_elt_at_index (rm->per_thread_data
 			   [kv->v.memory_owner_thread_index].pool,
 			   kv->v.reass_index);
-      if (vm->thread_index != reass->memory_owner_thread_index)
-	{
-	  *do_handoff = 1;
-	  return reass;
-	}
 
       if (now > reass->last_heard + rm->timeout)
 	{
@@ -523,14 +522,13 @@ again:
       ++rt->reass_n;
     }
 
-  reass->key.as_u64[0] = ((clib_bihash_kv_16_8_t *) kv)->key[0];
-  reass->key.as_u64[1] = ((clib_bihash_kv_16_8_t *) kv)->key[1];
+  reass->key.as_u64[0] = kv->kv.key[0];
+  reass->key.as_u64[1] = kv->kv.key[1];
   kv->v.reass_index = (reass - rt->pool);
   kv->v.memory_owner_thread_index = vm->thread_index;
   reass->last_heard = now;
 
-  int rv =
-    clib_bihash_add_del_16_8 (&rm->hash, (clib_bihash_kv_16_8_t *) kv, 2);
+  int rv = clib_bihash_add_del_16_8 (&rm->hash, &kv->kv, 2);
   if (rv)
     {
       ip4_full_reass_free_ctx (rt, reass);
@@ -1233,7 +1231,10 @@ ip4_full_reass_inline (vlib_main_t * vm, vlib_node_runtime_t * node,
 
 	      /* bi0 might have been updated by reass_finalize, reload */
 	      b0 = vlib_get_buffer (vm, bi0);
-	      b0->error = node->errors[error0];
+	      if (IP4_ERROR_NONE != error0)
+		{
+		  b0->error = node->errors[error0];
+		}
 
 	      if (next0 == IP4_FULL_REASS_NEXT_HANDOFF)
 		{

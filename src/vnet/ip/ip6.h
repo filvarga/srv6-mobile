@@ -47,6 +47,7 @@
 #include <vnet/ip/ip46_address.h>
 #include <vnet/ip/ip6_hop_by_hop_packet.h>
 #include <vnet/ip/lookup.h>
+#include <vnet/ip/ip_interface.h>
 #include <stdbool.h>
 #include <vppinfra/bihash_24_8.h>
 #include <vppinfra/bihash_40_8.h>
@@ -337,7 +338,7 @@ clib_error_t *ip6_add_del_interface_address (vlib_main_t * vm,
 void ip6_sw_interface_enable_disable (u32 sw_if_index, u32 is_enable);
 
 /**
- * @brie get first IPv6 interface address
+ * @brief get first IPv6 interface address
  */
 ip6_address_t *ip6_interface_first_address (ip6_main_t * im, u32 sw_if_index);
 

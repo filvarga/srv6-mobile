@@ -27,8 +27,15 @@
 #include <vnet/fib/fib_table.h>
 #include <nat/nat_ha.h>
 
+
+#define UNSUPPORTED_IN_DET_OR_ED_MODE_STR \
+  "This command is unsupported in deterministic or endpoint dependent mode"
+#define UNSUPPORTED_IN_DET_OR_NON_ED_MODE_STR \
+  "This command is unsupported in deterministic or non endpoint dependent mode"
 #define UNSUPPORTED_IN_DET_MODE_STR \
   "This command is unsupported in deterministic mode"
+#define SUPPORTED_ONLY_IN_ED_MODE_STR \
+  "This command is supported only in endpoint dependent mode"
 #define SUPPORTED_ONLY_IN_DET_MODE_STR \
   "This command is supported only in deterministic mode"
 
@@ -114,16 +121,6 @@ nat_show_workers_commnad_fn (vlib_main_t * vm, unformat_input_t * input,
     }
 
   return 0;
-}
-
-static clib_error_t *
-nat44_session_cleanup_command_fn (vlib_main_t * vm,
-				  unformat_input_t * input,
-				  vlib_cli_command_t * cmd)
-{
-  clib_error_t *error = 0;
-  nat44_force_users_cleanup ();
-  return error;
 }
 
 static clib_error_t *
@@ -252,8 +249,10 @@ nat44_show_hash_commnad_fn (vlib_main_t * vm, unformat_input_t * input,
   }
 
   if (sm->endpoint_dependent)
-    vlib_cli_output (vm, "%U", format_bihash_16_8, &nam->affinity_hash,
-		     verbose);
+    {
+      vlib_cli_output (vm, "%U", format_bihash_16_8, &nam->affinity_hash,
+		       verbose);
+    }
   return 0;
 }
 
@@ -646,7 +645,7 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
   snat_session_t *s;
 
   if (sm->deterministic || !sm->endpoint_dependent)
-    return clib_error_return (0, UNSUPPORTED_IN_DET_MODE_STR);
+    return clib_error_return (0, UNSUPPORTED_IN_DET_OR_NON_ED_MODE_STR);
 
   // print session configuration values
   vlib_cli_output (vm, "max translations: %u", sm->max_translations);
@@ -655,7 +654,7 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   u32 count = 0;
 
-  u64 now = vlib_time_now (sm->vlib_main);
+  u64 now = vlib_time_now (vm);
   u64 sess_timeout_time;
 
   u32 udp_sessions = 0;
@@ -664,6 +663,8 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
 
   u32 timed_out = 0;
   u32 transitory = 0;
+  u32 transitory_wait_closed = 0;
+  u32 transitory_closed = 0;
   u32 established = 0;
 
   if (sm->num_workers > 1)
@@ -686,7 +687,20 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
               case SNAT_PROTOCOL_TCP:
                 tcp_sessions++;
                 if (s->state)
-                  transitory++;
+                  {
+                    if (s->tcp_close_timestamp)
+                      {
+                        if (now >= s->tcp_close_timestamp)
+                          {
+                            ++transitory_closed;
+                          }
+                        else
+                          {
+                            ++transitory_wait_closed;
+                          }
+                      }
+                    transitory++;
+                  }
                 else
                   established++;
                 break;
@@ -697,18 +711,6 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
               }
           }));
           count += pool_elts (tsm->sessions);
-
-          vlib_cli_output (vm, "tid[%u] session scavenging cleared: %u",
-              tsm->thread_index, tsm->cleared);
-          vlib_cli_output (vm, "tid[%u] session scavenging cleanup runs: %u",
-              tsm->thread_index, tsm->cleanup_runs);
-
-          if (now < tsm->cleanup_timeout)
-            vlib_cli_output (vm, "tid[%u] session scavenging next run in: %f",
-              tsm->thread_index, tsm->cleanup_timeout - now);
-          else
-            vlib_cli_output (vm, "tid[%u] session scavenging next run in: 0",
-              tsm->thread_index);
         }
       /* *INDENT-ON* */
     }
@@ -731,7 +733,20 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
           case SNAT_PROTOCOL_TCP:
             tcp_sessions++;
             if (s->state)
-              transitory++;
+              {
+                if (s->tcp_close_timestamp)
+                  {
+                    if (now >= s->tcp_close_timestamp)
+                      {
+                        ++transitory_closed;
+                      }
+                    else
+                      {
+                        ++transitory_wait_closed;
+                      }
+                  }
+                transitory++;
+              }
             else
               established++;
             break;
@@ -743,17 +758,6 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
       }));
       /* *INDENT-ON* */
       count = pool_elts (tsm->sessions);
-
-      vlib_cli_output (vm, "tid[0] session scavenging cleared: %u",
-		       tsm->cleared);
-      vlib_cli_output (vm, "tid[0] session scavenging cleanup runs: %u",
-		       tsm->cleanup_runs);
-
-      if (now < tsm->cleanup_timeout)
-	vlib_cli_output (vm, "tid[0] session scavenging next run in: %f",
-			 tsm->cleanup_timeout - now);
-      else
-	vlib_cli_output (vm, "tid[0] session scavenging next run in: 0");
     }
 
   vlib_cli_output (vm, "total timed out sessions: %u", timed_out);
@@ -761,6 +765,10 @@ nat44_show_summary_command_fn (vlib_main_t * vm, unformat_input_t * input,
   vlib_cli_output (vm, "total tcp sessions: %u", tcp_sessions);
   vlib_cli_output (vm, "total tcp established sessions: %u", established);
   vlib_cli_output (vm, "total tcp transitory sessions: %u", transitory);
+  vlib_cli_output (vm, "total tcp transitory (WAIT-CLOSED) sessions: %u",
+		   transitory_wait_closed);
+  vlib_cli_output (vm, "total tcp transitory (CLOSED) sessions: %u",
+		   transitory_closed);
   vlib_cli_output (vm, "total udp sessions: %u", udp_sessions);
   vlib_cli_output (vm, "total icmp sessions: %u", icmp_sessions);
   return 0;
@@ -1473,11 +1481,11 @@ nat44_show_sessions_command_fn (vlib_main_t * vm, unformat_input_t * input,
 {
   unformat_input_t _line_input, *line_input = &_line_input;
   clib_error_t *error = 0;
-  snat_main_t *sm = &snat_main;
-  snat_main_per_thread_data_t *tsm;
 
-  int detail = 0, metrics = 0;
-  snat_user_t *u;
+  snat_main_per_thread_data_t *tsm;
+  snat_main_t *sm = &snat_main;
+
+  int detail = 0;
   int i = 0;
 
   if (sm->deterministic)
@@ -1490,8 +1498,6 @@ nat44_show_sessions_command_fn (vlib_main_t * vm, unformat_input_t * input,
     {
       if (unformat (line_input, "detail"))
 	detail = 1;
-      else if (unformat (line_input, "metrics"))
-	metrics = 1;
       else
 	{
 	  error = clib_error_return (0, "unknown input '%U'",
@@ -1502,7 +1508,11 @@ nat44_show_sessions_command_fn (vlib_main_t * vm, unformat_input_t * input,
   unformat_free (line_input);
 
 print:
-  vlib_cli_output (vm, "NAT44 sessions:");
+  if (!sm->endpoint_dependent)
+    vlib_cli_output (vm, "NAT44 sessions:");
+  else
+    vlib_cli_output (vm, "NAT44 ED sessions:");
+
   /* *INDENT-OFF* */
   vec_foreach_index (i, sm->per_thread_data)
     {
@@ -1511,23 +1521,68 @@ print:
       vlib_cli_output (vm, "-------- thread %d %s: %d sessions --------\n",
                        i, vlib_worker_threads[i].name,
                        pool_elts (tsm->sessions));
-      if (metrics)
+
+      if (!sm->endpoint_dependent)
         {
-          u64 now = vlib_time_now (sm->vlib_main);
-          pool_foreach (u, tsm->users,
-          ({
-            vlib_cli_output (vm, "  %U", format_snat_user_v2, tsm, u, now);
-          }));
-        }
-      else
-        {
+          snat_user_t *u;
           pool_foreach (u, tsm->users,
           ({
             vlib_cli_output (vm, "  %U", format_snat_user, tsm, u, detail);
           }));
         }
+      else
+        {
+          snat_session_t *s;
+          pool_foreach (s, tsm->sessions,
+          ({
+            vlib_cli_output (vm, "  %U\n", format_snat_session, tsm, s);
+          }));
+        }
     }
   /* *INDENT-ON* */
+  return error;
+}
+
+static clib_error_t *
+nat44_set_session_limit_command_fn (vlib_main_t * vm,
+				    unformat_input_t * input,
+				    vlib_cli_command_t * cmd)
+{
+  snat_main_t *sm = &snat_main;
+  unformat_input_t _line_input, *line_input = &_line_input;
+  clib_error_t *error = 0;
+
+  u32 session_limit = 0, vrf_id = 0;
+
+  if (sm->deterministic)
+    return clib_error_return (0, UNSUPPORTED_IN_DET_MODE_STR);
+
+  /* Get a line of input. */
+  if (!unformat_user (input, unformat_line_input, line_input))
+    return 0;
+
+  while (unformat_check_input (line_input) != UNFORMAT_END_OF_INPUT)
+    {
+      if (unformat (line_input, "%u", &session_limit))
+	;
+      else if (unformat (line_input, "vrf %u", &vrf_id))
+	;
+      else
+	{
+	  error = clib_error_return (0, "unknown input '%U'",
+				     format_unformat_error, line_input);
+	  goto done;
+	}
+    }
+
+  if (!session_limit)
+    error = clib_error_return (0, "missing value of session limit");
+  else if (nat44_set_session_limit (session_limit, vrf_id))
+    error = clib_error_return (0, "nat44_set_session_limit failed");
+
+done:
+  unformat_free (line_input);
+
   return error;
 }
 
@@ -1542,8 +1597,8 @@ nat44_del_user_command_fn (vlib_main_t * vm,
   u32 fib_index = 0;
   int rv;
 
-  if (sm->deterministic)
-    return clib_error_return (0, UNSUPPORTED_IN_DET_MODE_STR);
+  if (sm->deterministic || sm->endpoint_dependent)
+    return clib_error_return (0, UNSUPPORTED_IN_DET_OR_ED_MODE_STR);
 
   /* Get a line of input. */
   if (!unformat_user (input, unformat_line_input, line_input))
@@ -1573,6 +1628,21 @@ nat44_del_user_command_fn (vlib_main_t * vm,
 done:
   unformat_free (line_input);
 
+  return error;
+}
+
+static clib_error_t *
+nat44_clear_sessions_command_fn (vlib_main_t * vm,
+				 unformat_input_t * input,
+				 vlib_cli_command_t * cmd)
+{
+  snat_main_t *sm = &snat_main;
+  clib_error_t *error = 0;
+
+  if (sm->deterministic)
+    return clib_error_return (0, UNSUPPORTED_IN_DET_MODE_STR);
+
+  nat44_sessions_clear ();
   return error;
 }
 
@@ -1958,7 +2028,6 @@ set_timeout_command_fn (vlib_main_t * vm,
     }
 done:
   unformat_free (line_input);
-  sm->min_timeout = nat44_minimal_timeout (sm);
   return error;
 }
 
@@ -1969,8 +2038,6 @@ nat_show_timeouts_command_fn (vlib_main_t * vm,
 {
   snat_main_t *sm = &snat_main;
 
-  // fix text
-  vlib_cli_output (vm, "min session cleanup timeout: %dsec", sm->min_timeout);
   vlib_cli_output (vm, "udp timeout: %dsec", sm->udp_timeout);
   vlib_cli_output (vm, "tcp-established timeout: %dsec",
 		   sm->tcp_established_timeout);
@@ -2188,19 +2255,6 @@ VLIB_CLI_COMMAND (nat_show_timeouts_command, static) = {
   .path = "show nat timeouts",
   .short_help = "show nat timeouts",
   .function = nat_show_timeouts_command_fn,
-};
-
-/*?
- * @cliexpar
- * @cliexstart{nat set logging level}
- * To force garbage collection of nat sessions
- *  vpp# nat44 session cleanup
- * @cliexend
-?*/
-VLIB_CLI_COMMAND (nat44_session_cleanup_command, static) = {
-  .path = "nat44 session cleanup",
-  .function = nat44_session_cleanup_command_fn,
-  .short_help = "nat44 session cleanup",
 };
 
 /*?
@@ -2602,6 +2656,18 @@ VLIB_CLI_COMMAND (nat44_show_sessions_command, static) = {
 
 /*?
  * @cliexpar
+ * @cliexstart{set nat44 session limit}
+ * Set NAT44 session limit.
+ * @cliexend
+?*/
+VLIB_CLI_COMMAND (nat44_set_session_limit_command, static) = {
+  .path = "set nat44 session limit",
+  .short_help = "set nat44 session limit <limit> [vrf <table-id>]",
+  .function = nat44_set_session_limit_command_fn,
+};
+
+/*?
+ * @cliexpar
  * @cliexstart{nat44 del user}
  * To delete all NAT44 user sessions:
  *  vpp# nat44 del user 10.0.0.3
@@ -2611,6 +2677,19 @@ VLIB_CLI_COMMAND (nat44_del_user_command, static) = {
     .path = "nat44 del user",
     .short_help = "nat44 del user <addr> [fib <index>]",
     .function = nat44_del_user_command_fn,
+};
+
+/*?
+ * @cliexpar
+ * @cliexstart{clear nat44 sessions}
+ * To clear all NAT44 sessions
+ *  vpp# clear nat44 sessions
+ * @cliexend
+?*/
+VLIB_CLI_COMMAND (nat44_clear_sessions_command, static) = {
+    .path = "clear nat44 sessions",
+    .short_help = "clear nat44 sessions",
+    .function = nat44_clear_sessions_command_fn,
 };
 
 /*?
