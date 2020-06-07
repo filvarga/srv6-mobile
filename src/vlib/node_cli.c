@@ -623,7 +623,7 @@ show_node (vlib_main_t * vm, unformat_input_t * input,
 	  if (vec_len (s) == 0)
 	    s = format (s, "\n    %-15s  %=8s  %6s",
 			"Name", "Priority", "Active");
-	  s = format (s, "\n    %-15s  %=8u  %=6s", fnr->name, fnr->priority,
+	  s = format (s, "\n    %-15s  %8d  %=6s", fnr->name, fnr->priority,
 		      fnr->function == n->function ? "yes" : "");
 	  fnr = fnr->next_registration;
 	}
@@ -727,7 +727,7 @@ set_node_fn(vlib_main_t * vm, unformat_input_t * input, vlib_cli_command_t * cmd
       goto done;
     }
 
-  if (!unformat (line_input, "%s", &variant))
+  if (!unformat (line_input, "%U", unformat_vlib_node_variant, &variant))
     {
       err = clib_error_return (0, "please specify node functional variant");
       goto done;

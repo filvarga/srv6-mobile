@@ -29,6 +29,9 @@
 #include <plugins/ikev2/ikev2_priv.h>
 #include <openssl/sha.h>
 
+#define IKEV2_LIVENESS_RETRIES 3
+#define IKEV2_LIVENESS_PERIOD_CHECK 30
+
 ikev2_main_t ikev2_main;
 
 static int ikev2_delete_tunnel_interface (vnet_main_t * vnm,
@@ -376,7 +379,6 @@ ikev2_complete_sa_data (ikev2_sa_t * sa, ikev2_sa_t * sai)
 {
   ikev2_sa_transform_t *t = 0, *t2;
   ikev2_main_t *km = &ikev2_main;
-
 
   /*move some data to the new SA */
 #define _(A) ({void* __tmp__ = (A); (A) = 0; __tmp__;})
@@ -985,6 +987,7 @@ ikev2_process_informational_req (vlib_main_t * vm, ikev2_sa_t * sa,
   ike_payload_header_t *ikep;
   u32 plen;
 
+  sa->liveness_retries = 0;
   ikev2_elog_exchange ("ispi %lx rspi %lx INFORMATIONAL received "
 		       "from %d.%d.%d.%d", clib_host_to_net_u64 (ike->ispi),
 		       clib_host_to_net_u64 (ike->rspi), sa->iaddr.as_u32);
@@ -1563,19 +1566,19 @@ ikev2_add_tunnel_from_main (ikev2_add_ipsec_tunnel_args_t * a)
 			       IPSEC_PROTOCOL_ESP, a->encr_type,
 			       &a->loc_ckey, a->integ_type, &a->loc_ikey,
 			       a->flags, 0, a->salt_local, &a->local_ip,
-			       &a->remote_ip, NULL, a->dst_port);
+			       &a->remote_ip, NULL, a->dst_port, a->dst_port);
   rv |= ipsec_sa_add_and_lock (a->remote_sa_id, a->remote_spi,
 			       IPSEC_PROTOCOL_ESP, a->encr_type, &a->rem_ckey,
 			       a->integ_type, &a->rem_ikey,
 			       (a->flags | IPSEC_SA_FLAG_IS_INBOUND), 0,
 			       a->salt_remote, &a->remote_ip,
-			       &a->local_ip, NULL, a->dst_port);
+			       &a->local_ip, NULL, a->dst_port, a->dst_port);
 
   rv |= ipsec_tun_protect_update (sw_if_index, NULL, a->local_sa_id, sas_in);
 }
 
 static int
-ikev2_create_tunnel_interface (vnet_main_t * vnm,
+ikev2_create_tunnel_interface (vlib_main_t * vm,
 			       u32 thread_index,
 			       ikev2_sa_t * sa,
 			       ikev2_child_sa_t * child, u32 sa_index,
@@ -1751,8 +1754,7 @@ ikev2_create_tunnel_interface (vnet_main_t * vnm,
 
   if (p && p->lifetime)
     {
-      child->time_to_expiration =
-	vlib_time_now (vnm->vlib_main) + p->lifetime;
+      child->time_to_expiration = vlib_time_now (vm) + p->lifetime;
       if (p->lifetime_jitter)
 	{
 	  // This is not much better than rand(3), which Coverity warns
@@ -1760,7 +1762,7 @@ ikev2_create_tunnel_interface (vnet_main_t * vnm,
 	  // however fast. If this perturbance to the expiration time
 	  // needs to use a better RNG then we may need to use something
 	  // like /dev/urandom which has significant overhead.
-	  u32 rnd = (u32) (vlib_time_now (vnm->vlib_main) * 1e6);
+	  u32 rnd = (u32) (vlib_time_now (vm) * 1e6);
 	  rnd = random_u32 (&rnd);
 
 	  child->time_to_expiration += 1 + (rnd % p->lifetime_jitter);
@@ -2299,6 +2301,33 @@ ikev2_retransmit_resp (ikev2_sa_t * sa, ike_header_t * ike)
   return -1;
 }
 
+static void
+ikev2_init_sa (vlib_main_t * vm, ikev2_sa_t * sa)
+{
+  ikev2_main_t *km = &ikev2_main;
+  sa->liveness_period_check = vlib_time_now (vm) + km->liveness_period;
+}
+
+static void
+ikev2_del_sa_init_from_main (u64 * ispi)
+{
+  ikev2_main_t *km = &ikev2_main;
+  uword *p = hash_get (km->sa_by_ispi, *ispi);
+  if (p)
+    {
+      ikev2_sa_t *sai = pool_elt_at_index (km->sais, p[0]);
+      hash_unset (km->sa_by_ispi, sai->ispi);
+      ikev2_sa_free_all_vec (sai);
+      pool_put (km->sais, sai);
+    }
+}
+
+static void
+ikev2_del_sa_init (u64 ispi)
+{
+  vl_api_rpc_call_main_thread (ikev2_del_sa_init_from_main, (u8 *) & ispi,
+			       sizeof (ispi));
+}
 
 static uword
 ikev2_node_fn (vlib_main_t * vm,
@@ -2408,6 +2437,7 @@ ikev2_node_fn (vlib_main_t * vm,
 			  pool_get (km->per_thread_data[thread_index].sas,
 				    sa0);
 			  clib_memcpy_fast (sa0, &sa, sizeof (*sa0));
+			  ikev2_init_sa (vm, sa0);
 			  hash_set (km->
 				    per_thread_data[thread_index].sa_by_rspi,
 				    sa0->rspi,
@@ -2433,10 +2463,19 @@ ikev2_node_fn (vlib_main_t * vm,
 			  ikev2_sa_t *sai =
 			    pool_elt_at_index (km->sais, p[0]);
 
-			  ikev2_complete_sa_data (sa0, sai);
-			  ikev2_calc_keys (sa0);
-			  ikev2_sa_auth_init (sa0);
-			  len = ikev2_generate_message (sa0, ike0, 0);
+			  if (clib_atomic_bool_cmp_and_swap
+			      (&sai->init_response_received, 0, 1))
+			    {
+			      ikev2_complete_sa_data (sa0, sai);
+			      ikev2_calc_keys (sa0);
+			      ikev2_sa_auth_init (sa0);
+			      len = ikev2_generate_message (sa0, ike0, 0);
+			    }
+			  else
+			    {
+			      /* we've already processed sa-init response */
+			      sa0->state = IKEV2_STATE_UNKNOWN;
+			    }
 			}
 		    }
 
@@ -2490,23 +2529,14 @@ ikev2_node_fn (vlib_main_t * vm,
 		      ikev2_initial_contact_cleanup (sa0);
 		      ikev2_sa_match_ts (sa0);
 		      if (sa0->state != IKEV2_STATE_TS_UNACCEPTABLE)
-			ikev2_create_tunnel_interface (km->vnet_main,
-						       thread_index, sa0,
+			ikev2_create_tunnel_interface (vm, thread_index, sa0,
 						       &sa0->childs[0],
 						       p[0], 0, 0);
 		    }
 
 		  if (sa0->is_initiator)
 		    {
-		      uword *p = hash_get (km->sa_by_ispi, ike0->ispi);
-		      if (p)
-			{
-			  ikev2_sa_t *sai =
-			    pool_elt_at_index (km->sais, p[0]);
-			  hash_unset (km->sa_by_ispi, sai->ispi);
-			  ikev2_sa_free_all_vec (sai);
-			  pool_put (km->sais, sai);
-			}
+		      ikev2_del_sa_init (ike0->ispi);
 		    }
 		  else
 		    {
@@ -2574,8 +2604,9 @@ ikev2_node_fn (vlib_main_t * vm,
 			    }
 			}
 		    }
-		  if (!sa0->is_initiator)
+		  if (!(ike0->flags & IKEV2_HDR_FLAG_RESPONSE))
 		    {
+		      ike0->flags |= IKEV2_HDR_FLAG_RESPONSE;
 		      len = ikev2_generate_message (sa0, ike0, 0);
 		    }
 		}
@@ -2621,9 +2652,8 @@ ikev2_node_fn (vlib_main_t * vm,
 			  child->i_proposals = sa0->rekey[0].i_proposal;
 			  child->tsi = sa0->rekey[0].tsi;
 			  child->tsr = sa0->rekey[0].tsr;
-			  ikev2_create_tunnel_interface (km->vnet_main,
-							 thread_index, sa0,
-							 child, p[0],
+			  ikev2_create_tunnel_interface (vm, thread_index,
+							 sa0, child, p[0],
 							 child - sa0->childs,
 							 1);
 			}
@@ -2761,7 +2791,7 @@ ikev2_set_initiator_proposals (vlib_main_t * vm, ikev2_sa_t * sa,
       return r;
     }
 
-  if (IKEV2_TRANSFORM_ENCR_TYPE_AES_GCM_16 != ts->crypto_alg)
+  if (is_ike || IKEV2_TRANSFORM_ENCR_TYPE_AES_GCM_16 != ts->crypto_alg)
     {
       /* Integrity */
       error = 1;
@@ -3352,7 +3382,7 @@ ikev2_initiate_sa_init (vlib_main_t * vm, u8 * name)
     ikev2_sa_free_proposal_vector (&proposals);
 
     sa.is_initiator = 1;
-    sa.profile_index = km->profiles - p;
+    sa.profile_index = p - km->profiles;
     sa.is_profile_index_set = 1;
     sa.state = IKEV2_STATE_SA_INIT;
     sa.tun_itf = p->tun_itf;
@@ -3688,6 +3718,8 @@ ikev2_init (vlib_main_t * vm)
   km->vnet_main = vnet_get_main ();
   km->vlib_main = vm;
 
+  km->liveness_period = IKEV2_LIVENESS_PERIOD_CHECK;
+  km->liveness_max_retries = IKEV2_LIVENESS_RETRIES;
   ikev2_crypto_init (km);
 
   mhash_init_vec_string (&km->profile_index_by_name, sizeof (uword));
@@ -3825,6 +3857,19 @@ ikev2_set_log_level (ikev2_log_level_t log_level)
   return 0;
 }
 
+clib_error_t *
+ikev2_set_liveness_params (u32 period, u32 max_retries)
+{
+  ikev2_main_t *km = &ikev2_main;
+
+  if (period == 0 || max_retries == 0)
+    return clib_error_return (0, "invalid args");
+
+  km->liveness_period = period;
+  km->liveness_max_retries = max_retries;
+  return 0;
+}
+
 static void
 ikev2_mngr_process_ipsec_sa (ipsec_sa_t * ipsec_sa)
 {
@@ -3880,6 +3925,9 @@ ikev2_process_pending_sa_init (ikev2_main_t * km)
   hash_foreach (ispi, sai, km->sa_by_ispi,
   ({
     sa = pool_elt_at_index (km->sais, sai);
+    if (sa->init_response_received)
+      continue;
+
     u32 bi0;
     if (vlib_buffer_alloc (km->vlib_main, &bi0, 1) != 1)
       return;
@@ -3896,12 +3944,71 @@ ikev2_process_pending_sa_init (ikev2_main_t * km)
 
 static vlib_node_registration_t ikev2_mngr_process_node;
 
+static void
+ikev2_send_informational_request (ikev2_sa_t * sa)
+{
+  ikev2_main_t *km = &ikev2_main;
+  ip4_address_t *src, *dst;
+  ike_header_t *ike0;
+  u32 bi0 = 0;
+  int len;
+
+  bi0 = ikev2_get_new_ike_header_buff (km->vlib_main, &ike0);
+
+  ike0->exchange = IKEV2_EXCHANGE_INFORMATIONAL;
+  ike0->ispi = clib_host_to_net_u64 (sa->ispi);
+  ike0->rspi = clib_host_to_net_u64 (sa->rspi);
+  ike0->msgid = clib_host_to_net_u32 (sa->last_init_msg_id + 1);
+  sa->last_init_msg_id = clib_net_to_host_u32 (ike0->msgid);
+  len = ikev2_generate_message (sa, ike0, 0);
+
+  if (sa->is_initiator)
+    {
+      src = &sa->iaddr;
+      dst = &sa->raddr;
+    }
+  else
+    {
+
+      dst = &sa->iaddr;
+      src = &sa->raddr;
+    }
+
+  ikev2_send_ike (km->vlib_main, src, dst, bi0, len);
+}
+
+static_always_inline int
+ikev2_mngr_process_responder_sas (ikev2_sa_t * sa)
+{
+  ikev2_main_t *km = &ikev2_main;
+  vlib_main_t *vm = km->vlib_main;
+
+  if (!sa->sk_ai || !sa->sk_ar)
+    return 0;
+
+  if (sa->liveness_retries >= km->liveness_max_retries)
+    return 1;
+
+  f64 now = vlib_time_now (vm);
+
+  if (sa->liveness_period_check < now)
+    {
+      sa->liveness_retries++;
+      sa->liveness_period_check = now + km->liveness_period;
+      ikev2_send_informational_request (sa);
+    }
+  return 0;
+}
+
 static uword
 ikev2_mngr_process_fn (vlib_main_t * vm, vlib_node_runtime_t * rt,
 		       vlib_frame_t * f)
 {
   ikev2_main_t *km = &ikev2_main;
   ipsec_main_t *im = &ipsec_main;
+  ikev2_profile_t *p;
+  ikev2_child_sa_t *c;
+  u32 *sai;
 
   while (1)
     {
@@ -3914,6 +4021,8 @@ ikev2_mngr_process_fn (vlib_main_t * vm, vlib_node_runtime_t * rt,
       vec_foreach (tkm, km->per_thread_data)
       {
 	ikev2_sa_t *sa;
+	u32 *to_be_deleted = 0;
+
         /* *INDENT-OFF* */
         pool_foreach (sa, tkm->sas, ({
           ikev2_child_sa_t *c;
@@ -3930,8 +4039,29 @@ ikev2_mngr_process_fn (vlib_main_t * vm, vlib_node_runtime_t * rt,
             {
             req_sent |= ikev2_mngr_process_child_sa(sa, c, del_old_ids);
             }
+
+          if (ikev2_mngr_process_responder_sas (sa))
+            vec_add1 (to_be_deleted, sa - tkm->sas);
         }));
         /* *INDENT-ON* */
+
+	vec_foreach (sai, to_be_deleted)
+	{
+	  sa = pool_elt_at_index (tkm->sas, sai[0]);
+	  if (sa->is_initiator && sa->is_profile_index_set)
+	    {
+	      p = pool_elt_at_index (km->profiles, sa->profile_index);
+	      if (p)
+		{
+		  ikev2_initiate_sa_init (vm, p->name);
+		  continue;
+		}
+	    }
+	  vec_foreach (c, sa->childs)
+	    ikev2_delete_tunnel_interface (km->vnet_main, sa, c);
+	  hash_unset (tkm->sa_by_rspi, sa->rspi);
+	  pool_put (tkm->sas, sa);
+	}
       }
 
       /* process ipsec sas */

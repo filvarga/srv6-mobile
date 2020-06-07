@@ -1759,7 +1759,7 @@ VLIB_NODE_FN (srv6_end_m_gtp6_d) (vlib_main_t * vm,
 
 	      if (PREDICT_FALSE (gtpu_type == GTPU_TYPE_ERROR_INDICATION))
 		{
-		  u32 payload_len;
+		  u16 payload_len;
 
 		  payload_len = clib_net_to_host_u16 (hdr0->gtpu.length);
 		  if (payload_len != 0)

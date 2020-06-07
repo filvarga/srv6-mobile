@@ -15,7 +15,6 @@
 #include <vnet/vnet.h>
 #include <vppinfra/vec.h>
 #include <vppinfra/format.h>
-#include <vlib/unix/cj.h>
 #include <assert.h>
 
 #include <vnet/ethernet/ethernet.h>
@@ -218,7 +217,7 @@ static_always_inline
   return n_left;
 }
 
-static_always_inline void
+static_always_inline __clib_unused void
 dpdk_prefetch_buffer (vlib_main_t * vm, struct rte_mbuf *mb)
 {
   vlib_buffer_t *b = vlib_buffer_from_rte_mbuf (mb);

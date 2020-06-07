@@ -178,7 +178,8 @@ send_ipsec_tunnel_protect_details (index_t itpi, void *arg)
   ipsec_dump_walk_ctx_t *ctx = arg;
   vl_api_ipsec_tunnel_protect_details_t *mp;
   ipsec_tun_protect_t *itp;
-  u32 sai, ii = 0;
+  u32 ii = 0;
+  ipsec_sa_t *sa;
 
   itp = ipsec_tun_protect_get (itpi);
 
@@ -190,12 +191,13 @@ send_ipsec_tunnel_protect_details (index_t itpi, void *arg)
   mp->tun.sw_if_index = htonl (itp->itp_sw_if_index);
   ip_address_encode2 (itp->itp_key, &mp->tun.nh);
 
-  mp->tun.sa_out = htonl (itp->itp_out_sa);
+  sa = ipsec_sa_get (itp->itp_out_sa);
+  mp->tun.sa_out = htonl (sa->id);
   mp->tun.n_sa_in = itp->itp_n_sa_in;
   /* *INDENT-OFF* */
-  FOR_EACH_IPSEC_PROTECT_INPUT_SAI(itp, sai,
+  FOR_EACH_IPSEC_PROTECT_INPUT_SA(itp, sa,
   ({
-    mp->tun.sa_in[ii++] = htonl (sai);
+    mp->tun.sa_in[ii++] = htonl (sa->id);
   }));
   /* *INDENT-ON* */
 
@@ -372,7 +374,8 @@ static void vl_api_ipsec_sad_entry_add_del_t_handler
 				crypto_alg, &crypto_key,
 				integ_alg, &integ_key, flags,
 				0, mp->entry.salt, &tun_src, &tun_dst,
-				&sa_index, IPSEC_UDP_PORT_NONE);
+				&sa_index, htons (mp->entry.udp_src_port),
+				htons (mp->entry.udp_dst_port));
   else
     rv = ipsec_sa_unlock_id (id);
 
@@ -663,7 +666,7 @@ vl_api_ipsec_tunnel_if_add_del_t_handler (vl_api_ipsec_tunnel_if_add_del_t *
 				  (flags | IPSEC_SA_FLAG_IS_INBOUND),
 				  ntohl (mp->tx_table_id),
 				  mp->salt, &remote_ip, &local_ip, NULL,
-				  IPSEC_UDP_PORT_NONE);
+				  IPSEC_UDP_PORT_NONE, IPSEC_UDP_PORT_NONE);
 
       if (rv)
 	goto done;
@@ -678,7 +681,7 @@ vl_api_ipsec_tunnel_if_add_del_t_handler (vl_api_ipsec_tunnel_if_add_del_t *
 				  flags,
 				  ntohl (mp->tx_table_id),
 				  mp->salt, &local_ip, &remote_ip, NULL,
-				  IPSEC_UDP_PORT_NONE);
+				  IPSEC_UDP_PORT_NONE, IPSEC_UDP_PORT_NONE);
 
       if (rv)
 	goto done;
@@ -814,6 +817,11 @@ send_ipsec_sa_details (ipsec_sa_t * sa, void *arg)
       ip_address_encode (&sa->tunnel_dst_addr, IP46_TYPE_ANY,
 			 &mp->entry.tunnel_dst);
     }
+  if (ipsec_sa_is_set_UDP_ENCAP (sa))
+    {
+      mp->entry.udp_src_port = sa->udp_hdr.src_port;
+      mp->entry.udp_dst_port = sa->udp_hdr.dst_port;
+    }
 
   mp->seq_outbound = clib_host_to_net_u64 (((u64) sa->seq));
   mp->last_seq_inbound = clib_host_to_net_u64 (((u64) sa->last_seq));
@@ -824,6 +832,8 @@ send_ipsec_sa_details (ipsec_sa_t * sa, void *arg)
     }
   if (ipsec_sa_is_set_USE_ANTI_REPLAY (sa))
     mp->replay_window = clib_host_to_net_u64 (sa->replay_window);
+
+  mp->stat_index = clib_host_to_net_u32 (sa->stat_index);
 
   vl_api_send_msg (ctx->reg, (u8 *) mp);
 

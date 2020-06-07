@@ -11,7 +11,7 @@ test a split-tunnel nat + ikev2 + ipsec + ipv6 prefix-delegation
 scenario.
 
 OS / Distro test results
-========================
+------------------------
 
 This setup has been tested on an Ubuntu 18.04 LTS system. If you're
 feeling adventurous, the same scenario also worked on a recent Ubuntu
@@ -20,7 +20,7 @@ feeling adventurous, the same scenario also worked on a recent Ubuntu
 Other distros may work fine, or not at all.
 
 Proxy Server
-============
+------------
 
 If you need to use a proxy server e.g. from a lab system, you'll
 probably need to set HTTP_PROXY, HTTPS_PROXY, http_proxy and
@@ -38,7 +38,7 @@ Something like so:
 ```
 
 Install and configure lxd
-=========================
+-------------------------
 
 Install the lxd snap. The lxd snap is up to date, as opposed to the
 results of "sudo apt-get install lxd".
@@ -59,7 +59,7 @@ it with a symbolic link, unless you want to rebuild all of your
 containers from scratch. Ask me how I know that.
 
 Create three network segments
-=============================
+-----------------------------
 
 Aka, linux bridges.
 
@@ -72,7 +72,7 @@ Aka, linux bridges.
 We'll explain the test topology in a bit. Stay tuned.
 
 Set up the default container profile
-====================================
+------------------------------------
 
 Execute "lxc profile edit default", and install the following
 configuration. Note that the "shared" directory should mount your vpp
@@ -114,7 +114,7 @@ containers, run vpp without installing it, etc.
 ```
 
 Set up the network configurations
-=================================
+---------------------------------
 
 Edit the fake "internet" backbone:
 
@@ -183,7 +183,7 @@ configurations:
 ```
 
 Create a "master" container image
-=================================
+---------------------------------
 
 The master container image should be set up so that you can
 build vpp, ssh into the container, edit source code, run gdb, etc.
@@ -210,7 +210,7 @@ vpp configurations.
 ```
 
 Duplicate the "master" container image
-======================================
+--------------------------------------
 
 To avoid having to configure N containers, be sure that the master
 container image is fully set up before you help it have children:
@@ -223,7 +223,7 @@ container image is fully set up before you help it have children:
 ```
 
 Install handy script
-====================
+--------------------
 
 See below for a handly script which executes lxc commands across the
 current set of running containers. I call it "lxc-foreach," feel free
@@ -280,7 +280,7 @@ Here's the script:
 ```
 
 Test topology
-=============
+-------------
 
 Finally, we're ready to describe a test topology. First, a picture:
 
@@ -319,7 +319,7 @@ The so-called "internet" bridge models the public internet. The "dora" and
 "swan" bridges connect vpp instances to local hosts
 
 End station configs
-===================
+-------------------
 
 The end-station Linux configurations set up the eth2 and eth3 ip
 addresses shown above, and add tunnel routes to the opposite
@@ -340,7 +340,7 @@ end-station networks.
 ```
 
 VPP configs
-===========
+-----------
 
 Split nat44 / ikev2 + ipsec tunneling, with ipv6 prefix delegation in
 the "dora" config.
@@ -455,7 +455,7 @@ the "dora" config.
 ```
 
 IKEv2 certificate setup
-=======================
+-----------------------
 
 In both of the vpp configurations, you'll see "/scratch/setups/xxx.pem"
 mentioned. These certificates are used in the ikev2 key exchange.
@@ -472,7 +472,7 @@ Here's how to generate the certificates:
 Make sure that the "dora" and "swan" configurations point to the certificates.
 
 DHCPv6 server setup
-===================
+-------------------
 
 If you need an ipv6 dhcp server to test ipv6 prefix delegation,
 create the "dhcpserver" container as shown above.
@@ -508,3 +508,133 @@ dhcp traffic spew:
 
 The "|| true" bit keeps going if eth1 already has the indicated ipv6
 address.
+
+Container / Host Interoperation
+-------------------------------
+
+Host / container interoperation is highly desirable. If the host and a
+set of containers don't run the same distro _and distro version_, it's
+reasonably likely that the glibc versions won't match. That, in turn,
+makes vpp binaries built in one environment fail in the other.
+
+Trying to install multiple versions of glibc - especially at the host
+level - often ends very badly and is _not recommended_. It's not just
+glibc, either. The dynamic loader ld-linux-xxx-so.2 is glibc version
+specific.
+
+Fortunately, it's reasonable easy to build lxd container images based on
+specific Ubuntu or Debian versions.
+
+### Create a custom root filesystem image
+
+First, install the "debootstrap" tool:
+
+```
+    sudo apt-get install debootstrap
+```
+
+Make a temp directory, and use debootstrap to populate it. In this
+example, we create an Ubuntu 20.04 (focal fossa) base image:
+
+```
+    # mkdir /tmp/myroot
+    # debootstrap focal /tmp/myroot http://archive.ubuntu.com/ubuntu
+```
+
+To tinker with the base image (if desired):
+
+```
+    # chroot /tmp/myroot
+    <add packages, etc.>
+    # exit
+```
+
+Make a compressed tarball of the base image:
+
+```
+    # tar zcf /tmp/rootfs.tar.gz -C /tmp/myroot .
+```
+
+Create a "metadata.yaml" file which describes the base image:
+
+```
+    architecture: "x86_64"
+    # To get current date in Unix time, use `date +%s` command
+    creation_date: 1458040200
+    properties:
+    architecture: "x86_64"
+    description: "My custom Focal Fossa image"
+    os: "Ubuntu"
+    release: "focal"
+```
+
+Make a compressed tarball of metadata.yaml:
+
+```
+    # tar zcf metadata.tar.gz metadata.yaml
+```
+
+Import the image into lxc / lxd:
+
+```
+    $ lxc image import metadata.tar.gz rootfd.tar.gz --alias focal-base
+```
+
+### Create a container which uses the customized base image:
+
+```
+    $ lxc launch focal-base focaltest
+    $ lxc exec focaltest bash
+```
+
+The next several steps should be executed in the container, in the
+bash shell spun up by "lxc exec..."
+
+### Configure container networking
+
+In the container, create /etc/netplan/50-cloud-init.yaml:
+
+```
+    network:
+        version: 2
+        ethernets:
+            eth0:
+                dhcp4: true
+```
+
+Use "cat > /etc/netplan/50-cloud-init.yaml", and cut-'n-paste if your
+favorite text editor is AWOL.
+
+Apply the configuration:
+
+```
+    # netplan apply
+```
+
+At this point, eth0 should have an ip address, and you should see
+a default route with "route -n".
+
+### Configure apt
+
+Again, in the container, set up /etc/apt/sources.list via cut-'n-paste
+from a recently update "focal fossa" host. Something like so:
+
+```
+    deb http://us.archive.ubuntu.com/ubuntu/ focal main restricted
+    deb http://us.archive.ubuntu.com/ubuntu/ focal-updates main restricted
+    deb http://us.archive.ubuntu.com/ubuntu/ focal universe
+    deb http://us.archive.ubuntu.com/ubuntu/ focal-updates universe
+    deb http://us.archive.ubuntu.com/ubuntu/ focal multiverse
+    deb http://us.archive.ubuntu.com/ubuntu/ focal-updates multiverse
+    deb http://us.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse
+    deb http://security.ubuntu.com/ubuntu focal-security main restricted
+    deb http://security.ubuntu.com/ubuntu focal-security universe
+    deb http://security.ubuntu.com/ubuntu focal-security multiverse
+```
+
+"apt-get update" and "apt-install" should produce reasonable results.
+Suggest "apt-get install make git".
+
+At this point, you can use the "/scratch" sharepoint (or similar) to
+execute "make install-dep install-ext-deps" to set up the container
+with the vpp toolchain; proceed as desired.

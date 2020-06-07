@@ -20,12 +20,8 @@ from vpp_ip_route import MPLS_IETF_MAX_LABEL, MPLS_LABEL_INVALID
 # named parameters
 #
 defaultmapping = {
-    'map_add_domain': {'mtu': 1280},
-    'syslog_set_sender': {'collector_port': 514,
-                          'max_msg_size': 480},
+
     'acl_interface_add_del': {'is_add': 1, 'is_input': 1},
-    'acl_interface_list_dump': {'sw_if_index': 4294967295, },
-    'app_namespace_add_del': {'sw_if_index': 4294967295, },
     'bd_ip_mac_add_del': {'is_add': 1, },
     'bfd_udp_add': {'is_authenticated': False, 'bfd_key_id': None,
                     'conf_key_id': None},
@@ -37,10 +33,8 @@ defaultmapping = {
     'bier_imp_add': {'is_add': 1, },
     'bier_route_add_del': {'is_add': 1, },
     'bier_table_add_del': {'is_add': 1, },
-    'bond_create': {'mac_address': '', 'id': 0xFFFFFFFF},
     'bridge_domain_add_del': {'flood': 1, 'uu_flood': 1, 'forward': 1,
                               'learn': 1, 'is_add': 1, },
-    'bvi_create': {'user_instance': 4294967295, },
     'bvi_delete': {},
     'gbp_subnet_add_del': {'sw_if_index': 4294967295, 'epg_id': 65535, },
     'geneve_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
@@ -58,9 +52,7 @@ defaultmapping = {
     'ip_punt_police': {'is_add': 1, },
     'ip_punt_redirect': {'is_add': 1, },
     'ip_route_add_del': {'is_add': 1, },
-    'ip_unnumbered_dump': {'sw_if_index': 4294967295, },
     'ipsec_interface_add_del_spd': {'is_add': 1, },
-    'ipsec_sad_entry_add_del': {'is_add': 1, },
     'ipsec_spd_add_del': {'is_add': 1, },
     'ipsec_spd_dump': {'sa_id': 4294967295, },
     'ipsec_spd_entry_add_del': {'local_port_stop': 65535,
@@ -70,15 +62,11 @@ defaultmapping = {
     'ipsec_tunnel_if_add_del': {'is_add': 1, 'anti_replay': 1, },
     'l2_emulation': {'enable': 1, },
     'l2fib_add_del': {'is_add': 1, },
-    'lb_conf': {'sticky_buckets_per_core': 4294967295,
-                'flow_timeout': 4294967295},
     'lisp_add_del_adjacency': {'is_add': 1, },
     'lisp_add_del_local_eid': {'is_add': 1, },
     'lisp_add_del_locator': {'priority': 1, 'weight': 1, 'is_add': 1, },
     'lisp_add_del_locator_set': {'is_add': 1, },
     'lisp_add_del_remote_mapping': {'is_add': 1, },
-    'macip_acl_add_replace': {'acl_index': 4294967295, },
-    'macip_acl_dump': {'acl_index': 4294967295, },
     'macip_acl_interface_add_del': {'is_add': 1, },
     'mpls_ip_bind_unbind': {'is_ip4': 1, 'is_bind': 1, },
     'mpls_route_add_del': {'mr_next_hop_sw_if_index': 4294967295,
@@ -91,7 +79,6 @@ defaultmapping = {
                             'next_hop_weight': 1,
                             'next_hop_via_label': 1048576,
                             'is_add': 1, },
-    'mpls_tunnel_dump': {'sw_if_index': 4294967295, },
     'output_acl_set_interface': {'ip4_table_index': 4294967295,
                                  'ip6_table_index': 4294967295,
                                  'l2_table_index': 4294967295, },
@@ -102,13 +89,11 @@ defaultmapping = {
     'set_ip_flow_hash': {'src': 1, 'dst': 1, 'sport': 1, 'dport': 1,
                          'proto': 1, },
     'set_ipfix_exporter': {'collector_port': 4739, },
-    'sr_localsid_add_del': {'sw_if_index': 4294967295, },
     'sr_policy_add': {'weight': 1, 'is_encap': 1, },
     'svs_enable_disable': {'is_enable': 1, },
     'svs_route_add_del': {'is_add': 1, },
     'svs_table_add_del': {'is_add': 1, },
     'sw_interface_add_del_address': {'is_add': 1, },
-    'sw_interface_dump': {'sw_if_index': 4294967295, },
     'sw_interface_ip6nd_ra_prefix': {'val_lifetime': 4294967295,
                                      'pref_lifetime': 4294967295, },
     'sw_interface_set_ip_directed_broadcast': {'enable': 1, },
@@ -120,7 +105,6 @@ defaultmapping = {
     'vxlan_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
                              'decap_next_index': 4294967295,
                              'instance': 4294967295, },
-    'vxlan_gbp_tunnel_dump': {'sw_if_index': 4294967295, },
     'vxlan_gpe_add_del_tunnel': {'mcast_sw_if_index': 4294967295, 'is_add': 1,
                                  'protocol': 3, },
     'want_bfd_events': {'enable_disable': 1, },
@@ -128,6 +112,10 @@ defaultmapping = {
     'want_interface_events': {'enable_disable': 1, },
     'want_l2_macs_events': {'enable_disable': 1, 'pid': os.getpid(), },
 }
+
+
+def as_fn_signature(d):
+    return ", ".join(f"{k}={v}" for k, v in d.items())
 
 
 class CliFailedCommandError(Exception):
@@ -304,15 +292,19 @@ class VppPapiProvider(object):
         reply = api_fn(**api_args)
         if self._expect_api_retval == self._negative:
             if hasattr(reply, 'retval') and reply.retval >= 0:
-                msg = "API call passed unexpectedly: expected negative " \
+                msg = "%s(%s) passed unexpectedly: expected negative " \
                       "return value instead of %d in %s" % \
-                      (reply.retval, moves.reprlib.repr(reply))
+                      (api_fn.__name__, as_fn_signature(api_args),
+                       reply.retval,
+                       moves.reprlib.repr(reply))
                 self.test_class.logger.info(msg)
                 raise UnexpectedApiReturnValueError(msg)
         elif self._expect_api_retval == self._zero:
             if hasattr(reply, 'retval') and reply.retval != expected_retval:
-                msg = "API call failed, expected %d return value instead " \
-                      "of %d in %s" % (expected_retval, reply.retval,
+                msg = "%s(%s) failed, expected %d return value instead " \
+                      "of %d in %s" % (api_fn.__name__,
+                                       as_fn_signature(api_args),
+                                       expected_retval, reply.retval,
                                        repr(reply))
                 self.test_class.logger.info(msg)
                 raise UnexpectedApiReturnValueError(msg)
@@ -690,32 +682,6 @@ class VppPapiProvider(object):
                 'udp_checksum': udp_checksum,
             })
 
-    def ip_mroute_add_del(self,
-                          table_id,
-                          prefix,
-                          e_flags,
-                          rpf_id,
-                          paths,
-                          is_add=1,
-                          is_multipath=1):
-        """
-        IP Multicast Route add/del
-        """
-        return self.api(
-            self.papi.ip_mroute_add_del,
-            {
-                'is_add': is_add,
-                'is_multipath': is_multipath,
-                'route': {
-                    'table_id': table_id,
-                    'entry_flags': e_flags,
-                    'rpf_id': rpf_id,
-                    'prefix': prefix,
-                    'n_paths': len(paths),
-                    'paths': paths,
-                }
-            })
-
     def mfib_signal_dump(self):
         return self.api(self.papi.mfib_signal_dump, {})
 
@@ -725,130 +691,6 @@ class VppPapiProvider(object):
                             'table_id': table_id,
                             'is_ip6': is_ip6
                         }})
-
-    def lisp_enable_disable(self, is_enabled):
-        return self.api(
-            self.papi.lisp_enable_disable,
-            {
-                'is_en': is_enabled,
-            })
-
-    def lisp_add_del_locator_set(self,
-                                 ls_name,
-                                 is_add=1):
-        return self.api(
-            self.papi.lisp_add_del_locator_set,
-            {
-                'is_add': is_add,
-                'locator_set_name': ls_name
-            })
-
-    def lisp_add_del_locator(self,
-                             ls_name,
-                             sw_if_index,
-                             priority=1,
-                             weight=1,
-                             is_add=1):
-        return self.api(
-            self.papi.lisp_add_del_locator,
-            {
-                'is_add': is_add,
-                'locator_set_name': ls_name,
-                'sw_if_index': sw_if_index,
-                'priority': priority,
-                'weight': weight
-            })
-
-    def lisp_locator_dump(self, is_index_set, ls_name=None, ls_index=0):
-        return self.api(
-            self.papi.lisp_locator_dump,
-            {
-                'is_index_set': is_index_set,
-                'ls_name': ls_name,
-                'ls_index': ls_index,
-            })
-
-    def lisp_add_del_local_eid(self,
-                               ls_name,
-                               eid_type,
-                               eid,
-                               prefix_len,
-                               vni=0,
-                               key_id=0,
-                               key="",
-                               is_add=1):
-        return self.api(
-            self.papi.lisp_add_del_local_eid,
-            {
-                'locator_set_name': ls_name,
-                'is_add': is_add,
-                'eid_type': eid_type,
-                'eid': eid,
-                'prefix_len': prefix_len,
-                'vni': vni,
-                'key_id': key_id,
-                'key': key
-            })
-
-    def lisp_eid_table_dump(self,
-                            eid_set=0,
-                            prefix_length=0,
-                            vni=0,
-                            eid_type=0,
-                            eid=None,
-                            filter_opt=0):
-        return self.api(
-            self.papi.lisp_eid_table_dump,
-            {
-                'eid_set': eid_set,
-                'prefix_length': prefix_length,
-                'vni': vni,
-                'eid_type': eid_type,
-                'eid': eid,
-                'filter': filter_opt,
-            })
-
-    def lisp_add_del_remote_mapping(self,
-                                    eid_type,
-                                    eid,
-                                    eid_prefix_len=0,
-                                    vni=0,
-                                    rlocs=[],
-                                    rlocs_num=0,
-                                    is_src_dst=0,
-                                    is_add=1):
-        return self.api(
-            self.papi.lisp_add_del_remote_mapping,
-            {
-                'is_add': is_add,
-                'eid_type': eid_type,
-                'eid': eid,
-                'eid_len': eid_prefix_len,
-                'rloc_num': rlocs_num,
-                'rlocs': rlocs,
-                'vni': vni,
-                'is_src_dst': is_src_dst,
-            })
-
-    def lisp_add_del_adjacency(self,
-                               leid,
-                               reid,
-                               leid_len,
-                               reid_len,
-                               eid_type,
-                               is_add=1,
-                               vni=0):
-        return self.api(
-            self.papi.lisp_add_del_adjacency,
-            {
-                'is_add': is_add,
-                'vni': vni,
-                'eid_type': eid_type,
-                'leid': leid,
-                'reid': reid,
-                'leid_len': leid_len,
-                'reid_len': reid_len,
-            })
 
     def vxlan_gpe_add_del_tunnel(
             self,
@@ -924,126 +766,6 @@ class VppPapiProvider(object):
     def sr_mpls_policy_del(self, bsid):
         return self.api(self.papi.sr_mpls_policy_del,
                         {'bsid': bsid})
-
-    def acl_add_replace(self, acl_index, r, tag='',
-                        expected_retval=0):
-        """Add/replace an ACL
-        :param int acl_index: ACL index to replace, 2^32-1 to create new ACL.
-        :param acl_rule r: ACL rules array.
-        :param str tag: symbolic tag (description) for this ACL.
-        :param int count: number of rules.
-        """
-        return self.api(self.papi.acl_add_replace,
-                        {'acl_index': acl_index,
-                         'r': r,
-                         'count': len(r),
-                         'tag': tag},
-                        expected_retval=expected_retval)
-
-    def acl_del(self, acl_index, expected_retval=0):
-        """
-
-        :param acl_index:
-        :return:
-        """
-        return self.api(self.papi.acl_del,
-                        {'acl_index': acl_index},
-                        expected_retval=expected_retval)
-
-    def acl_interface_set_acl_list(self, sw_if_index, n_input, acls,
-                                   expected_retval=0):
-        return self.api(self.papi.acl_interface_set_acl_list,
-                        {'sw_if_index': sw_if_index,
-                         'count': len(acls),
-                         'n_input': n_input,
-                         'acls': acls},
-                        expected_retval=expected_retval)
-
-    def acl_interface_set_etype_whitelist(self, sw_if_index,
-                                          n_input, whitelist,
-                                          expected_retval=0):
-        return self.api(self.papi.acl_interface_set_etype_whitelist,
-                        {'sw_if_index': sw_if_index,
-                         'count': len(whitelist),
-                         'n_input': n_input,
-                         'whitelist': whitelist},
-                        expected_retval=expected_retval)
-
-    def acl_interface_add_del(self,
-                              sw_if_index,
-                              acl_index,
-                              is_add=1):
-        """ Add/Delete ACL to/from interface
-
-        :param sw_if_index:
-        :param acl_index:
-        :param is_add:  (Default value = 1)
-        """
-
-        return self.api(self.papi.acl_interface_add_del,
-                        {'is_add': is_add,
-                         'is_input': 1,
-                         'sw_if_index': sw_if_index,
-                         'acl_index': acl_index})
-
-    def acl_dump(self, acl_index, expected_retval=0):
-        return self.api(self.papi.acl_dump,
-                        {'acl_index': acl_index},
-                        expected_retval=expected_retval)
-
-    def acl_interface_list_dump(self, sw_if_index=0xFFFFFFFF,
-                                expected_retval=0):
-        return self.api(self.papi.acl_interface_list_dump,
-                        {'sw_if_index': sw_if_index},
-                        expected_retval=expected_retval)
-
-    def macip_acl_add(self, rules, tag=""):
-        """ Add MACIP acl
-
-        :param rules: list of rules for given acl
-        :param tag: acl tag
-        """
-
-        return self.api(self.papi.macip_acl_add,
-                        {'r': rules,
-                         'count': len(rules),
-                         'tag': tag})
-
-    def macip_acl_add_replace(self, rules, acl_index=0xFFFFFFFF, tag=""):
-        """ Add MACIP acl
-
-        :param rules: list of rules for given acl
-        :param tag: acl tag
-        """
-
-        return self.api(self.papi.macip_acl_add_replace,
-                        {'acl_index': acl_index,
-                         'r': rules,
-                         'count': len(rules),
-                         'tag': tag})
-
-    def macip_acl_interface_add_del(self,
-                                    sw_if_index,
-                                    acl_index,
-                                    is_add=1):
-        """ Add MACIP acl to interface
-
-        :param sw_if_index:
-        :param acl_index:
-        :param is_add:  (Default value = 1)
-        """
-
-        return self.api(self.papi.macip_acl_interface_add_del,
-                        {'is_add': is_add,
-                         'sw_if_index': sw_if_index,
-                         'acl_index': acl_index})
-
-    def macip_acl_dump(self, acl_index=4294967295):
-        """ Return MACIP acl dump
-        """
-
-        return self.api(
-            self.papi.macip_acl_dump, {'acl_index': acl_index})
 
     def ip_punt_police(self,
                        policer_index,
@@ -1223,60 +945,6 @@ class VppPapiProvider(object):
         return self.api(self.papi.ipsec_spd_interface_dump,
                         {'spd_index': spd_index if spd_index else 0,
                          'spd_index_valid': 1 if spd_index else 0})
-
-    def ipsec_sad_entry_add_del(self,
-                                sad_id,
-                                spi,
-                                integrity_algorithm,
-                                integrity_key,
-                                crypto_algorithm,
-                                crypto_key,
-                                protocol,
-                                tunnel_src_address='',
-                                tunnel_dst_address='',
-                                flags=0,
-                                salt=0,
-                                is_add=1):
-        """ IPSEC SA add/del
-        :param sad_id: security association ID
-        :param spi: security param index of the SA in decimal
-        :param integrity_algorithm:
-        :param integrity_key:
-        :param crypto_algorithm:
-        :param crypto_key:
-        :param protocol: AH(0) or ESP(1) protocol
-        :param tunnel_src_address: tunnel mode outer src address
-        :param tunnel_dst_address: tunnel mode outer dst address
-        :param is_add:
-        :param is_tunnel:
-        :** reference /vpp/src/vnet/ipsec/ipsec.h file for enum values of
-             crypto and ipsec algorithms
-        """
-        return self.api(
-            self.papi.ipsec_sad_entry_add_del,
-            {
-                'is_add': is_add,
-                'entry':
-                    {
-                        'sad_id': sad_id,
-                        'spi': spi,
-                        'tunnel_src': tunnel_src_address,
-                        'tunnel_dst': tunnel_dst_address,
-                        'protocol': protocol,
-                        'integrity_algorithm': integrity_algorithm,
-                        'integrity_key': {
-                            'length': len(integrity_key),
-                            'data': integrity_key,
-                        },
-                        'crypto_algorithm': crypto_algorithm,
-                        'crypto_key': {
-                            'length': len(crypto_key),
-                            'data': crypto_key,
-                        },
-                        'flags': flags,
-                        'salt': salt,
-                    }
-            })
 
     def ipsec_sa_dump(self, sa_id=None):
         return self.api(self.papi.ipsec_sa_dump,

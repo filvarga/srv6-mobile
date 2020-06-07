@@ -52,6 +52,12 @@ typedef enum transport_connection_flags_
    * Connection descheduled by the session layer.
    */
   TRANSPORT_CONNECTION_F_DESCHED = 1 << 2,
+  /**
+   * Connection is "connection less". Some important implications of that
+   * are that connections are not pinned to workers and listeners will
+   * have fifos associated to them
+   */
+  TRANSPORT_CONNECTION_F_CLESS = 1 << 3,
 } transport_connection_flags_t;
 
 typedef struct _spacer
@@ -138,6 +144,8 @@ typedef struct _transport_connection
 #define c_stats connection.stats
 #define c_pacer connection.pacer
 #define c_flags connection.flags
+#define s_ho_handle pacer.bucket
+#define c_s_ho_handle connection.pacer.bucket
 } transport_connection_t;
 
 STATIC_ASSERT (STRUCT_OFFSET_OF (transport_connection_t, s_index)
@@ -151,10 +159,8 @@ STATIC_ASSERT (sizeof (transport_connection_t) <= 128,
 #define foreach_transport_proto				\
   _(TCP, "tcp", "T")					\
   _(UDP, "udp", "U")					\
-  _(SCTP, "sctp", "S")					\
   _(NONE, "ct", "C")					\
   _(TLS, "tls", "J")					\
-  _(UDPC, "udpc", "U")					\
   _(QUIC, "quic", "Q")					\
 
 typedef enum _transport_proto
@@ -162,7 +168,6 @@ typedef enum _transport_proto
 #define _(sym, str, sstr) TRANSPORT_PROTO_ ## sym,
   foreach_transport_proto
 #undef _
-  TRANSPORT_N_PROTO
 } transport_proto_t;
 
 u8 *format_transport_proto (u8 * s, va_list * args);
@@ -172,6 +177,7 @@ u8 *format_transport_listen_connection (u8 * s, va_list * args);
 u8 *format_transport_half_open_connection (u8 * s, va_list * args);
 
 uword unformat_transport_proto (unformat_input_t * input, va_list * args);
+u8 *format_transport_protos (u8 * s, va_list * args);
 
 #define foreach_transport_endpoint_fields				\
   _(ip46_address_t, ip) /**< ip address in net order */			\
@@ -187,10 +193,17 @@ typedef struct transport_endpoint_
 #undef _
 } transport_endpoint_t;
 
+typedef enum transport_endpt_cfg_flags_
+{
+  TRANSPORT_CFG_F_CONNECTED = 1 << 0,
+  TRANSPORT_CFG_F_UNIDIRECTIONAL = 1 << 1,
+} transport_endpt_cfg_flags_t;
+
 #define foreach_transport_endpoint_cfg_fields				\
   foreach_transport_endpoint_fields					\
   _(transport_endpoint_t, peer)						\
   _(u16, mss)								\
+  _(u8, transport_flags)						\
 
 typedef struct transport_endpoint_pair_
 {
@@ -216,7 +229,6 @@ transport_endpoint_fib_proto (transport_endpoint_t * tep)
 }
 
 u8 transport_protocol_is_cl (transport_proto_t tp);
-u8 transport_half_open_has_fifos (transport_proto_t tp);
 transport_service_type_t transport_protocol_service_type (transport_proto_t);
 transport_tx_fn_type_t transport_protocol_tx_fn_type (transport_proto_t tp);
 

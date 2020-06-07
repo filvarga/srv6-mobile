@@ -17,6 +17,12 @@
 #include <vnet/session/session.h>
 #include <vnet/fib/fib.h>
 
+typedef struct local_endpoint_
+{
+  transport_endpoint_t ep;
+  int refcnt;
+} local_endpoint_t;
+
 /**
  * Per-type vector of transport protocol virtual function tables
  */
@@ -35,7 +41,7 @@ static transport_endpoint_table_t local_endpoints_table;
 /*
  * Pool of local endpoints
  */
-static transport_endpoint_t *local_endpoints;
+static local_endpoint_t *local_endpoints;
 
 /*
  * Local endpoints pool lock
@@ -46,18 +52,12 @@ u8 *
 format_transport_proto (u8 * s, va_list * args)
 {
   u32 transport_proto = va_arg (*args, u32);
-  switch (transport_proto)
-    {
-#define _(sym, str, sstr) 			\
-    case TRANSPORT_PROTO_ ## sym:		\
-      s = format (s, str);			\
-      break;
-      foreach_transport_proto
-#undef _
-    default:
-      s = format (s, "UNKNOWN");
-      break;
-    }
+
+  if (tp_vfts[transport_proto].transport_options.name)
+    s = format (s, "%s", tp_vfts[transport_proto].transport_options.name);
+  else
+    s = format (s, "n/a");
+
   return s;
 }
 
@@ -65,18 +65,14 @@ u8 *
 format_transport_proto_short (u8 * s, va_list * args)
 {
   u32 transport_proto = va_arg (*args, u32);
-  switch (transport_proto)
-    {
-#define _(sym, str, sstr) 			\
-    case TRANSPORT_PROTO_ ## sym:		\
-      s = format (s, sstr);			\
-      break;
-      foreach_transport_proto
-#undef _
-    default:
-      s = format (s, "?");
-      break;
-    }
+  char *short_name;
+
+  short_name = tp_vfts[transport_proto].transport_options.short_name;
+  if (short_name)
+    s = format (s, "%s", short_name);
+  else
+    s = format (s, "NA");
+
   return s;
 }
 
@@ -98,11 +94,12 @@ format_transport_connection (u8 * s, va_list * args)
   s = format (s, "%U", tp_vft->format_connection, conn_index, thread_index,
 	      verbose);
   tc = tp_vft->get_connection (conn_index, thread_index);
-  if (tc && transport_connection_is_tx_paced (tc) && verbose > 1)
+  if (tc && verbose > 1)
     {
       indent = format_get_indent (s) + 1;
-      s = format (s, "%Upacer: %U\n", format_white_space, indent,
-		  format_transport_pacer, &tc->pacer, tc->thread_index);
+      if (transport_connection_is_tx_paced (tc))
+	s = format (s, "%Upacer: %U\n", format_white_space, indent,
+		    format_transport_pacer, &tc->pacer, tc->thread_index);
       s = format (s, "%Utransport: flags 0x%x\n", format_white_space, indent,
 		  tc->flags);
     }
@@ -158,29 +155,46 @@ uword
 unformat_transport_proto (unformat_input_t * input, va_list * args)
 {
   u32 *proto = va_arg (*args, u32 *);
+  transport_proto_vft_t *tp_vft;
   u8 longest_match = 0, match;
-  char *str_match = 0;
+  char *str, *str_match = 0;
+  transport_proto_t tp;
 
-#define _(sym, str, sstr)						\
-  if (unformat_transport_str_match (input, str))			\
-    {									\
-      match = strlen (str);						\
-      if (match > longest_match)					\
-	{								\
-	  *proto = TRANSPORT_PROTO_ ## sym;				\
-	  longest_match = match;					\
-	  str_match = str;						\
-	}								\
-    }
-  foreach_transport_proto
-#undef _
-    if (longest_match)
+  for (tp = 0; tp < vec_len (tp_vfts); tp++)
     {
-      unformat (input, str_match);
+      tp_vft = &tp_vfts[tp];
+      str = tp_vft->transport_options.name;
+      if (!str)
+	continue;
+      if (unformat_transport_str_match (input, str))
+	{
+	  match = strlen (str);
+	  if (match > longest_match)
+	    {
+	      *proto = tp;
+	      longest_match = match;
+	      str_match = str;
+	    }
+	}
+    }
+  if (longest_match)
+    {
+      (void) unformat (input, str_match);
       return 1;
     }
 
   return 0;
+}
+
+u8 *
+format_transport_protos (u8 * s, va_list * args)
+{
+  transport_proto_vft_t *tp_vft;
+
+  vec_foreach (tp_vft, tp_vfts)
+    s = format (s, "%s\n", tp_vft->transport_options.name);
+
+  return s;
 }
 
 u32
@@ -228,15 +242,6 @@ transport_endpoint_table_del (transport_endpoint_table_t * ht, u8 proto,
   clib_bihash_add_del_24_8 (ht, &kv, 0);
 }
 
-/**
- * Register transport virtual function table.
- *
- * @param transport_proto - transport protocol type (i.e., TCP, UDP ..)
- * @param vft - virtual function table for transport proto
- * @param fib_proto - network layer protocol
- * @param output_node - output node index that session layer will hand off
- * 			buffers to, for requested fib proto
- */
 void
 transport_register_protocol (transport_proto_t transport_proto,
 			     const transport_proto_vft_t * vft,
@@ -250,6 +255,24 @@ transport_register_protocol (transport_proto_t transport_proto,
   session_register_transport (transport_proto, vft, is_ip4, output_node);
 }
 
+transport_proto_t
+transport_register_new_protocol (const transport_proto_vft_t * vft,
+				 fib_protocol_t fib_proto, u32 output_node)
+{
+  transport_proto_t transport_proto;
+  u8 is_ip4;
+
+  transport_proto = session_add_transport_proto ();
+  is_ip4 = fib_proto == FIB_PROTOCOL_IP4;
+
+  vec_validate (tp_vfts, transport_proto);
+  tp_vfts[transport_proto] = *vft;
+
+  session_register_transport (transport_proto, vft, is_ip4, output_node);
+
+  return transport_proto;
+}
+
 /**
  * Get transport virtual function table
  *
@@ -261,12 +284,6 @@ transport_protocol_get_vft (transport_proto_t transport_proto)
   if (transport_proto >= vec_len (tp_vfts))
     return 0;
   return &tp_vfts[transport_proto];
-}
-
-u8
-transport_half_open_has_fifos (transport_proto_t tp)
-{
-  return tp_vfts[tp].transport_options.half_open_has_fifos;
 }
 
 transport_service_type_t
@@ -285,6 +302,13 @@ void
 transport_cleanup (transport_proto_t tp, u32 conn_index, u8 thread_index)
 {
   tp_vfts[tp].cleanup (conn_index, thread_index);
+}
+
+void
+transport_cleanup_half_open (transport_proto_t tp, u32 conn_index)
+{
+  if (tp_vfts[tp].cleanup)
+    tp_vfts[tp].cleanup_ho (conn_index);
 }
 
 int
@@ -385,42 +409,62 @@ transport_endpoint_del (u32 tepi)
   clib_spinlock_unlock_if_init (&local_endpoints_lock);
 }
 
-always_inline transport_endpoint_t *
+always_inline local_endpoint_t *
 transport_endpoint_new (void)
 {
-  transport_endpoint_t *tep;
-  pool_get_zero (local_endpoints, tep);
-  return tep;
+  local_endpoint_t *lep;
+  pool_get_zero (local_endpoints, lep);
+  return lep;
 }
 
 void
 transport_endpoint_cleanup (u8 proto, ip46_address_t * lcl_ip, u16 port)
 {
-  u32 tepi;
-  transport_endpoint_t *tep;
+  local_endpoint_t *lep;
+  u32 lepi;
 
   /* Cleanup local endpoint if this was an active connect */
-  tepi = transport_endpoint_lookup (&local_endpoints_table, proto, lcl_ip,
+  lepi = transport_endpoint_lookup (&local_endpoints_table, proto, lcl_ip,
 				    clib_net_to_host_u16 (port));
-  if (tepi != ENDPOINT_INVALID_INDEX)
+  if (lepi != ENDPOINT_INVALID_INDEX)
     {
-      tep = pool_elt_at_index (local_endpoints, tepi);
-      transport_endpoint_table_del (&local_endpoints_table, proto, tep);
-      transport_endpoint_del (tepi);
+      lep = pool_elt_at_index (local_endpoints, lepi);
+      if (!clib_atomic_sub_fetch (&lep->refcnt, 1))
+	{
+	  transport_endpoint_table_del (&local_endpoints_table, proto,
+					&lep->ep);
+	  transport_endpoint_del (lepi);
+	}
     }
 }
 
 static void
 transport_endpoint_mark_used (u8 proto, ip46_address_t * ip, u16 port)
 {
-  transport_endpoint_t *tep;
+  local_endpoint_t *lep;
   clib_spinlock_lock_if_init (&local_endpoints_lock);
-  tep = transport_endpoint_new ();
-  clib_memcpy_fast (&tep->ip, ip, sizeof (*ip));
-  tep->port = port;
-  transport_endpoint_table_add (&local_endpoints_table, proto, tep,
-				tep - local_endpoints);
+  lep = transport_endpoint_new ();
+  clib_memcpy_fast (&lep->ep.ip, ip, sizeof (*ip));
+  lep->ep.port = port;
+  lep->refcnt = 1;
+  transport_endpoint_table_add (&local_endpoints_table, proto, &lep->ep,
+				lep - local_endpoints);
   clib_spinlock_unlock_if_init (&local_endpoints_lock);
+}
+
+void
+transport_share_local_endpoint (u8 proto, ip46_address_t * lcl_ip, u16 port)
+{
+  local_endpoint_t *lep;
+  u32 lepi;
+
+  lepi = transport_endpoint_lookup (&local_endpoints_table, proto, lcl_ip,
+				    clib_net_to_host_u16 (port));
+  if (lepi != ENDPOINT_INVALID_INDEX)
+    {
+      lep = pool_elt_at_index (local_endpoints, lepi);
+      clib_atomic_add_fetch (&lep->refcnt, 1);
+    }
 }
 
 /**
@@ -464,7 +508,7 @@ transport_alloc_local_port (u8 proto, ip46_address_t * ip)
   return -1;
 }
 
-static clib_error_t *
+static session_error_t
 transport_get_interface_ip (u32 sw_if_index, u8 is_ip4, ip46_address_t * addr)
 {
   if (is_ip4)
@@ -472,9 +516,7 @@ transport_get_interface_ip (u32 sw_if_index, u8 is_ip4, ip46_address_t * addr)
       ip4_address_t *ip4;
       ip4 = ip_interface_get_first_ip (sw_if_index, 1);
       if (!ip4)
-	return clib_error_return (0, "no routable ip4 address on %U",
-				  format_vnet_sw_if_index_name,
-				  vnet_get_main (), sw_if_index);
+	return SESSION_E_NOIP;
       addr->ip4.as_u32 = ip4->as_u32;
     }
   else
@@ -482,15 +524,13 @@ transport_get_interface_ip (u32 sw_if_index, u8 is_ip4, ip46_address_t * addr)
       ip6_address_t *ip6;
       ip6 = ip_interface_get_first_ip (sw_if_index, 0);
       if (ip6 == 0)
-	return clib_error_return (0, "no routable ip6 addresses on %U",
-				  format_vnet_sw_if_index_name,
-				  vnet_get_main (), sw_if_index);
+	return SESSION_E_NOIP;
       clib_memcpy_fast (&addr->ip6, ip6, sizeof (*ip6));
     }
   return 0;
 }
 
-static clib_error_t *
+static session_error_t
 transport_find_local_ip_for_remote (u32 sw_if_index,
 				    transport_endpoint_t * rmt,
 				    ip46_address_t * lcl_addr)
@@ -510,14 +550,11 @@ transport_find_local_ip_for_remote (u32 sw_if_index,
 
       /* Couldn't find route to destination. Bail out. */
       if (fei == FIB_NODE_INDEX_INVALID)
-	return clib_error_return (0, "no route to %U", format_ip46_address,
-				  &rmt->ip, (rmt->is_ip4 == 0) + 1);
+	return SESSION_E_NOROUTE;
 
       sw_if_index = fib_entry_get_resolving_interface (fei);
       if (sw_if_index == ENDPOINT_INVALID_INDEX)
-	return clib_error_return (0, "no resolving interface for %U",
-				  format_ip46_address, &rmt->ip,
-				  (rmt->is_ip4 == 0) + 1);
+	return SESSION_E_NOINTF;
     }
 
   clib_memset (lcl_addr, 0, sizeof (*lcl_addr));
@@ -529,7 +566,7 @@ transport_alloc_local_endpoint (u8 proto, transport_endpoint_cfg_t * rmt_cfg,
 				ip46_address_t * lcl_addr, u16 * lcl_port)
 {
   transport_endpoint_t *rmt = (transport_endpoint_t *) rmt_cfg;
-  clib_error_t *error;
+  session_error_t error;
   int port;
   u32 tei;
 
@@ -541,10 +578,7 @@ transport_alloc_local_endpoint (u8 proto, transport_endpoint_cfg_t * rmt_cfg,
       error = transport_find_local_ip_for_remote (rmt_cfg->peer.sw_if_index,
 						  rmt, lcl_addr);
       if (error)
-	{
-	  clib_error_report (error);
-	  return -1;
-	}
+	return error;
     }
   else
     {
@@ -560,22 +594,19 @@ transport_alloc_local_endpoint (u8 proto, transport_endpoint_cfg_t * rmt_cfg,
     {
       port = transport_alloc_local_port (proto, lcl_addr);
       if (port < 1)
-	{
-	  clib_warning ("Failed to allocate src port");
-	  return -1;
-	}
+	return SESSION_E_NOPORT;
       *lcl_port = port;
     }
   else
     {
       port = clib_net_to_host_u16 (rmt_cfg->peer.port);
+      *lcl_port = port;
       tei = transport_endpoint_lookup (&local_endpoints_table, proto,
 				       lcl_addr, port);
       if (tei != ENDPOINT_INVALID_INDEX)
-	return -1;
+	return SESSION_E_PORTINUSE;
 
       transport_endpoint_mark_used (proto, lcl_addr, port);
-      *lcl_port = port;
     }
 
   return 0;
